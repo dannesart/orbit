@@ -4,8 +4,9 @@ Nuxt 4 · TypeScript · Tailwind v4. Requires Node ≥ 22.22 (uses the built-in 
 
 ```sh
 npm install
-npm run dev        # http://localhost:3000
-npm test           # data-layer tests
+npm run dev                       # http://localhost:3100
+npm run build && npm run preview  # production build, also on :3100
+npm test                          # data-layer tests
 npm run typecheck
 ```
 
