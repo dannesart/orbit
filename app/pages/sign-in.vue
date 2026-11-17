@@ -123,7 +123,7 @@ function changeEmail() {
 
     <form v-else novalidate @submit.prevent="verify">
       <div class="mb-6 flex justify-center">
-        <span class="grid size-16 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">
+        <span class="grid size-16 place-items-center rounded-2xl bg-accent-50 text-accent-600">
           <svg viewBox="0 0 24 24" class="size-7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="5" width="18" height="14" rx="2" />
             <path d="m3 7 9 6 9-6" />
