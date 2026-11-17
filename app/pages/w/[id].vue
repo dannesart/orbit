@@ -23,6 +23,8 @@ useHead({ title: `${ws.name} · Orbit` })
 const hello = ref('')
 onMounted(() => {
   hello.value = greeting(account.value?.name ?? 'there', new Date().getHours())
+  // "Brand new" belongs to the first view only: drop the marker so reloads don't repeat it.
+  if (justCreated) useRouter().replace({ query: {} })
 })
 
 const others = ws.members.filter((m) => !m.you)
@@ -56,7 +58,7 @@ const presence = computed(() => {
     <main class="relative overflow-hidden">
       <!-- A distant orbit behind everything; it never moves. -->
       <div class="pointer-events-none absolute inset-x-0 top-0 grid place-items-center" aria-hidden="true">
-        <div class="mt-[-14rem] size-[44rem] rounded-full border border-accent-100/50" />
+        <div class="-mt-56 size-176 rounded-full border border-accent-100/50" />
       </div>
 
       <div class="relative mx-auto flex max-w-2xl flex-col items-center px-4 pt-14 pb-20 text-center sm:px-6 sm:pt-20">
