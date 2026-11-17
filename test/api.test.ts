@@ -1,6 +1,6 @@
-// Authorization boundaries and the email-link flow over real HTTP against a built Orbit server.
-// Supabase Auth is replaced by a local fake (test/fake-supabase.ts) that enforces PKCE,
-// so no test sends email or reaches the network.
+// Authorization boundaries and the email-code sign-in over real HTTP against a built Orbit server.
+// Supabase Auth is replaced by a local fake (test/fake-supabase.ts), so no test sends email
+// or reaches the network.
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +9,7 @@ import { fetch, setup } from '@nuxt/test-utils/e2e'
 import { afterAll, describe, expect, it } from 'vitest'
 import { SESSION_TTL_MS, createSession, upsertAccount } from '../server/utils/accounts'
 import { openDb } from '../server/utils/db'
-import { startFakeSupabase } from './fake-supabase'
+import { EMAIL_CAP_REACHED, SEND_FAILS, startFakeSupabase } from './fake-supabase'
 
 const supabase = await startFakeSupabase()
 afterAll(() => supabase.close())
@@ -115,103 +115,110 @@ class Browser {
     return res
   }
 
-  requestLink(email: string) {
-    return this.request('/api/auth/link', { method: 'POST', body: JSON.stringify({ email }) })
+  requestCode(email: string) {
+    return this.request('/api/auth/code', { method: 'POST', body: JSON.stringify({ email }) })
+  }
+
+  verify(email: string, code: string | undefined) {
+    return this.request('/api/auth/verify', { method: 'POST', body: JSON.stringify({ email, code }) })
   }
 }
 
-describe('sign-in links', () => {
-  it('validate the email before contacting Supabase', async () => {
-    expect((await new Browser().requestLink('nope')).status).toBe(422)
-    expect(supabase.outbox).toHaveLength(0)
+const statusMessage = async (res: Response) => (await res.json()).statusMessage as string
+
+describe('requesting a code', () => {
+  it('validates the email before contacting Supabase', async () => {
+    const res = await new Browser().requestCode('nope')
+    expect(res.status).toBe(422)
   })
 
-  it('report a friendly error when Supabase fails to send', async () => {
-    const res = await new Browser().requestLink('down@example.com')
+  it('explains the resend cooldown and says how long to wait', async () => {
+    const browser = new Browser()
+    expect((await browser.requestCode('cooldown@example.com')).status).toBe(204)
+    const again = await browser.requestCode('cooldown@example.com')
+    expect(again.status).toBe(429)
+    const body = await again.json()
+    expect(body.statusMessage).toMatch(/^Please wait \d+ seconds before asking for another code\.$/)
+    expect(body.data.retryAfter).toBeGreaterThan(0)
+  })
+
+  it('explains when Orbit has hit its email sending limit', async () => {
+    const res = await new Browser().requestCode(EMAIL_CAP_REACHED)
+    expect(res.status).toBe(429)
+    expect(await statusMessage(res)).toMatch(/sent a lot of emails/)
+  })
+
+  it('reports a friendly error when sending fails', async () => {
+    const res = await new Browser().requestCode(SEND_FAILS)
     expect(res.status).toBe(502)
-    expect((await res.json()).statusMessage).toMatch(/couldn’t send a link/)
+    expect(await statusMessage(res)).toMatch(/couldn’t send a code/)
   })
 
-  it('sign a new person up, then let them return from another browser', async () => {
+  it('signs no one in by itself', async () => {
+    const browser = new Browser()
+    await browser.requestCode('lurker@example.com')
+    expect(browser.cookie).toBeUndefined()
+  })
+})
+
+describe('verifying a code', () => {
+  it('signs a new person up, then lets them return from another browser', async () => {
     const laptop = new Browser()
-    expect((await laptop.requestLink('linus@example.com')).status).toBe(204)
-    const firstLink = supabase.outbox.at(-1)!
-    expect(firstLink.callbackPath).toMatch(/^\/auth\/callback\?code=/)
-    expect(laptop.cookie).not.toContain('orbit_session') // requesting a link signs no one in
+    await laptop.requestCode('linus@example.com')
+    const verified = await laptop.verify('Linus@Example.com ', supabase.codeFor('linus@example.com'))
+    expect(verified.status).toBe(200)
+    expect(await verified.json()).toEqual({ email: 'linus@example.com' })
+    expect(laptop.cookie).toMatch(/^orbit_session=/)
+    expect(await (await laptop.request('/api/workspaces')).json()).toEqual([]) // → create workspace
 
-    const landed = await laptop.request(firstLink.callbackPath)
-    expect(landed.status).toBe(303)
-    expect(landed.headers.get('location')).toBe('/') // → create workspace, since they have none
-    expect(laptop.cookie).toContain('orbit_session=')
-    expect(laptop.cookie).not.toMatch(/code-verifier/) // verifier cleared once used
-    expect(await (await laptop.request('/api/me')).json()).toEqual({ email: 'linus@example.com' })
-    expect(await (await laptop.request('/api/workspaces')).json()).toEqual([])
+    const created = await (await laptop.request('/api/workspaces', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Kernel' }),
+    })).json()
+    expect(created.role).toBe('admin')
 
-    const created = await (await laptop.request('/api/workspaces', { method: 'POST', body: JSON.stringify({ name: 'Kernel' }) })).json()
-
-    // The same link cannot be used twice.
-    const reused = await new Browser().request(firstLink.callbackPath)
-    expect(reused.headers.get('location')).toBe('/sign-in?error=browser')
-
-    // Returning from a second browser: same Orbit account, same workspace.
+    supabase.skipCooldown('linus@example.com')
     const desktop = new Browser()
-    await desktop.requestLink('linus@example.com')
-    await desktop.request(supabase.outbox.at(-1)!.callbackPath)
+    await desktop.requestCode('linus@example.com')
+    await desktop.verify('linus@example.com', supabase.codeFor('linus@example.com'))
     expect(await (await desktop.request('/api/workspaces')).json()).toEqual([created])
     expect(db.prepare('SELECT COUNT(*) AS n FROM users WHERE email = ?').get('linus@example.com')).toEqual({ n: 1 })
   })
 
-  it('only complete in the browser that requested the link', async () => {
-    const requester = new Browser()
-    await requester.requestLink('margaret@example.com')
-    const link = supabase.outbox.at(-1)!
-
-    const elsewhere = new Browser()
-    const res = await elsewhere.request(link.callbackPath)
-    expect(res.headers.get('location')).toBe('/sign-in?error=browser')
-    expect(elsewhere.cookie).toBeUndefined()
-
-    // The requester can still use it afterwards.
-    expect((await requester.request(link.callbackPath)).headers.get('location')).toBe('/')
-  })
-
-  it('accept only the newest link when several were requested', async () => {
+  it('accepts a code only once', async () => {
     const browser = new Browser()
-    await browser.requestLink('katherine@example.com')
-    const first = supabase.outbox.at(-1)!
-    await browser.requestLink('katherine@example.com')
-    const newest = supabase.outbox.at(-1)!
-    expect((await browser.request(first.callbackPath)).headers.get('location')).toBe('/sign-in?error=invalid')
-    expect(browser.cookie).not.toContain('orbit_session')
-    expect((await browser.request(newest.callbackPath)).headers.get('location')).toBe('/')
-  })
-})
-
-describe('email link callback', () => {
-  const callback = async (query: string, cookie?: string) => {
-    const res = await api(`/auth/callback${query}`, cookie)
-    expect(res.status).toBe(303)
-    expect(res.headers.get('cache-control')).toBe('no-store')
-    expect(res.headers.get('set-cookie') ?? '').not.toMatch(/orbit_session=[^;]/)
-    return res.headers.get('location')
-  }
-
-  it('sends expired or reused links back to sign-in', async () => {
-    expect(await callback('?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'))
-      .toBe('/sign-in?error=expired')
+    await browser.requestCode('once@example.com')
+    const code = supabase.codeFor('once@example.com')
+    expect((await browser.verify('once@example.com', code)).status).toBe(200)
+    const reused = await new Browser().verify('once@example.com', code)
+    expect(reused.status).toBe(400)
   })
 
-  it('rejects callbacks without a code, or with another error', async () => {
-    expect(await callback('')).toBe('/sign-in?error=invalid')
-    expect(await callback('?error=server_error&code=abc')).toBe('/sign-in?error=invalid')
+  it('rejects a wrong code without signing in, and accepts the right one afterwards', async () => {
+    const browser = new Browser()
+    await browser.requestCode('typo@example.com')
+    const right = supabase.codeFor('typo@example.com')!
+    const wrong = right === '000000' ? '111111' : '000000'
+
+    const res = await browser.verify('typo@example.com', wrong)
+    expect(res.status).toBe(400)
+    expect(await statusMessage(res)).toBe('That code is incorrect or has expired. Check it, or send a new one.')
+    expect(browser.cookie).toBeUndefined()
+
+    expect((await browser.verify('typo@example.com', right)).status).toBe(200)
   })
 
-  it('refuses a link opened in a browser that did not request it', async () => {
-    expect(await callback('?code=11111111-2222-3333-4444-555555555555')).toBe('/sign-in?error=browser')
+  it('does not accept a code for a different address', async () => {
+    const browser = new Browser()
+    await browser.requestCode('owner@example.com')
+    const res = await browser.verify('intruder@example.com', supabase.codeFor('owner@example.com'))
+    expect(res.status).toBe(400)
+    expect(browser.cookie).toBeUndefined()
   })
 
-  it('does not sign anyone in, even with an existing session cookie, when the link fails', async () => {
-    expect(await callback('?error_code=otp_expired', adaPhone)).toBe('/sign-in?error=expired')
-    expect((await api('/api/workspaces', adaPhone)).status).toBe(200) // existing session untouched
+  it('validates the shape of the code before contacting Supabase', async () => {
+    for (const code of ['', 'abc', '123', '12345678901']) {
+      expect((await new Browser().verify('ada@example.com', code)).status).toBe(422)
+    }
   })
 })
