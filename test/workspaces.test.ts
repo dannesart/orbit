@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import {
-  createUser,
-  createWorkspace,
-  getWorkspace,
-  listWorkspaces,
-  openDb,
-  parseWorkspaceName,
-} from '../server/utils/workspaces'
+import type { DatabaseSync } from 'node:sqlite'
+import { upsertAccount } from '../server/utils/accounts'
+import { openDb } from '../server/utils/db'
+import { createWorkspace, getWorkspace, listWorkspaces, parseWorkspaceName } from '../server/utils/workspaces'
+
+let n = 0
+const createUser = (db: DatabaseSync) => upsertAccount(db, `auth-${++n}`, `user${n}@example.com`).id
 
 describe('parseWorkspaceName', () => {
   it('trims and collapses whitespace', () => {

@@ -22,3 +22,15 @@
 body {
   @apply bg-slate-50 text-slate-800 antialiased;
 }
+
+@layer components {
+  .field {
+    @apply mt-2 block w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 shadow-xs outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 aria-invalid:border-rose-300 aria-invalid:focus:ring-rose-100;
+  }
+  .btn-primary {
+    @apply flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-200 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70;
+  }
+  .link {
+    @apply rounded font-medium text-indigo-600 underline-offset-4 transition hover:text-indigo-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:cursor-default disabled:text-slate-400 disabled:no-underline;
+  }
+}
