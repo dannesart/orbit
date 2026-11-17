@@ -5,7 +5,9 @@ import {
   createSession,
   deleteSession,
   parseEmail,
+  parseName,
   resolveSession,
+  setName,
   upsertAccount,
 } from '../server/utils/accounts'
 import { startTestDatabase } from './db'
@@ -27,7 +29,7 @@ describe('upsertAccount', () => {
   it('follows an email change on the identity without creating a new user', async () => {
     const before = await upsertAccount(testDb.sql, 'supabase-user-3', 'ada@old.example')
     const after = await upsertAccount(testDb.sql, 'supabase-user-3', 'ada@new.example')
-    expect(after).toEqual({ id: before.id, email: 'ada@new.example' })
+    expect(after).toEqual({ id: before.id, email: 'ada@new.example', name: null })
   })
 })
 
@@ -70,11 +72,52 @@ describe('parseEmail', () => {
   })
 })
 
+describe('parseName', () => {
+  it('accepts the names people actually use, tidied', () => {
+    for (const name of ['Ada', 'Daniel Mårtensson', 'Zoë', '李小龙', 'O’Brien', 'Jean-Luc', 'Prince']) {
+      expect(parseName(name)).toEqual({ name })
+    }
+    expect(parseName('  Grace   Hopper ')).toEqual({ name: 'Grace Hopper' })
+    expect(parseName('Mårtensson')).toEqual({ name: 'Mårtensson' }) // decomposed å → composed
+  })
+
+  it('rejects empty, overlong and control-character names', () => {
+    for (const input of ['', '   ', undefined, null, 42]) expect(parseName(input)).toHaveProperty('error')
+    expect(parseName('a'.repeat(80))).toEqual({ name: 'a'.repeat(80) })
+    expect(parseName('a'.repeat(81))).toHaveProperty('error')
+    expect(parseName('Ada\u0000')).toHaveProperty('error')
+  })
+})
+
+describe('names', () => {
+  it('start empty, are saved on the person, and come back with their session', async () => {
+    const person = await upsertAccount(testDb.sql, 'supabase-named', 'named@example.com')
+    expect(person.name).toBeNull()
+
+    const named = await setName(testDb.sql, person.id, 'Linnea')
+    expect(named).toEqual({ id: person.id, email: 'named@example.com', name: 'Linnea' })
+    const token = await createSession(testDb.sql, person.id)
+    expect(await resolveSession(testDb.sql, token)).toEqual(named)
+  })
+
+  it('survive signing in again, even when the email changes', async () => {
+    const person = await upsertAccount(testDb.sql, 'supabase-returning', 'old@example.com')
+    await setName(testDb.sql, person.id, 'Signe')
+    expect(await upsertAccount(testDb.sql, 'supabase-returning', 'new@example.com'))
+      .toEqual({ id: person.id, email: 'new@example.com', name: 'Signe' })
+  })
+
+  it('are length-checked by the database too', async () => {
+    const person = await upsertAccount(testDb.sql, 'supabase-long', 'long@example.com')
+    await expect(setName(testDb.sql, person.id, 'a'.repeat(81))).rejects.toThrow(/check constraint/)
+  })
+})
+
 describe('migrations', () => {
   it('apply once; re-running changes nothing', async () => {
     expect(await migrate(testDb.sql)).toEqual([])
     const names = await testDb.sql`SELECT name FROM orbit.schema_migrations ORDER BY name`
-    expect(names.map((r) => r.name)).toEqual(['001_orbit_schema.sql'])
+    expect(names.map((r) => r.name)).toEqual(['001_orbit_schema.sql', '002_user_display_name.sql'])
   })
 
   it('give orbit_app row access to Orbit tables only', async () => {

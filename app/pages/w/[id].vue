@@ -52,7 +52,7 @@ const upcoming = [
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-4 text-sm">
-          <span class="hidden max-w-56 truncate text-slate-500 md:inline">{{ account }}</span>
+          <span class="hidden max-w-56 truncate text-slate-500 md:inline" :title="account?.email">{{ account?.name ?? account?.email }}</span>
           <button
             type="button"
             class="rounded-lg px-3 py-1.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-200"

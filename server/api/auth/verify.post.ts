@@ -18,5 +18,5 @@ export default defineEventHandler(async (event) => {
   await startSession(event, account.id)
   // Orbit keeps its own session; revoke the Supabase one so no unused refresh token lingers.
   await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
-  return { email: account.email }
+  return { email: account.email, name: account.name }
 })
