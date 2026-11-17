@@ -5,7 +5,7 @@ const initial = computed(() => props.name.trim().charAt(0).toUpperCase())
 
 <template>
   <span
-    class="inline-grid place-items-center rounded-2xl bg-linear-to-br from-indigo-500 to-violet-500 font-semibold text-white shadow-sm shadow-indigo-500/30"
+    class="inline-grid place-items-center rounded-2xl bg-linear-to-br from-accent-500 to-accent-secondary-500 font-semibold text-white shadow-sm shadow-accent-500/30"
     aria-hidden="true"
   >
     <Transition

@@ -22,7 +22,7 @@ const copy = computed(() => {
       <h1 class="text-2xl font-semibold tracking-tight text-slate-900">{{ copy.title }}</h1>
       <p class="mt-2 text-slate-500">{{ copy.text }}</p>
       <button
-        class="mt-8 rounded-xl bg-indigo-600 px-5 py-2.5 font-medium text-white transition hover:bg-indigo-500"
+        class="mt-8 rounded-xl bg-accent-600 px-5 py-2.5 font-medium text-white transition hover:bg-accent-500"
         @click="clearError({ redirect: copy.to })"
       >
         {{ copy.action }}
