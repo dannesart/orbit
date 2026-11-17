@@ -58,7 +58,7 @@ async function save() {
         placeholder="e.g. Captain Stardust"
         @input="error = ''"
       >
-      <p id="name-error" class="mt-2 min-h-5 text-center text-sm text-rose-600" aria-live="polite">{{ error }}</p>
+      <p id="name-error" class="mt-2 min-h-5 text-center text-sm text-red-700" aria-live="polite">{{ error }}</p>
 
       <button type="submit" :disabled="saving" class="btn-primary mt-4">
         <Spinner v-if="saving" />

@@ -72,7 +72,7 @@ async function create() {
       <p
         id="workspace-name-hint"
         class="mt-2 min-h-5 text-sm"
-        :class="error ? 'text-rose-600' : 'text-slate-400'"
+        :class="error ? 'text-red-700' : 'text-slate-400'"
         aria-live="polite"
       >
         {{ error || 'Your company, team or project.' }}
