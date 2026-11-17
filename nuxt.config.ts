@@ -7,7 +7,8 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   vite: { plugins: [tailwindcss()] },
   runtimeConfig: {
-    // Server-only. Set via NUXT_DB_PATH, NUXT_SUPABASE_URL, NUXT_SUPABASE_KEY (see .env.example).
+    // Server-only. Override via NUXT_SITE_URL, NUXT_DB_PATH, NUXT_SUPABASE_URL, NUXT_SUPABASE_KEY.
+    siteUrl: 'http://localhost:3100', // where email links return; must be allowed in Supabase
     dbPath: '.data/orbit.sqlite',
     supabaseUrl: '',
     supabaseKey: '',

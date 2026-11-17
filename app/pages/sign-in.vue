@@ -1,14 +1,20 @@
 <script setup lang="ts">
 useHead({ title: 'Sign in · Orbit' })
 
-const step = ref<'email' | 'code'>('email')
+const route = useRoute()
+const linkProblems: Record<string, string> = {
+  expired: 'That link has expired or was already used. Send yourself a new one.',
+  browser: 'That link was requested in a different browser. Open it there, or send a new link from here.',
+  invalid: 'That sign-in link didn’t work. If you asked for more than one, use the newest email — or send a new link.',
+}
+const linkProblem = computed(() => linkProblems[String(route.query.error)] ?? '')
+
+const sentTo = ref('')
 const email = ref('')
-const code = ref('')
 const error = ref('')
 const busy = ref(false)
 const cooldown = ref(0)
 const emailInput = useTemplateRef<HTMLInputElement>('emailInput')
-const codeInput = useTemplateRef<HTMLInputElement>('codeInput')
 onMounted(() => emailInput.value?.focus())
 
 let timer: ReturnType<typeof setInterval> | undefined
@@ -21,9 +27,7 @@ function startCooldown() {
 }
 onBeforeUnmount(() => clearInterval(timer))
 
-const message = (e: any) => e?.data?.statusMessage || 'Something went wrong. Please try again.'
-
-async function sendCode() {
+async function sendLink() {
   error.value = ''
   if (!/^\S+@\S+\.\S+$/.test(email.value.trim())) {
     error.value = 'Enter your email address.'
@@ -31,41 +35,19 @@ async function sendCode() {
   }
   busy.value = true
   try {
-    await $fetch('/api/auth/code', { method: 'POST', body: { email: email.value } })
-    step.value = 'code'
-    code.value = ''
+    await $fetch('/api/auth/link', { method: 'POST', body: { email: email.value } })
+    sentTo.value = email.value.trim().toLowerCase()
     startCooldown()
-    await nextTick()
-    codeInput.value?.focus()
-  } catch (e) {
-    error.value = message(e)
+    if (route.query.error) navigateTo('/sign-in', { replace: true })
+  } catch (e: any) {
+    error.value = e?.data?.statusMessage || 'Something went wrong. Please try again.'
   } finally {
     busy.value = false
   }
 }
 
-async function verify() {
-  error.value = ''
-  if (!/^\d{6,10}$/.test(code.value.replace(/\s/g, ''))) {
-    error.value = 'Enter the code from your email.'
-    return
-  }
-  busy.value = true
-  try {
-    const { email: signedIn } = await $fetch<{ email: string }>('/api/auth/verify', {
-      method: 'POST',
-      body: { email: email.value, code: code.value },
-    })
-    useAccount().value = signedIn
-    await navigateTo('/')
-  } catch (e) {
-    error.value = message(e)
-    busy.value = false
-  }
-}
-
 function changeEmail() {
-  step.value = 'email'
+  sentTo.value = ''
   error.value = ''
   nextTick(() => emailInput.value?.focus())
 }
@@ -73,10 +55,14 @@ function changeEmail() {
 
 <template>
   <OrbitStage>
-    <form v-if="step === 'email'" novalidate @submit.prevent="sendCode">
+    <form v-if="!sentTo" novalidate @submit.prevent="sendLink">
       <h1 class="text-center text-2xl font-semibold tracking-tight text-slate-900">Welcome to Orbit</h1>
       <p class="mx-auto mt-2 max-w-xs text-center text-balance text-slate-500">
-        Sign in or get started with your email. We’ll send you a code — no password needed.
+        Sign in or get started with your email. We’ll send you a link — no password needed.
+      </p>
+
+      <p v-if="linkProblem" class="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
+        {{ linkProblem }}
       </p>
 
       <label for="email" class="mt-8 block text-sm font-medium text-slate-700">Email</label>
@@ -97,11 +83,11 @@ function changeEmail() {
 
       <button type="submit" :disabled="busy" class="btn-primary mt-4">
         <Spinner v-if="busy" />
-        {{ busy ? 'Sending…' : 'Email me a code' }}
+        {{ busy ? 'Sending…' : 'Email me a sign-in link' }}
       </button>
     </form>
 
-    <form v-else novalidate @submit.prevent="verify">
+    <div v-else class="text-center">
       <div class="mb-6 flex justify-center">
         <span class="grid size-16 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">
           <svg viewBox="0 0 24 24" class="size-7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -110,45 +96,27 @@ function changeEmail() {
           </svg>
         </span>
       </div>
-      <h1 class="text-center text-2xl font-semibold tracking-tight text-slate-900">Check your email</h1>
-      <p class="mt-2 text-center text-slate-500">
-        We sent a sign-in code to<br>
-        <span class="font-medium break-all text-slate-700">{{ email.trim().toLowerCase() }}</span>
+      <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Check your email</h1>
+      <p class="mt-2 text-slate-500">
+        We sent a sign-in link to<br>
+        <span class="font-medium break-all text-slate-700">{{ sentTo }}</span>
       </p>
+      <p class="mx-auto mt-4 max-w-xs text-sm text-balance text-slate-500">
+        Open it in this browser to continue. New to Orbit? The email asks you to confirm your address — that’s the one.
+      </p>
+      <p class="mt-2 min-h-5 text-sm text-rose-600" aria-live="polite">{{ error }}</p>
 
-      <label for="code" class="mt-8 block text-sm font-medium text-slate-700">Code</label>
-      <input
-        id="code"
-        ref="codeInput"
-        v-model="code"
-        type="text"
-        inputmode="numeric"
-        autocomplete="one-time-code"
-        maxlength="10"
-        placeholder="123456"
-        :aria-invalid="!!error"
-        aria-describedby="code-hint"
-        class="field text-center font-mono text-2xl tracking-[0.4em] placeholder:tracking-[0.4em] placeholder:text-slate-300"
-        @input="error = ''"
-      >
-      <p id="code-hint" class="mt-2 min-h-5 text-sm text-rose-600" aria-live="polite">{{ error }}</p>
-
-      <button type="submit" :disabled="busy" class="btn-primary mt-4">
-        <Spinner v-if="busy" />
-        {{ busy ? 'Signing in…' : 'Sign in' }}
-      </button>
-
-      <div class="mt-6 flex items-center justify-between text-sm">
+      <div class="mt-4 flex items-center justify-between text-sm">
         <button type="button" class="link" @click="changeEmail">Use a different email</button>
-        <button type="button" class="link" :disabled="busy || cooldown > 0" @click="sendCode">
-          {{ cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code' }}
+        <button type="button" class="link" :disabled="busy || cooldown > 0" @click="sendLink">
+          {{ cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend link' }}
         </button>
       </div>
-    </form>
+    </div>
 
     <template #footer>
-      <p v-if="step === 'email'">New here? Your account is created when you sign in.</p>
-      <p v-else>Can’t find it? Check your spam folder.</p>
+      <p v-if="!sentTo">New here? Your account is created when you confirm your email.</p>
+      <p v-else>Can’t find it? Check your spam folder. Links expire after an hour.</p>
     </template>
   </OrbitStage>
 </template>

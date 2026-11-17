@@ -40,15 +40,61 @@ export function endSession(event: H3Event): void {
   deleteCookie(event, COOKIE, { path: '/' })
 }
 
-/** Server-only Supabase client, used solely to send and verify email codes. */
-export function useSupabase(): SupabaseClient {
+/**
+ * Server-only Supabase client, used solely to send sign-in links and redeem them.
+ *
+ * Links use the PKCE flow: the verifier for the latest requested link lives in an httpOnly
+ * cookie (keys ending in `-code-verifier`, the same contract @supabase/ssr relies on),
+ * so only the browser that asked for the link can complete it. Anything else the
+ * client wants to store, such as the Supabase session, stays in memory for this request.
+ */
+export function useSupabase(event: H3Event): SupabaseClient {
   const { supabaseUrl, supabaseKey } = useRuntimeConfig()
   if (!supabaseUrl || !supabaseKey) {
     throw createError({ statusCode: 503, statusMessage: 'Sign-in isn’t configured yet.' })
   }
+
+  const memory = new Map<string, string>()
+  const written = new Map<string, string | null>() // read-your-writes within this request
+  const isVerifier = (key: string) => key.endsWith('-code-verifier')
+  const storage = {
+    getItem(key: string) {
+      if (!isVerifier(key)) return memory.get(key) ?? null
+      return written.has(key) ? written.get(key)! : getCookie(event, key) ?? null
+    },
+    setItem(key: string, value: string) {
+      if (!isVerifier(key)) return void memory.set(key, value)
+      written.set(key, value)
+      setCookie(event, key, value, VERIFIER_COOKIE)
+    },
+    removeItem(key: string) {
+      if (!isVerifier(key)) return void memory.delete(key)
+      written.set(key, null)
+      deleteCookie(event, key, { path: '/' })
+    },
+  }
+
   return createClient(supabaseUrl, supabaseKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    auth: { flowType: 'pkce', storage, persistSession: true, autoRefreshToken: false, detectSessionInUrl: false },
   })
+}
+
+const VERIFIER_COOKIE = {
+  httpOnly: true,
+  sameSite: 'lax', // sent when the email link opens Orbit
+  secure: !import.meta.dev,
+  path: '/',
+  maxAge: 60 * 60, // Supabase email links expire after an hour by default
+} as const
+
+/**
+ * Supabase's client discards the stored verifier after any exchange attempt. When an
+ * older link fails, put it back so the newest link in this browser still works.
+ */
+export function keepPendingLink(event: H3Event): void {
+  for (const [name, value] of Object.entries(parseCookies(event))) {
+    if (name.endsWith('-code-verifier')) setCookie(event, name, value, VERIFIER_COOKIE)
+  }
 }
 
 /** Maps a Supabase Auth error to a friendly, non-revealing HTTP error. */
