@@ -14,8 +14,8 @@ export default defineEventHandler(async (event) => {
     throw error ? authFailure(error, message) : createError({ statusCode: 400, statusMessage: message })
   }
 
-  const account = upsertAccount(useDb(), data.user.id, data.user.email ?? email)
-  startSession(event, account.id)
+  const account = await upsertAccount(useDb(), data.user.id, data.user.email ?? email)
+  await startSession(event, account.id)
   // Orbit keeps its own session; revoke the Supabase one so no unused refresh token lingers.
   await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
   return { email: account.email }
