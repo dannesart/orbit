@@ -1,4 +1,3 @@
 export default defineEventHandler((event) => {
-  const userId = currentUserId(event)
-  return userId ? listWorkspaces(useDb(), userId) : []
+  return listWorkspaces(useDb(), requireAccount(event).id)
 })

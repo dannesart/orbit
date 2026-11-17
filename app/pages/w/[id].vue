@@ -2,13 +2,18 @@
 import type { WorkspaceView } from '~~/server/utils/workspaces'
 
 const route = useRoute()
+const account = useAccount()
 const { data: workspace, error } = await useFetch<WorkspaceView>(`/api/workspaces/${route.params.id}`)
 
+if (error.value?.statusCode === 401) {
+  account.value = null
+  throw createError({ statusCode: 401, statusMessage: 'Signed out', fatal: true })
+}
 if (error.value || !workspace.value) {
   throw createError({ statusCode: 404, statusMessage: 'Workspace not found', fatal: true })
 }
 
-const ws = workspace.value
+const ws = workspace.value!
 const justCreated = route.query.welcome === '1'
 const createdOn = new Date(ws.createdAt).toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -37,11 +42,24 @@ const upcoming = [
   <div class="min-h-dvh">
     <header class="border-b border-slate-200/70 bg-white/70 backdrop-blur">
       <div class="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
-        <OrbitMark />
-        <!-- Future home of the workspace switcher -->
-        <div class="flex min-w-0 items-center gap-2.5 rounded-full border border-slate-200 bg-white py-1 pr-4 pl-1 text-sm font-medium text-slate-700">
-          <WorkspaceAvatar :name="ws.name" class="size-7 rounded-full text-xs" />
-          <span class="max-w-48 truncate">{{ ws.name }}</span>
+        <div class="flex min-w-0 items-center gap-3">
+          <OrbitMark />
+          <span class="text-slate-300" aria-hidden="true">/</span>
+          <!-- Future home of the workspace switcher -->
+          <div class="flex min-w-0 items-center gap-2.5 rounded-full border border-slate-200 bg-white py-1 pr-4 pl-1 text-sm font-medium text-slate-700">
+            <WorkspaceAvatar :name="ws.name" class="size-7 rounded-full text-xs" />
+            <span class="max-w-48 truncate">{{ ws.name }}</span>
+          </div>
+        </div>
+        <div class="flex shrink-0 items-center gap-4 text-sm">
+          <span class="hidden max-w-56 truncate text-slate-500 md:inline">{{ account }}</span>
+          <button
+            type="button"
+            class="rounded-lg px-3 py-1.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
+            @click="signOut"
+          >
+            Sign out
+          </button>
         </div>
       </div>
     </header>

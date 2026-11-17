@@ -7,8 +7,10 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   vite: { plugins: [tailwindcss()] },
   runtimeConfig: {
-    // Override with NUXT_DB_PATH.
+    // Server-only. Set via NUXT_DB_PATH, NUXT_SUPABASE_URL, NUXT_SUPABASE_KEY (see .env.example).
     dbPath: '.data/orbit.sqlite',
+    supabaseUrl: '',
+    supabaseKey: '',
   },
   app: {
     head: {
