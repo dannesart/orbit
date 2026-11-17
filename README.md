@@ -9,6 +9,7 @@ npm run build && npm run preview  # production build, also on :3100
 npm test                          # unit + HTTP tests on an in-process Postgres (no network)
 npm run typecheck
 npm run db:migrate                # apply pending migrations (needs MIGRATION_DATABASE_URL)
+npm run db:password               # new orbit_app password: prints SQL with a verifier only
 ```
 
 Copy `.env.example` to `.env` and fill in the values it describes. Local development and Netlify
@@ -25,8 +26,17 @@ Only the server talks to the database:
   as the `postgres` role (`MIGRATION_DATABASE_URL`, session pooler, port 5432). They run once each,
   in order, in one transaction. Netlify never holds these credentials.
 
-First-time setup: run `npm run db:migrate`, then set the app role's password once in the Supabase
-SQL editor (`ALTER ROLE orbit_app WITH PASSWORD '…';`) and use it in `NUXT_DATABASE_URL`.
+Both URLs use Supabase's pooler host (Database → Connect); the direct `db.<ref>.supabase.co` host
+is IPv6-only.
+
+First-time setup:
+
+1. `npm run db:migrate` creates the schema and the `orbit_app` role (without a password).
+2. `npm run db:password` generates a password locally and prints an `ALTER ROLE` statement that
+   carries only its SCRAM verifier. Run that statement in the Supabase SQL editor, then store the
+   printed connection URL as `NUXT_DATABASE_URL` in `.env` and in Netlify. Never set the password
+   with a plaintext `ALTER ROLE … PASSWORD '…'`: Supabase logs DDL statements, so it would end up
+   in the database logs.
 
 ## Sign-in (Supabase Auth, email codes)
 

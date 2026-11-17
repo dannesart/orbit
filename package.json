@@ -12,7 +12,8 @@
     "postinstall": "nuxt prepare",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
-    "db:migrate": "node --env-file-if-exists=.env server/db/migrate.ts"
+    "db:migrate": "node --env-file-if-exists=.env server/db/migrate.ts",
+    "db:password": "node --env-file-if-exists=.env server/db/password.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

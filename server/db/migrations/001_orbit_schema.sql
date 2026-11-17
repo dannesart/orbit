@@ -36,8 +36,8 @@ CREATE INDEX memberships_workspace_id_idx ON orbit.memberships (workspace_id);
 
 -- Least privilege: the app connects as `orbit_app`, which can only read and write these
 -- four tables (not schema_migrations). Later migrations must grant new tables explicitly.
--- Its password is set once by a project owner, outside the repository:
---   ALTER ROLE orbit_app WITH PASSWORD '…';
+-- It is created without a password. Set one with `npm run db:password`, which prints an
+-- ALTER ROLE statement carrying only a SCRAM verifier (DDL statements are logged by Supabase).
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'orbit_app') THEN
