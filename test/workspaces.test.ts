@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { upsertAccount } from '../server/utils/accounts'
-import { createWorkspace, getWorkspace, listWorkspaces, parseWorkspaceName } from '../server/utils/workspaces'
+import { setName, upsertAccount } from '../server/utils/accounts'
+import { createWorkspace, getWorkspace, listMembers, listWorkspaces, parseWorkspaceName } from '../server/utils/workspaces'
 import { startTestDatabase } from './db'
 
 let testDb: Awaited<ReturnType<typeof startTestDatabase>>
@@ -62,5 +62,27 @@ describe('workspaces', () => {
     const ghost = '00000000-0000-0000-0000-000000000000'
     await expect(createWorkspace(testDb.sql, ghost, 'Ghost Town')).rejects.toThrow()
     expect(await testDb.sql`SELECT 1 FROM orbit.workspaces WHERE name = 'Ghost Town'`).toHaveLength(0)
+  })
+})
+
+describe('members', () => {
+  it('lists everyone in the workspace, the asking person first, by name only', async () => {
+    const owner = await createUser()
+    const ws = await createWorkspace(testDb.sql, owner, 'Crew')
+    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ name: null, you: true }])
+
+    const colleague = await createUser()
+    await setName(testDb.sql, colleague, 'Grace')
+    await testDb.sql`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${colleague}, ${ws.id}, 'member')`
+    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ name: null, you: true }, { name: 'Grace', you: false }])
+    expect(await listMembers(testDb.sql, ws.id, colleague)).toEqual([{ name: 'Grace', you: true }, { name: null, you: false }])
+  })
+
+  it('does not include people from other workspaces', async () => {
+    const a = await createUser()
+    const b = await createUser()
+    const wsA = await createWorkspace(testDb.sql, a, 'A')
+    await createWorkspace(testDb.sql, b, 'B')
+    expect(await listMembers(testDb.sql, wsA.id, a)).toHaveLength(1)
   })
 })

@@ -49,6 +49,18 @@
   to { opacity: 1; transform: none; }
 }
 
+/* Workspace arrival: played once. Without motion, elements simply rest in their final state. */
+@keyframes halo-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes moon-arrive {
+  from { opacity: 0; transform: rotate(-150deg); }
+  30% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
