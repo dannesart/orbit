@@ -1,31 +1,24 @@
 import type { H3Event } from 'h3'
-import type { DatabaseSync } from 'node:sqlite'
 import { type AuthError, createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { type Account, SESSION_TTL_MS, createSession, deleteSession, resolveSession } from './accounts'
-import { openDb } from './db'
+import { useDb } from './db'
 
 const COOKIE = 'orbit_session'
-let db: DatabaseSync | undefined
-
-export function useDb(): DatabaseSync {
-  db ??= openDb(useRuntimeConfig().dbPath)
-  return db
-}
 
 /** The signed-in account, verified against Orbit's own session store. */
-export function currentAccount(event: H3Event): Account | null {
+export async function currentAccount(event: H3Event): Promise<Account | null> {
   const token = getCookie(event, COOKIE)
   return token ? resolveSession(useDb(), token) : null
 }
 
-export function requireAccount(event: H3Event): Account {
-  const account = currentAccount(event)
+export async function requireAccount(event: H3Event): Promise<Account> {
+  const account = await currentAccount(event)
   if (!account) throw createError({ statusCode: 401, statusMessage: 'Please sign in.' })
   return account
 }
 
-export function startSession(event: H3Event, userId: string): void {
-  setCookie(event, COOKIE, createSession(useDb(), userId), {
+export async function startSession(event: H3Event, userId: string): Promise<void> {
+  setCookie(event, COOKIE, await createSession(useDb(), userId), {
     httpOnly: true,
     sameSite: 'lax',
     secure: !import.meta.dev,
@@ -34,9 +27,9 @@ export function startSession(event: H3Event, userId: string): void {
   })
 }
 
-export function endSession(event: H3Event): void {
+export async function endSession(event: H3Event): Promise<void> {
   const token = getCookie(event, COOKIE)
-  if (token) deleteSession(useDb(), token)
+  if (token) await deleteSession(useDb(), token)
   deleteCookie(event, COOKIE, { path: '/' })
 }
 

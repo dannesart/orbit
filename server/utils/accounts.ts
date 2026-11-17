@@ -1,5 +1,5 @@
-import type { DatabaseSync } from 'node:sqlite'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
+import type { Db } from './db'
 
 export interface Account {
   id: string
@@ -12,34 +12,37 @@ export const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30
  * Finds or creates the Orbit user for a verified Supabase identity.
  * The Supabase id is only a lookup key; everything in Orbit references our own user id.
  */
-export function upsertAccount(db: DatabaseSync, authSubject: string, email: string): Account {
-  return db.prepare(`
-    INSERT INTO users (id, auth_subject, email, created_at) VALUES (?, ?, ?, ?)
+export async function upsertAccount(db: Db, authSubject: string, email: string): Promise<Account> {
+  const [account] = await db<Account[]>`
+    INSERT INTO orbit.users (auth_subject, email) VALUES (${authSubject}, ${email})
     ON CONFLICT (auth_subject) DO UPDATE SET email = excluded.email
     RETURNING id, email
-  `).get(randomUUID(), authSubject, email, new Date().toISOString()) as unknown as Account
+  `
+  return account!
 }
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex')
 
 /** Returns the raw token for the cookie; only its hash is stored. */
-export function createSession(db: DatabaseSync, userId: string, now = Date.now()): string {
+export async function createSession(db: Db, userId: string, now = Date.now()): Promise<string> {
   const token = randomBytes(32).toString('base64url')
-  db.prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-    .run(hash(token), userId, new Date(now).toISOString(), new Date(now + SESSION_TTL_MS).toISOString())
+  await db`
+    INSERT INTO orbit.sessions (token_hash, user_id, created_at, expires_at)
+    VALUES (${hash(token)}, ${userId}, ${new Date(now)}, ${new Date(now + SESSION_TTL_MS)})
+  `
   return token
 }
 
-export function resolveSession(db: DatabaseSync, token: string, now = Date.now()): Account | null {
-  const row = db.prepare(`
-    SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ? AND s.expires_at > ?
-  `).get(hash(token), new Date(now).toISOString())
-  return (row as unknown as Account) ?? null
+export async function resolveSession(db: Db, token: string, now = Date.now()): Promise<Account | null> {
+  const [account] = await db<Account[]>`
+    SELECT u.id, u.email FROM orbit.sessions s JOIN orbit.users u ON u.id = s.user_id
+    WHERE s.token_hash = ${hash(token)} AND s.expires_at > ${new Date(now)}
+  `
+  return account ?? null
 }
 
-export function deleteSession(db: DatabaseSync, token: string): void {
-  db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hash(token))
+export async function deleteSession(db: Db, token: string): Promise<void> {
+  await db`DELETE FROM orbit.sessions WHERE token_hash = ${hash(token)}`
 }
 
 export function parseEmail(input: unknown): string | null {

@@ -1,5 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite'
-import { randomUUID } from 'node:crypto'
+import type { Db } from './db'
 
 export type Role = 'admin' | 'member'
 
@@ -20,35 +19,44 @@ export function parseWorkspaceName(input: unknown): { name: string } | { error: 
   return { name }
 }
 
-/** Creates a workspace and makes its creator the administrator, atomically. */
-export function createWorkspace(db: DatabaseSync, userId: string, name: string): WorkspaceView {
-  const id = randomUUID()
-  const createdAt = new Date().toISOString()
-  db.exec('BEGIN')
-  try {
-    db.prepare('INSERT INTO workspaces (id, name, created_by, created_at) VALUES (?, ?, ?, ?)')
-      .run(id, name, userId, createdAt)
-    db.prepare('INSERT INTO memberships (user_id, workspace_id, role, created_at) VALUES (?, ?, ?, ?)')
-      .run(userId, id, 'admin', createdAt)
-    db.exec('COMMIT')
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
-  return { id, name, role: 'admin', createdAt }
-}
+type Row = Omit<WorkspaceView, 'createdAt'> & { createdAt: Date }
+const toView = ({ createdAt, ...rest }: Row): WorkspaceView => ({ ...rest, createdAt: createdAt.toISOString() })
 
-const VIEW_SELECT = `
-  SELECT w.id, w.name, m.role, w.created_at AS createdAt
-  FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
-  WHERE m.user_id = ?`
+/** Creates a workspace and makes its creator the administrator, atomically. */
+export async function createWorkspace(db: Db, userId: string, name: string): Promise<WorkspaceView> {
+  return db.begin(async (tx) => {
+    const [workspace] = await tx<{ id: string; createdAt: Date }[]>`
+      INSERT INTO orbit.workspaces (name, created_by) VALUES (${name}, ${userId})
+      RETURNING id, created_at AS "createdAt"
+    `
+    await tx`
+      INSERT INTO orbit.memberships (user_id, workspace_id, role, created_at)
+      VALUES (${userId}, ${workspace!.id}, 'admin', ${workspace!.createdAt})
+    `
+    return toView({ id: workspace!.id, name, role: 'admin', createdAt: workspace!.createdAt })
+  })
+}
 
 /** Workspaces the user belongs to, most recently created first. */
-export function listWorkspaces(db: DatabaseSync, userId: string): WorkspaceView[] {
-  return db.prepare(`${VIEW_SELECT} ORDER BY w.created_at DESC, w.rowid DESC`).all(userId) as unknown as WorkspaceView[]
+export async function listWorkspaces(db: Db, userId: string): Promise<WorkspaceView[]> {
+  const rows = await db<Row[]>`
+    SELECT w.id, w.name, m.role, w.created_at AS "createdAt"
+    FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id
+    WHERE m.user_id = ${userId}
+    ORDER BY w.created_at DESC
+  `
+  return rows.map(toView)
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /** Returns the workspace only if the user is a member of it. */
-export function getWorkspace(db: DatabaseSync, userId: string, workspaceId: string): WorkspaceView | null {
-  return (db.prepare(`${VIEW_SELECT} AND w.id = ?`).get(userId, workspaceId) as unknown as WorkspaceView) ?? null
+export async function getWorkspace(db: Db, userId: string, workspaceId: string): Promise<WorkspaceView | null> {
+  if (!UUID.test(workspaceId)) return null // not an id we could have issued
+  const [row] = await db<Row[]>`
+    SELECT w.id, w.name, m.role, w.created_at AS "createdAt"
+    FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id
+    WHERE m.user_id = ${userId} AND w.id = ${workspaceId}
+  `
+  return row ? toView(row) : null
 }

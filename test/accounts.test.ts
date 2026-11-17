@@ -1,8 +1,5 @@
-import { DatabaseSync } from 'node:sqlite'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { migrate } from '../server/db/migrate'
 import {
   SESSION_TTL_MS,
   createSession,
@@ -11,55 +8,56 @@ import {
   resolveSession,
   upsertAccount,
 } from '../server/utils/accounts'
-import { openDb } from '../server/utils/db'
+import { startTestDatabase } from './db'
+
+let testDb: Awaited<ReturnType<typeof startTestDatabase>>
+beforeAll(async () => { testDb = await startTestDatabase() })
+afterAll(() => testDb.close())
 
 describe('upsertAccount', () => {
-  it('links one Orbit user to one Supabase identity', () => {
-    const db = openDb(':memory:')
-    const first = upsertAccount(db, 'supabase-user-1', 'ada@example.com')
-    const again = upsertAccount(db, 'supabase-user-1', 'ada@example.com')
-    const other = upsertAccount(db, 'supabase-user-2', 'grace@example.com')
+  it('links one Orbit user to one Supabase identity', async () => {
+    const first = await upsertAccount(testDb.sql, 'supabase-user-1', 'ada@example.com')
+    const again = await upsertAccount(testDb.sql, 'supabase-user-1', 'ada@example.com')
+    const other = await upsertAccount(testDb.sql, 'supabase-user-2', 'grace@example.com')
 
     expect(again.id).toBe(first.id)
     expect(other.id).not.toBe(first.id)
   })
 
-  it('follows an email change on the identity without creating a new user', () => {
-    const db = openDb(':memory:')
-    const before = upsertAccount(db, 'supabase-user-1', 'ada@old.example')
-    const after = upsertAccount(db, 'supabase-user-1', 'ada@new.example')
+  it('follows an email change on the identity without creating a new user', async () => {
+    const before = await upsertAccount(testDb.sql, 'supabase-user-3', 'ada@old.example')
+    const after = await upsertAccount(testDb.sql, 'supabase-user-3', 'ada@new.example')
     expect(after).toEqual({ id: before.id, email: 'ada@new.example' })
   })
 })
 
 describe('sessions', () => {
-  it('resolves to its account, in any number of browsers at once', () => {
-    const db = openDb(':memory:')
-    const ada = upsertAccount(db, 'supabase-user-1', 'ada@example.com')
-    const laptop = createSession(db, ada.id)
-    const phone = createSession(db, ada.id)
+  it('resolves to its account, in any number of browsers at once', async () => {
+    const ada = await upsertAccount(testDb.sql, 'supabase-ada', 'ada@example.com')
+    const laptop = await createSession(testDb.sql, ada.id)
+    const phone = await createSession(testDb.sql, ada.id)
 
-    expect(resolveSession(db, laptop)).toEqual(ada)
-    expect(resolveSession(db, phone)).toEqual(ada)
+    expect(await resolveSession(testDb.sql, laptop)).toEqual(ada)
+    expect(await resolveSession(testDb.sql, phone)).toEqual(ada)
   })
 
-  it('stores only a hash of the token', () => {
-    const db = openDb(':memory:')
-    const token = createSession(db, upsertAccount(db, 's', 'a@example.com').id)
-    const stored = db.prepare('SELECT token_hash FROM sessions').get() as { token_hash: string }
-    expect(stored.token_hash).not.toContain(token)
+  it('stores only a hash of the token', async () => {
+    const user = await upsertAccount(testDb.sql, 'supabase-hash', 'hash@example.com')
+    const token = await createSession(testDb.sql, user.id)
+    const rows = await testDb.sql<{ token_hash: string }[]>`SELECT token_hash FROM orbit.sessions WHERE user_id = ${user.id}`
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.token_hash).not.toContain(token)
   })
 
-  it('rejects unknown, expired and signed-out sessions', () => {
-    const db = openDb(':memory:')
-    const ada = upsertAccount(db, 'supabase-user-1', 'ada@example.com')
-    const token = createSession(db, ada.id)
+  it('rejects unknown, expired and signed-out sessions', async () => {
+    const ada = await upsertAccount(testDb.sql, 'supabase-expiry', 'expiry@example.com')
+    const token = await createSession(testDb.sql, ada.id)
 
-    expect(resolveSession(db, 'not-a-token')).toBeNull()
-    expect(resolveSession(db, token, Date.now() + SESSION_TTL_MS + 1)).toBeNull()
+    expect(await resolveSession(testDb.sql, 'not-a-token')).toBeNull()
+    expect(await resolveSession(testDb.sql, token, Date.now() + SESSION_TTL_MS + 1)).toBeNull()
 
-    deleteSession(db, token)
-    expect(resolveSession(db, token)).toBeNull()
+    await deleteSession(testDb.sql, token)
+    expect(await resolveSession(testDb.sql, token)).toBeNull()
   })
 })
 
@@ -72,29 +70,33 @@ describe('parseEmail', () => {
   })
 })
 
-describe('schema migration', () => {
-  it('drops anonymous prototype data instead of handing it to an account', () => {
-    const path = join(mkdtempSync(join(tmpdir(), 'orbit-')), 'orbit.sqlite')
-    const legacy = new DatabaseSync(path)
-    legacy.exec(`
-      CREATE TABLE users (id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
-      CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, created_by TEXT, created_at TEXT);
-      CREATE TABLE memberships (user_id TEXT, workspace_id TEXT, role TEXT, created_at TEXT);
-      INSERT INTO users VALUES ('anon', 'x');
-      INSERT INTO workspaces VALUES ('w1', 'Old', 'anon', 'x');
-      INSERT INTO memberships VALUES ('anon', 'w1', 'admin', 'x');
-    `)
-    legacy.close()
+describe('migrations', () => {
+  it('apply once; re-running changes nothing', async () => {
+    expect(await migrate(testDb.sql)).toEqual([])
+    const names = await testDb.sql`SELECT name FROM orbit.schema_migrations ORDER BY name`
+    expect(names.map((r) => r.name)).toEqual(['001_orbit_schema.sql'])
+  })
 
-    const db = openDb(path)
-    expect(db.prepare('SELECT COUNT(*) AS n FROM workspaces').get()).toEqual({ n: 0 })
-    expect(db.prepare('SELECT COUNT(*) AS n FROM users').get()).toEqual({ n: 0 })
-    db.close()
+  it('give orbit_app row access to Orbit tables only', async () => {
+    const asRole = (role: string, query: string) =>
+      testDb.sql.begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL ROLE ${role}`)
+        return tx.unsafe(query)
+      })
 
-    // Re-opening a current database keeps its data.
-    const again = openDb(path)
-    upsertAccount(again, 's', 'a@example.com')
-    again.close()
-    expect(openDb(path).prepare('SELECT COUNT(*) AS n FROM users').get()).toEqual({ n: 1 })
+    await expect(asRole('orbit_app', 'SELECT count(*) FROM orbit.users')).resolves.toBeDefined()
+    await expect(asRole('orbit_app', 'SELECT * FROM orbit.schema_migrations')).rejects.toThrow(/permission denied/)
+    await expect(asRole('orbit_app', 'CREATE TABLE orbit.sneaky (id int)')).rejects.toThrow(/permission denied/)
+    await expect(asRole('orbit_app', 'DROP TABLE orbit.sessions')).rejects.toThrow(/must be owner|permission denied/)
+  })
+
+  it('give Supabase API roles no access at all', async () => {
+    for (const role of ['anon', 'authenticated']) {
+      const attempt = testDb.sql.begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL ROLE ${role}`)
+        return tx.unsafe('SELECT * FROM orbit.users')
+      })
+      await expect(attempt).rejects.toThrow(/permission denied/)
+    }
   })
 })

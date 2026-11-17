@@ -1,3 +1,3 @@
-export default defineEventHandler((event) => {
-  return listWorkspaces(useDb(), requireAccount(event).id)
+export default defineEventHandler(async (event) => {
+  return listWorkspaces(useDb(), (await requireAccount(event)).id)
 })

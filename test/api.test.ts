@@ -1,32 +1,32 @@
 // Authorization boundaries and the email-code sign-in over real HTTP against a built Orbit server.
-// Supabase Auth is replaced by a local fake (test/fake-supabase.ts), so no test sends email
-// or reaches the network.
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+// PostgreSQL is an in-process PGlite with the real migrations (test/db.ts); Supabase Auth is a
+// local fake (test/fake-supabase.ts). No test sends email or reaches the network.
 import { fileURLToPath } from 'node:url'
 import { fetch, setup } from '@nuxt/test-utils/e2e'
 import { afterAll, describe, expect, it } from 'vitest'
 import { SESSION_TTL_MS, createSession, upsertAccount } from '../server/utils/accounts'
-import { openDb } from '../server/utils/db'
+import { startTestDatabase } from './db'
 import { EMAIL_CAP_REACHED, SEND_FAILS, startFakeSupabase } from './fake-supabase'
 
 const supabase = await startFakeSupabase()
-afterAll(() => supabase.close())
+const testDb = await startTestDatabase({ asApp: true }) // the server runs as orbit_app, as on Netlify
+afterAll(async () => {
+  supabase.close()
+  await testDb.close()
+})
 
-const dbPath = join(mkdtempSync(join(tmpdir(), 'orbit-api-')), 'orbit.sqlite')
-process.env.NUXT_DB_PATH = dbPath
+process.env.NUXT_DATABASE_URL = testDb.url
 process.env.NUXT_SUPABASE_URL = supabase.url
 process.env.NUXT_SUPABASE_KEY = 'sb_publishable_test'
 
 await setup({ rootDir: fileURLToPath(new URL('..', import.meta.url)), server: true, browser: false })
 
-const db = openDb(dbPath)
-const ada = upsertAccount(db, 'supabase-ada', 'ada@example.com')
-const grace = upsertAccount(db, 'supabase-grace', 'grace@example.com')
-const adaLaptop = `orbit_session=${createSession(db, ada.id)}`
-const adaPhone = `orbit_session=${createSession(db, ada.id)}`
-const graceLaptop = `orbit_session=${createSession(db, grace.id)}`
+const db = testDb.sql
+const ada = await upsertAccount(db, 'supabase-ada', 'ada@example.com')
+const grace = await upsertAccount(db, 'supabase-grace', 'grace@example.com')
+const adaLaptop = `orbit_session=${await createSession(db, ada.id)}`
+const adaPhone = `orbit_session=${await createSession(db, ada.id)}`
+const graceLaptop = `orbit_session=${await createSession(db, grace.id)}`
 
 const api = (path: string, cookie?: string, init: RequestInit = {}) =>
   fetch(path, {
@@ -42,7 +42,7 @@ describe('signed-out visitors', () => {
     expect((await createWorkspace(undefined, 'Sneaky')).status).toBe(401)
     expect((await api('/api/workspaces')).status).toBe(401)
     expect((await api('/api/workspaces/anything')).status).toBe(401)
-    expect(db.prepare('SELECT COUNT(*) AS n FROM workspaces').get()).toEqual({ n: 0 })
+    expect(await db`SELECT 1 FROM orbit.workspaces`).toHaveLength(0)
   })
 
   it('are sent to sign-in from any page', async () => {
@@ -55,7 +55,7 @@ describe('signed-out visitors', () => {
   })
 
   it('are rejected with a forged or expired session', async () => {
-    const expired = `orbit_session=${createSession(db, ada.id, Date.now() - SESSION_TTL_MS - 1)}`
+    const expired = `orbit_session=${await createSession(db, ada.id, Date.now() - SESSION_TTL_MS - 1)}`
     for (const cookie of ['orbit_session=forged', expired]) {
       expect((await api('/api/workspaces', cookie)).status).toBe(401)
     }
@@ -69,7 +69,7 @@ describe('signed-in accounts', () => {
     const workspace = await res.json()
     expect(workspace.role).toBe('admin')
 
-    expect(db.prepare('SELECT user_id, role FROM memberships WHERE workspace_id = ?').all(workspace.id))
+    expect([...await db`SELECT user_id, role FROM orbit.memberships WHERE workspace_id = ${workspace.id}`])
       .toEqual([{ user_id: ada.id, role: 'admin' }])
   })
 
@@ -182,7 +182,7 @@ describe('verifying a code', () => {
     await desktop.requestCode('linus@example.com')
     await desktop.verify('linus@example.com', supabase.codeFor('linus@example.com'))
     expect(await (await desktop.request('/api/workspaces')).json()).toEqual([created])
-    expect(db.prepare('SELECT COUNT(*) AS n FROM users WHERE email = ?').get('linus@example.com')).toEqual({ n: 1 })
+    expect(await db`SELECT 1 FROM orbit.users WHERE email = 'linus@example.com'`).toHaveLength(1)
   })
 
   it('accepts a code only once', async () => {
