@@ -69,6 +69,22 @@ body {
   @apply bg-slate-50 text-slate-800 antialiased;
 }
 
+/*
+ * Cursor convention: enabled controls show a pointer, disabled ones don't pretend to be
+ * clickable. Tailwind v4's preflight leaves buttons at the default cursor; links already
+ * get a pointer from the browser. Labels are left alone on purpose: some are headings.
+ * Component classes can still refine this (e.g. .btn-primary shows "wait" while saving).
+ */
+@layer base {
+  :where(button, select, summary, [role="button"], [role="menuitem"], [role="tab"], [role="option"],
+         input:is([type="button"], [type="submit"], [type="reset"], [type="checkbox"], [type="radio"], [type="file"])) {
+    cursor: pointer;
+  }
+  :where(:disabled, [aria-disabled="true"]) {
+    cursor: default;
+  }
+}
+
 @layer components {
   .field {
     @apply mt-2 block w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 shadow-xs outline-none transition placeholder:text-slate-400 focus:border-accent-400 focus:ring-4 focus:ring-accent-100 aria-invalid:border-rose-300 aria-invalid:focus:ring-rose-100;
@@ -77,6 +93,6 @@ body {
     @apply flex w-full items-center justify-center gap-2 rounded-xl bg-accent-600 px-4 py-3 font-medium text-white shadow-sm shadow-accent-600/30 transition hover:bg-accent-500 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent-200 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70;
   }
   .link {
-    @apply rounded font-medium text-accent-600 underline-offset-4 transition hover:text-accent-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-200 disabled:cursor-default disabled:text-slate-400 disabled:no-underline;
+    @apply rounded font-medium text-accent-600 underline-offset-4 transition hover:text-accent-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-200 disabled:text-slate-400 disabled:no-underline;
   }
 }
