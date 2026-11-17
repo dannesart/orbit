@@ -49,12 +49,40 @@
   to { opacity: 1; transform: none; }
 }
 
+/* Workspace arrival: played once. Without motion, elements simply rest in their final state. */
+@keyframes halo-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes moon-arrive {
+  from { opacity: 0; transform: rotate(-150deg); }
+  30% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
 body {
   @apply bg-slate-50 text-slate-800 antialiased;
+}
+
+/*
+ * Cursor convention: enabled controls show a pointer, disabled ones don't pretend to be
+ * clickable. Tailwind v4's preflight leaves buttons at the default cursor; links already
+ * get a pointer from the browser. Labels are left alone on purpose: some are headings.
+ * Component classes can still refine this (e.g. .btn-primary shows "wait" while saving).
+ */
+@layer base {
+  :where(button, select, summary, [role="button"], [role="menuitem"], [role="tab"], [role="option"],
+         input:is([type="button"], [type="submit"], [type="reset"], [type="checkbox"], [type="radio"], [type="file"])) {
+    cursor: pointer;
+  }
+  :where(:disabled, [aria-disabled="true"]) {
+    cursor: default;
+  }
 }
 
 @layer components {
@@ -65,6 +93,6 @@ body {
     @apply flex w-full items-center justify-center gap-2 rounded-xl bg-accent-600 px-4 py-3 font-medium text-white shadow-sm shadow-accent-600/30 transition hover:bg-accent-500 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent-200 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70;
   }
   .link {
-    @apply rounded font-medium text-accent-600 underline-offset-4 transition hover:text-accent-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-200 disabled:cursor-default disabled:text-slate-400 disabled:no-underline;
+    @apply rounded font-medium text-accent-600 underline-offset-4 transition hover:text-accent-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-200 disabled:text-slate-400 disabled:no-underline;
   }
 }

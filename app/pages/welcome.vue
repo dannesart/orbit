@@ -1,12 +1,16 @@
 <script setup lang="ts">
 useHead({ title: 'Orbit' })
 
+const route = useRoute()
 const account = useAccount()
-const name = ref('')
+// Same question, also used to change an existing name (from the account menu).
+const changing = Boolean(account.value?.name)
+const back = typeof route.query.back === 'string' && /^\/(?!\/)/.test(route.query.back) ? route.query.back : '/'
+const name = ref(account.value?.name ?? '')
 const error = ref('')
 const saving = ref(false)
 const input = useTemplateRef<HTMLInputElement>('input')
-onMounted(() => input.value?.focus())
+onMounted(() => (changing ? input.value?.select() : input.value?.focus()))
 
 async function save() {
   error.value = ''
@@ -17,7 +21,7 @@ async function save() {
   saving.value = true
   try {
     account.value = await $fetch<SignedInAccount>('/api/me', { method: 'PUT', body: { name: name.value } })
-    await navigateTo('/', { replace: true })
+    await navigateTo(back, { replace: true })
   } catch (e: any) {
     error.value = e?.data?.statusMessage || 'Something went wrong. Please try again.'
     saving.value = false
@@ -35,7 +39,9 @@ async function save() {
       <h1 class="text-center text-2xl font-semibold tracking-tight text-slate-900">
         <label for="name">What should we call you?</label>
       </h1>
-      <p id="name-hint" class="mt-2 text-center text-slate-500">That’s all we need for now.</p>
+      <p id="name-hint" class="mt-2 text-center text-slate-500">
+        {{ changing ? 'Change it whenever you like.' : 'That’s all we need for now.' }}
+      </p>
 
       <input
         id="name"
@@ -56,8 +62,11 @@ async function save() {
 
       <button type="submit" :disabled="saving" class="btn-primary mt-4">
         <Spinner v-if="saving" />
-        {{ saving ? 'Saving…' : 'Continue' }}
+        {{ saving ? 'Saving…' : changing ? 'Save' : 'Continue' }}
       </button>
+      <p v-if="changing" class="mt-4 text-center text-sm">
+        <NuxtLink :to="back" class="link">Never mind</NuxtLink>
+      </p>
     </form>
   </OrbitStage>
 </template>

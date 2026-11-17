@@ -12,5 +12,5 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // One question before anything else, asked once: new people and existing people without a
   // name answer it on their next visit; their workspaces are untouched either way.
   if (!account.value.name && to.path !== '/welcome') return navigateTo('/welcome')
-  if (account.value.name && to.path === '/welcome') return navigateTo('/')
+  if (account.value.name && to.path === '/welcome' && !to.query.change) return navigateTo('/')
 })

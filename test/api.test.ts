@@ -270,7 +270,8 @@ describe('what should we call you?', () => {
     expect(await location(browser, `/w/${workspace.id}`)).toBe('/welcome')
     await putName(browser, 'Veteran')
     expect(await location(browser, `/w/${workspace.id}`)).toBe(200)
-    expect(await (await browser.request(`/api/workspaces/${workspace.id}`)).json()).toEqual(workspace)
+    expect(await (await browser.request(`/api/workspaces/${workspace.id}`)).json())
+      .toEqual({ ...workspace, members: [{ name: 'Veteran', you: true }] })
   })
 
   it('only ever changes the signed-in person’s own name', async () => {
@@ -288,5 +289,34 @@ describe('what should we call you?', () => {
       expect(res.status).toBe(422)
     }
     expect(await (await browser.request('/api/me')).json()).toEqual({ email: 'picky@example.com', name: null })
+  })
+})
+
+describe('workspace arrival', () => {
+  it('shows who is actually here, by name only, to members only', async () => {
+    const owner = await setName(db, (await upsertAccount(db, 'supabase-host', 'host@example.com')).id, 'Host')
+    const guest = await setName(db, (await upsertAccount(db, 'supabase-guest', 'guest@example.com')).id, 'Guest')
+    const outsider = await setName(db, (await upsertAccount(db, 'supabase-outsider', 'outsider@example.com')).id, 'Outsider')
+    const ws = await createWorkspaceFor(db, owner.id, 'Observatory')
+    const ownerCookie = `orbit_session=${await createSession(db, owner.id)}`
+
+    const alone = await (await api(`/api/workspaces/${ws.id}`, ownerCookie)).json()
+    expect(alone.members).toEqual([{ name: 'Host', you: true }])
+
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${guest.id}, ${ws.id}, 'member')`
+    const together = await (await api(`/api/workspaces/${ws.id}`, ownerCookie)).json()
+    expect(together.members).toEqual([{ name: 'Host', you: true }, { name: 'Guest', you: false }])
+    expect(JSON.stringify(together)).not.toContain('@') // no emails
+
+    const outsiderCookie = `orbit_session=${await createSession(db, outsider.id)}`
+    expect((await api(`/api/workspaces/${ws.id}`, outsiderCookie)).status).toBe(404)
+  })
+
+  it('lets named people reach "Change name", but sends them past the first-time question', async () => {
+    const change = await api('/welcome?change=1', adaPhone) // adaLaptop was signed out above
+    expect([change.status, change.headers.get('location')]).toEqual([200, null])
+    const plain = await api('/welcome', adaPhone)
+    expect(plain.status).toBe(302)
+    expect(plain.headers.get('location')).toBe('/')
   })
 })

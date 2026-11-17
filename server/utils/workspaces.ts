@@ -60,3 +60,22 @@ export async function getWorkspace(db: Db, userId: string, workspaceId: string):
   `
   return row ? toView(row) : null
 }
+
+export interface Member {
+  /** What they asked to be called; null if they haven't said yet. Emails are never exposed. */
+  name: string | null
+  you: boolean
+}
+
+/**
+ * Everyone in a workspace, the asking person first. Callers must have confirmed the asking
+ * person's own membership first (getWorkspace), so non-members learn nothing.
+ */
+export async function listMembers(db: Db, workspaceId: string, userId: string): Promise<Member[]> {
+  return db<Member[]>`
+    SELECT u.display_name AS name, (u.id = ${userId}) AS you
+    FROM orbit.memberships m JOIN orbit.users u ON u.id = m.user_id
+    WHERE m.workspace_id = ${workspaceId}
+    ORDER BY (u.id = ${userId}) DESC, m.created_at
+  `
+}
