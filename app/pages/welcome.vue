@@ -1,30 +1,26 @@
 <script setup lang="ts">
-useHead({ title: "Orbit" });
+useHead({ title: 'Orbit' })
 
-const account = useAccount();
-const name = ref("");
-const error = ref("");
-const saving = ref(false);
-const input = useTemplateRef<HTMLInputElement>("input");
-onMounted(() => input.value?.focus());
+const account = useAccount()
+const name = ref('')
+const error = ref('')
+const saving = ref(false)
+const input = useTemplateRef<HTMLInputElement>('input')
+onMounted(() => input.value?.focus())
 
 async function save() {
-  error.value = "";
+  error.value = ''
   if (!name.value.trim()) {
-    error.value = "Tell us what to call you.";
-    return;
+    error.value = 'Tell us what to call you.'
+    return
   }
-  saving.value = true;
+  saving.value = true
   try {
-    account.value = await $fetch<SignedInAccount>("/api/me", {
-      method: "PUT",
-      body: { name: name.value },
-    });
-    await navigateTo("/", { replace: true });
+    account.value = await $fetch<SignedInAccount>('/api/me', { method: 'PUT', body: { name: name.value } })
+    await navigateTo('/', { replace: true })
   } catch (e: any) {
-    error.value =
-      e?.data?.statusMessage || "Something went wrong. Please try again.";
-    saving.value = false;
+    error.value = e?.data?.statusMessage || 'Something went wrong. Please try again.'
+    saving.value = false
   }
 }
 </script>
@@ -36,14 +32,10 @@ async function save() {
         <WorkspaceAvatar :name="name" class="size-16 rounded-full text-2xl" />
       </div>
 
-      <h1
-        class="text-center text-2xl font-semibold tracking-tight text-slate-900"
-      >
+      <h1 class="text-center text-2xl font-semibold tracking-tight text-slate-900">
         <label for="name">What should we call you?</label>
       </h1>
-      <p id="name-hint" class="mt-2 text-center text-slate-500">
-        That’s all we need for now.
-      </p>
+      <p id="name-hint" class="mt-2 text-center text-slate-500">That’s all we need for now.</p>
 
       <input
         id="name"
@@ -59,18 +51,12 @@ async function save() {
         class="field mt-8 text-center text-lg"
         placeholder="e.g. Captain Stardust"
         @input="error = ''"
-      />
-      <p
-        id="name-error"
-        class="mt-2 min-h-5 text-center text-sm text-rose-600"
-        aria-live="polite"
       >
-        {{ error }}
-      </p>
+      <p id="name-error" class="mt-2 min-h-5 text-center text-sm text-rose-600" aria-live="polite">{{ error }}</p>
 
       <button type="submit" :disabled="saving" class="btn-primary mt-4">
         <Spinner v-if="saving" />
-        {{ saving ? "Saving…" : "Continue" }}
+        {{ saving ? 'Saving…' : 'Continue' }}
       </button>
     </form>
   </OrbitStage>
