@@ -87,7 +87,7 @@ async function create() {
     <template #footer>
       <p>You’ll be its administrator. Nothing else to set up.</p>
       <p class="mt-2">
-        Signed in as <span class="font-medium text-slate-500">{{ account }}</span> ·
+        Signed in as <span class="font-medium text-slate-500">{{ account?.email }}</span> ·
         <button type="button" class="link text-sm" @click="signOut">Sign out</button>
       </p>
     </template>

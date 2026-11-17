@@ -69,12 +69,11 @@ async function verify() {
   }
   busy.value = true
   try {
-    const { email: signedIn } = await $fetch<{ email: string }>('/api/auth/verify', {
+    useAccount().value = await $fetch<SignedInAccount>('/api/auth/verify', {
       method: 'POST',
       body: { email: email.value, code: code.value },
     })
-    useAccount().value = signedIn
-    await navigateTo('/')
+    await navigateTo('/') // the auth middleware asks for a name first, if we don't have one yet
   } catch (e) {
     error.value = message(e)
     busy.value = false
