@@ -10,9 +10,8 @@ export default defineEventHandler(async (event) => {
   const supabase = useSupabase()
   const { data, error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' })
   if (error || !data.user) {
-    throw error?.status === 429
-      ? authFailure(error, '')
-      : createError({ statusCode: 400, statusMessage: 'That code didn’t work. Check it, or send a new one.' })
+    const message = 'That code didn’t work. Check it, or send a new one.'
+    throw error ? authFailure(error, message) : createError({ statusCode: 400, statusMessage: message })
   }
 
   const account = upsertAccount(useDb(), data.user.id, data.user.email ?? email)
