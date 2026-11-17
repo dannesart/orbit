@@ -52,7 +52,7 @@ function changeName() {
       aria-haspopup="menu"
       :aria-expanded="open"
       :aria-label="`${name}, account menu`"
-      class="flex items-center gap-2.5 rounded-full py-1 pr-1 pl-1 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-200 sm:pr-3"
+      class="flex items-center gap-2.5 rounded-full py-1 pr-1 pl-1 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 sm:pr-3"
       @click="open ? close() : show()"
     >
       <WorkspaceAvatar :name="name" class="size-8 rounded-full text-sm" />
