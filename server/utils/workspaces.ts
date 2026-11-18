@@ -41,11 +41,14 @@ export function parseDescription(input: unknown): { description: string | null }
 type Row = Omit<WorkspaceView, 'createdAt'> & { createdAt: Date }
 const toView = ({ createdAt, ...rest }: Row): WorkspaceView => ({ ...rest, createdAt: createdAt.toISOString() })
 
-/** Creates a workspace and makes its creator the administrator, atomically. */
+/**
+ * Creates a workspace with its creator as owner and steward (admin), atomically. The
+ * database checks at commit that the owner is a member, so both rows land or neither does.
+ */
 export async function createWorkspace(db: Db, userId: string, name: string): Promise<WorkspaceView> {
   return db.begin(async (tx) => {
     const [workspace] = await tx<{ id: string; createdAt: Date }[]>`
-      INSERT INTO orbit.workspaces (name, created_by) VALUES (${name}, ${userId})
+      INSERT INTO orbit.workspaces (name, created_by, owner_id) VALUES (${name}, ${userId}, ${userId})
       RETURNING id, created_at AS "createdAt"
     `
     await tx`
@@ -120,6 +123,10 @@ export interface Member {
   /** What they asked to be called; null if they haven't said yet. Emails are never exposed. */
   name: string | null
   you: boolean
+  /** Their membership role: admin (Steward in the product) or member. */
+  role: Role
+  /** The workspace's current owner, read from workspaces.owner_id (never from the creator). */
+  owner: boolean
 }
 
 /**
@@ -128,8 +135,10 @@ export interface Member {
  */
 export async function listMembers(db: Db, workspaceId: string, userId: string): Promise<Member[]> {
   return db<Member[]>`
-    SELECT u.display_name AS name, (u.id = ${userId}) AS you
-    FROM orbit.memberships m JOIN orbit.users u ON u.id = m.user_id
+    SELECT u.display_name AS name, (u.id = ${userId}) AS you, m.role, (m.user_id = w.owner_id) AS owner
+    FROM orbit.memberships m
+      JOIN orbit.users u ON u.id = m.user_id
+      JOIN orbit.workspaces w ON w.id = m.workspace_id
     WHERE m.workspace_id = ${workspaceId}
     ORDER BY (u.id = ${userId}) DESC, m.created_at
   `

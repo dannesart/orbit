@@ -102,7 +102,7 @@ async function submit() {
         </form>
 
         <div v-else class="mt-6">
-          <p class="text-slate-500">Only this workspace’s admins can change these.</p>
+          <p class="text-slate-500">Only the owner and stewards can change these.</p>
           <dl class="mt-6 flex flex-col gap-5">
             <div>
               <dt class="text-sm font-medium text-slate-700">Name</dt>

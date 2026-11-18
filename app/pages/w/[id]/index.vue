@@ -68,6 +68,7 @@ const presence = computed(() => {
             </ul>
             <p class="text-slate-600">{{ presence }}</p>
           </div>
+          <NuxtLink :to="`/w/${ws.id}/people`" class="link text-sm">See everyone</NuxtLink>
         </section>
       </div>
     </main>

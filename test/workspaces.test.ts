@@ -77,13 +77,13 @@ describe('members', () => {
   it('lists everyone in the workspace, the asking person first, by name only', async () => {
     const owner = await createUser()
     const ws = await createWorkspace(testDb.sql, owner, 'Crew')
-    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ name: null, you: true }])
+    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ name: null, you: true, role: 'admin', owner: true }])
 
     const colleague = await createUser()
     await setName(testDb.sql, colleague, 'Grace')
     await testDb.sql`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${colleague}, ${ws.id}, 'member')`
-    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ name: null, you: true }, { name: 'Grace', you: false }])
-    expect(await listMembers(testDb.sql, ws.id, colleague)).toEqual([{ name: 'Grace', you: true }, { name: null, you: false }])
+    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ name: null, you: true, role: 'admin', owner: true }, { name: 'Grace', you: false, role: 'member', owner: false }])
+    expect(await listMembers(testDb.sql, ws.id, colleague)).toEqual([{ name: 'Grace', you: true, role: 'member', owner: false }, { name: null, you: false, role: 'admin', owner: true }])
   })
 
   it('does not include people from other workspaces', async () => {

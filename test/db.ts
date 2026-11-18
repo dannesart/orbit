@@ -14,7 +14,9 @@ export async function startTestDatabase({
   asApp = false,
   /** Runs as the superuser after migrating, before switching role: seed data, or break things on purpose. */
   prepare,
-}: { asApp?: boolean; prepare?: (sql: postgres.Sql) => Promise<void> } = {}) {
+  /** Apply migrations only up to this one (e.g. to test a later migration's backfill). */
+  upTo,
+}: { asApp?: boolean; prepare?: (sql: postgres.Sql) => Promise<void>; upTo?: string } = {}) {
   const pg = await PGlite.create()
   // Supabase's API roles, so the migration's revokes run exactly as they would there.
   await pg.exec('CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;')
@@ -23,7 +25,7 @@ export async function startTestDatabase({
   await server.start()
   const url = `postgres://postgres:postgres@127.0.0.1:${server.port}/postgres`
   const sql = postgres(url, { max: 1, prepare: false, ssl: false, onnotice: () => {} })
-  await migrate(sql)
+  await migrate(sql, { upTo })
   if (prepare) await prepare(sql)
   if (asApp) await pg.exec('SET ROLE orbit_app')
 
