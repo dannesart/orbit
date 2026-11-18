@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { WorkspaceView } from '~~/server/utils/workspaces'
 
-defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name'> }>()
+defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name' | 'description'> }>()
 </script>
 
 <template>
@@ -13,7 +13,7 @@ defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name'> }>()
         <span class="text-slate-300" aria-hidden="true">/</span>
         <WorkspaceMenu :workspace="workspace" />
       </div>
-      <IdentityMenu />
+      <IdentityMenu class="shrink-0" />
     </div>
   </header>
 </template>
