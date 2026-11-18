@@ -2,15 +2,20 @@
 import type { WorkspaceView } from '~~/server/utils/workspaces'
 
 const account = useAccount()
+const lastWorkspace = useLastWorkspace()
 const { data: workspaces, error: loadError, refresh } = await useFetch<WorkspaceView[]>('/api/workspaces')
+
+// Returning people go back to the workspace they were last in on this device, if they still
+// belong to it; otherwise to their most recent one. Only workspaces the server just listed
+// as theirs are candidates, so a remembered id can never lead anywhere else.
+const destination = () => pickWorkspace(workspaces.value ?? [], lastWorkspace.value)
 
 if (loadError.value?.statusCode === 401) {
   account.value = null
   throw createError({ statusCode: 401, statusMessage: 'Signed out', fatal: true })
 }
 if (workspaces.value?.length) {
-  // Returning users go straight to their most recent workspace.
-  await navigateTo(`/w/${workspaces.value[0]!.id}`, { replace: true })
+  await navigateTo(`/w/${destination()!.id}`, { replace: true })
 }
 
 // Creating a workspace is only offered after Orbit has actually confirmed there are none.
@@ -28,34 +33,9 @@ async function retry() {
     account.value = null
     await navigateTo('/sign-in')
   } else if (workspaces.value?.length) {
-    await navigateTo(`/w/${workspaces.value[0]!.id}`, { replace: true })
+    await navigateTo(`/w/${destination()!.id}`, { replace: true })
   } else if (!confirmedEmpty.value) {
     retryNote.value = 'Still no luck. Give it a moment and try again.'
-  }
-}
-
-const name = ref('')
-const error = ref('')
-const saving = ref(false)
-const input = useTemplateRef<HTMLInputElement>('input')
-onMounted(() => input.value?.focus())
-
-async function create() {
-  error.value = ''
-  if (!name.value.trim()) {
-    error.value = 'Give your workspace a name.'
-    return
-  }
-  saving.value = true
-  try {
-    const workspace = await $fetch<WorkspaceView>('/api/workspaces', {
-      method: 'POST',
-      body: { name: name.value },
-    })
-    await navigateTo(`/w/${workspace.id}?welcome=1`)
-  } catch (e: any) {
-    error.value = e?.data?.statusMessage || 'Something went wrong. Please try again.'
-    saving.value = false
   }
 }
 </script>
@@ -76,48 +56,7 @@ async function create() {
       <p class="mt-3 min-h-5 text-sm text-slate-500" aria-live="polite">{{ retryNote }}</p>
     </section>
 
-    <form v-else novalidate @submit.prevent="create">
-      <div class="mb-6 flex justify-center">
-        <WorkspaceAvatar :name="name" class="size-16 text-2xl" />
-      </div>
-
-      <h1 class="text-center text-2xl font-semibold tracking-tight text-slate-900">
-        Create your workspace
-      </h1>
-      <p class="mx-auto mt-2 max-w-xs text-center text-balance text-slate-500">
-        A workspace is a shared home for your team. All it needs to begin is a name.
-      </p>
-
-      <label for="workspace-name" class="mt-8 block text-sm font-medium text-slate-700">
-        Workspace name
-      </label>
-      <input
-        id="workspace-name"
-        ref="input"
-        v-model="name"
-        type="text"
-        maxlength="64"
-        autocomplete="off"
-        placeholder="e.g. Northwind Studio"
-        :aria-invalid="!!error"
-        aria-describedby="workspace-name-hint"
-        class="field"
-        @input="error = ''"
-      >
-      <p
-        id="workspace-name-hint"
-        class="mt-2 min-h-5 text-sm"
-        :class="error ? 'text-red-700' : 'text-slate-400'"
-        aria-live="polite"
-      >
-        {{ error || 'Your company, team or project.' }}
-      </p>
-
-      <button type="submit" :disabled="saving" class="btn-primary mt-4">
-        <Spinner v-if="saving" />
-        {{ saving ? 'Creating…' : 'Create workspace' }}
-      </button>
-    </form>
+    <CreateWorkspaceForm v-else />
 
     <template #footer>
       <p v-if="confirmedEmpty">You’ll be its administrator. Nothing else to set up.</p>

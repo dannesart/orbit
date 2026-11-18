@@ -1,20 +1,42 @@
 <!--
   The workspace in the header: its avatar and name, opening a small identity card for the
-  place you're in, with what you can do here beneath it. Everything shown comes from the
-  page's own useWorkspace() state, so a renamed workspace or new purpose appears at once.
-  Room for "other workspaces" later: a section between the identity and the actions.
+  place you're in, with what you can do here beneath it. The current workspace always comes
+  from the page's own useWorkspace() state, so a renamed workspace or new purpose appears at
+  once. Below that, the other workspaces you belong to, and a way to create another.
 -->
 <script setup lang="ts">
 import type { WorkspaceView } from '~~/server/utils/workspaces'
 
 const props = defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name' | 'description' | 'role'> }>()
-const { open, root, trigger, menu, toggle, onKeydown } = useMenu()
+const { open, root, trigger, menu, show, close, toggle, onKeydown } = useMenu()
 const ids = useId()
 const settingsLabel = computed(() => settingsTitle(props.workspace.role))
 
-function goToSettings() {
+// Every workspace you belong to. Lazy, so it never holds up the page; while it loads, or if it
+// fails, the menu still works for the workspace you're in, and a failure says so.
+const { data: workspaces, error: listError, status: listStatus, refresh } =
+  useFetch<WorkspaceView[]>('/api/workspaces', { lazy: true })
+const yours = computed(() =>
+  (workspaces.value ?? [])
+    .map((w) => (w.id === props.workspace.id ? { ...w, name: props.workspace.name } : w))
+    .sort((a, b) => a.name.localeCompare(b.name)),
+)
+// With only one, the card above already is the list.
+const switchable = computed(() => yours.value.length > 1)
+
+function goTo(path: string) {
   open.value = false
-  navigateTo(`/w/${props.workspace.id}/settings`)
+  navigateTo(path)
+}
+
+function choose(id: string) {
+  if (id === props.workspace.id) close()
+  else goTo(`/w/${id}`)
+}
+
+async function retry() {
+  await refresh()
+  await show()
 }
 </script>
 
@@ -74,7 +96,7 @@ function goToSettings() {
 
         <div class="mx-1.5 mb-1.5 border-t border-slate-100" role="separator" />
 
-        <MenuItem @click="goToSettings">
+        <MenuItem @click="goTo(`/w/${workspace.id}/settings`)">
           <template #icon>
             <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
               <template v-if="workspace.role === 'admin'">
@@ -89,6 +111,46 @@ function goToSettings() {
             </svg>
           </template>
           {{ settingsLabel }}
+        </MenuItem>
+
+        <div class="mx-1.5 my-1.5 border-t border-slate-100" role="separator" />
+
+        <template v-if="switchable">
+          <p class="px-3 pt-1.5 pb-1 text-xs font-medium tracking-wide text-slate-400 uppercase" aria-hidden="true">
+            Your workspaces
+          </p>
+          <div role="group" aria-label="Your workspaces" class="max-h-60 overflow-y-auto">
+            <MenuItem v-for="w in yours" :key="w.id" @click="choose(w.id)">
+              <WorkspaceAvatar :name="w.name" class="size-6 shrink-0 rounded-full text-[11px]" />
+              <span class="min-w-0 flex-1 truncate">{{ w.name }}</span>
+              <template v-if="w.id === workspace.id">
+                <span class="sr-only">(current workspace)</span>
+                <svg
+                  viewBox="0 0 16 16" class="size-4 shrink-0 text-accent-600"
+                  fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+                >
+                  <path d="m3.5 8.5 3 3 6-7" />
+                </svg>
+              </template>
+            </MenuItem>
+          </div>
+        </template>
+        <MenuItem v-else-if="listError && listStatus !== 'pending'" @click="retry">
+          <template #icon>
+            <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1M13.5 2.5v2.75h-2.75" />
+            </svg>
+          </template>
+          <span>Couldn’t load your other workspaces. <span class="underline underline-offset-2">Try again</span></span>
+        </MenuItem>
+
+        <MenuItem @click="goTo('/new')">
+          <span class="grid size-6 shrink-0 place-items-center rounded-full border border-dashed border-slate-300 text-slate-400 transition group-hover:border-accent-300 group-hover:text-accent-600 group-focus-visible:border-accent-300 group-focus-visible:text-accent-600" aria-hidden="true">
+            <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+              <path d="M8 3.5v9M3.5 8h9" />
+            </svg>
+          </span>
+          Create a workspace
         </MenuItem>
       </div>
     </Transition>

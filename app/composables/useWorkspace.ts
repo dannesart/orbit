@@ -9,6 +9,7 @@ export const settingsTitle = (role: Role) => (role === 'admin' ? 'Workspace sett
  */
 export async function useWorkspace(id: string) {
   const account = useAccount()
+  const last = useLastWorkspace() // composables before the first await, while Nuxt's context is set
   const key = `workspace:${id}`
   const { data, error } = await useFetch<WorkspaceDetail>(`/api/workspaces/${id}`, { key })
 
@@ -24,6 +25,9 @@ export async function useWorkspace(id: string) {
   if (error.value || !data.value) {
     throw createError({ statusCode: 503, statusMessage: 'Workspace unavailable', fatal: true })
   }
+
+  // You made it in, so this is where `/` brings you back to on this device.
+  if (last.value !== id) last.value = id
 
   const workspace = computed(() => data.value!)
 

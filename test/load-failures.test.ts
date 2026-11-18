@@ -47,6 +47,17 @@ describe('when workspaces cannot be loaded', () => {
     expect(html).not.toContain('Workspace name')
   })
 
+  it('a remembered workspace doesn’t paper over the failure', async () => {
+    const res = await fetch('/', {
+      headers: { cookie: `${cookie}; orbit_last_workspace=${workspaceId}`, accept: 'text/html' },
+      redirect: 'manual',
+    })
+    expect(res.status).toBe(200) // no redirect on the strength of the cookie alone
+    const html = await res.text()
+    expect(html).toContain('We couldn’t reach your workspaces')
+    expect(html).not.toContain('Create your workspace')
+  })
+
   it('the workspace page and its settings report a failure, not "out of reach"', async () => {
     for (const path of [`/w/${workspaceId}`, `/w/${workspaceId}/settings`]) {
       const res = await get(path)

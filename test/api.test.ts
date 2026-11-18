@@ -409,3 +409,106 @@ describe('workspace settings', () => {
     expect(asMember).not.toContain('Workspace settings')
   })
 })
+
+describe('moving between workspaces', () => {
+  const html = { headers: { accept: 'text/html' } }
+  /** A signed-in browser for a named person, with its own cookie jar. */
+  async function browserFor(subject: string, name: string) {
+    const person = await setName(db, (await upsertAccount(db, subject, `${subject}@example.com`)).id, name)
+    const browser = new Browser()
+    browser.jar.set('orbit_session', await createSession(db, person.id))
+    return { person, browser }
+  }
+  const location = (res: Response) => [res.status, res.headers.get('location')]
+
+  it('takes a person with one workspace straight to it', async () => {
+    const { person, browser } = await browserFor('supabase-solo', 'Solo')
+    const only = await createWorkspaceFor(db, person.id, 'Only One')
+    expect(location(await browser.request('/', html))).toEqual([302, `/w/${only.id}`])
+  })
+
+  it('lets a person with a workspace create another, through the same journey and API', async () => {
+    const { person, browser } = await browserFor('supabase-second', 'Second')
+    const first = await createWorkspaceFor(db, person.id, 'First Place')
+
+    const page = await browser.request('/new', html)
+    expect(page.status).toBe(200) // not sent away, although they already have a workspace
+    const markup = await page.text()
+    expect(markup).toContain('Create another workspace')
+    expect(markup).toContain('Workspace name')
+
+    const created = await browser.request('/api/workspaces', { method: 'POST', body: JSON.stringify({ name: 'Second Place' }) })
+    expect(created.status).toBe(201)
+    const second = await created.json()
+    expect(second.role).toBe('admin')
+
+    const listed = await (await browser.request('/api/workspaces')).json()
+    expect(listed.map((w: { id: string }) => w.id)).toEqual([second.id, first.id])
+    expect([...await db`SELECT workspace_id, role FROM orbit.memberships WHERE user_id = ${person.id} ORDER BY created_at`])
+      .toEqual([{ workspace_id: first.id, role: 'admin' }, { workspace_id: second.id, role: 'admin' }])
+  })
+
+  it('returns to the workspace last visited in this browser, and follows each switch', async () => {
+    const { person, browser } = await browserFor('supabase-lin', 'Lin')
+    const launch = await createWorkspaceFor(db, person.id, 'Launch')
+    const garden = await createWorkspaceFor(db, person.id, 'Garden') // the most recent
+
+    expect(location(await browser.request('/', html))).toEqual([302, `/w/${garden.id}`])
+
+    // Switching is simply going there; the workspace page checks membership as always.
+    expect((await browser.request(`/w/${launch.id}`, html)).status).toBe(200)
+    expect(browser.jar.get('orbit_last_workspace')).toBe(launch.id)
+    expect(location(await browser.request('/', html))).toEqual([302, `/w/${launch.id}`])
+
+    expect((await browser.request(`/w/${garden.id}/settings`, html)).status).toBe(200)
+    expect(location(await browser.request('/', html))).toEqual([302, `/w/${garden.id}`])
+
+    // Per device: another of Lin's browsers keeps its own memory.
+    const phone = new Browser()
+    phone.jar.set('orbit_session', browser.jar.get('orbit_session')!)
+    phone.jar.set('orbit_last_workspace', launch.id)
+    expect(location(await phone.request('/', html))).toEqual([302, `/w/${launch.id}`])
+  })
+
+  it('falls back to a workspace you belong to when the remembered one is out of reach', async () => {
+    const { person, browser } = await browserFor('supabase-moved', 'Moved')
+    const { person: other } = await browserFor('supabase-elsewhere', 'Elsewhere')
+    const theirs = await createWorkspaceFor(db, other.id, 'Not Yours')
+    const left = await createWorkspaceFor(db, person.id, 'Left Behind')
+    const stays = await createWorkspaceFor(db, person.id, 'Still Here')
+    const home = `/w/${stays.id}`
+
+    // Lost membership: remembered, then removed.
+    await browser.request(`/w/${left.id}`, html)
+    expect(browser.jar.get('orbit_last_workspace')).toBe(left.id)
+    await db`DELETE FROM orbit.memberships WHERE user_id = ${person.id} AND workspace_id = ${left.id}`
+    expect(location(await browser.request('/', html))).toEqual([302, home])
+    expect((await browser.request(`/w/${left.id}`, html)).status).toBe(404)
+
+    // A remembered workspace never grants a way in: someone else's, unknown or malformed.
+    for (const remembered of [theirs.id, '00000000-0000-0000-0000-000000000000', 'not-a-uuid']) {
+      browser.jar.set('orbit_last_workspace', remembered)
+      expect(location(await browser.request('/', html)), remembered).toEqual([302, home])
+    }
+    expect((await browser.request(`/w/${theirs.id}`, html)).status).toBe(404)
+  })
+
+  it('offers someone with no workspace their first, whatever is remembered', async () => {
+    const { person: other } = await browserFor('supabase-stranger', 'Stranger')
+    const theirs = await createWorkspaceFor(db, other.id, 'Theirs')
+    const { browser } = await browserFor('supabase-newcomer', 'Newcomer')
+    browser.jar.set('orbit_last_workspace', theirs.id)
+
+    const res = await browser.request('/', html)
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain('Create your workspace')
+  })
+
+  it('sends signed-out visitors to sign in, remembered workspace or not', async () => {
+    const [ws] = await db<{ id: string }[]>`SELECT id FROM orbit.workspaces LIMIT 1`
+    for (const path of ['/', '/new']) {
+      const res = await api(path, `orbit_last_workspace=${ws!.id}`, html)
+      expect(location(res), path).toEqual([302, '/sign-in'])
+    }
+  })
+})
