@@ -65,9 +65,8 @@ export async function createWorkspace(db: Db, userId: string, name: string): Pro
 }
 
 // Who may manage a workspace, as SQL over a membership `m` joined to its workspace `w`: a
-// steward, or the owner. An owner_id still NULL from before migration 005 grants nothing
-// (COALESCE), and is never filled in from created_by.
-const CAN_MANAGE = `(m.role = 'admin' OR COALESCE(w.owner_id = m.user_id, false))`
+// steward, or the owner. Ownership is read only from owner_id, never from created_by.
+const CAN_MANAGE = `(m.role = 'admin' OR w.owner_id = m.user_id)`
 
 /** Workspaces the user belongs to, most recently created first. */
 export async function listWorkspaces(db: Db, userId: string): Promise<WorkspaceView[]> {
@@ -142,29 +141,13 @@ export interface Member {
  * person's own membership first (getWorkspace), so non-members learn nothing.
  */
 export async function listMembers(db: Db, workspaceId: string, userId: string): Promise<Member[]> {
-  const members = await db<Member[]>`
-    SELECT u.display_name AS name, (u.id = ${userId}) AS you, m.role,
-      COALESCE(m.user_id = w.owner_id, false) AS owner
+  // Exactly one row is the owner: owner_id is NOT NULL and must name a member (migrations 004, 005).
+  return db<Member[]>`
+    SELECT u.display_name AS name, (u.id = ${userId}) AS you, m.role, (m.user_id = w.owner_id) AS owner
     FROM orbit.memberships m
       JOIN orbit.users u ON u.id = m.user_id
       JOIN orbit.workspaces w ON w.id = m.workspace_id
     WHERE m.workspace_id = ${workspaceId}
     ORDER BY (u.id = ${userId}) DESC, m.created_at
   `
-  assertOneOwner(members)
-  return members
-}
-
-export class OwnershipIncompleteError extends Error {
-  constructor() { super('This workspace has no owner yet') }
-}
-
-/**
- * TEMPORARY, until migration 005 makes owner_id NOT NULL (remove it there). Between 004 and
- * 005, code from before ownership can still create a workspace with no owner. Rather than
- * show such a workspace as if it were whole, or guess its owner from created_by, refuse:
- * the request fails and the page shows Orbit's honest "couldn't load" state with Try again.
- */
-function assertOneOwner(members: Member[]) {
-  if (members.filter((m) => m.owner).length !== 1) throw new OwnershipIncompleteError()
 }

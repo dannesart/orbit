@@ -427,28 +427,6 @@ describe('workspace settings', () => {
   })
 })
 
-describe('a workspace made by older code, before it has an owner (between migrations 004 and 005)', () => {
-  it('is reported as a failure everywhere it would show its people, never as whole or out of reach', async () => {
-    const creator = await setName(db, (await upsertAccount(db, 'supabase-ownerless', 'ownerless@example.com')).id, 'Early')
-    const [w] = await db<{ id: string }[]>`INSERT INTO orbit.workspaces (name, created_by) VALUES ('Half Made', ${creator.id}) RETURNING id`
-    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${creator.id}, ${w!.id}, 'admin')`
-    const cookie = `orbit_session=${await createSession(db, creator.id)}`
-
-    expect((await api(`/api/workspaces/${w!.id}`, cookie)).status).toBe(500)
-    for (const path of [`/w/${w!.id}`, `/w/${w!.id}/settings`, `/w/${w!.id}/people`]) {
-      const res = await api(path, cookie, { headers: { accept: 'text/html' } })
-      expect(res.status, path).toBe(503)
-      const html = await res.text()
-      expect(html, path).toContain('We couldn’t open this workspace right now')
-      expect(html, path).toContain('Try again')
-      expect(html, path).not.toContain('out of reach')
-      expect(html, path).not.toContain('Owner')
-    }
-    // Nothing was guessed or written on the way.
-    expect((await db`SELECT owner_id FROM orbit.workspaces WHERE id = ${w!.id}`)[0]!.owner_id).toBeNull()
-  })
-})
-
 describe('moving between workspaces', () => {
   const html = { headers: { accept: 'text/html' } }
   /** A signed-in browser for a named person, with its own cookie jar. */

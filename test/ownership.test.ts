@@ -1,9 +1,9 @@
-// Ownership invariants, held by the database itself (migration 004), exercised as orbit_app
-// exactly as the deployed server would be; the owner's authority; the in-between state
-// before migration 005; and the backfill of databases from before ownership.
+// Ownership invariants, held by the database itself (migrations 004 and 005), exercised as
+// orbit_app exactly as the deployed server would be; the owner's authority; and the migrations
+// themselves, on databases from before ownership and from between 004 and 005.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { upsertAccount } from '../server/utils/accounts'
-import { OwnershipIncompleteError, createWorkspace, getWorkspace, listMembers, updateWorkspace } from '../server/utils/workspaces'
+import { createWorkspace, getWorkspace, listMembers, updateWorkspace } from '../server/utils/workspaces'
 import { startTestDatabase } from './db'
 
 let testDb: Awaited<ReturnType<typeof startTestDatabase>>
@@ -158,77 +158,113 @@ describe('the owner’s authority', () => {
   })
 })
 
-describe('between migrations 004 and 005', () => {
+describe('the ownership contract (migration 005)', () => {
   /** Exactly what Orbit did before ownership existed: no owner_id. */
   const createAsBefore = (userId: string, name: string) =>
     testDb.sql.begin(async (tx) => {
       const [w] = await tx<{ id: string }[]>`INSERT INTO orbit.workspaces (name, created_by) VALUES (${name}, ${userId}) RETURNING id`
       await tx`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${userId}, ${w!.id}, 'admin')`
-      return w!.id
     })
 
-  it('still lets code from before ownership create workspaces', async () => {
+  it('refuses a workspace without an owner, leaving nothing behind', async () => {
     const creator = await createUser()
-    const id = await createAsBefore(creator, 'Old habits')
-    expect(await ownerOf(id)).toEqual({ ownerId: null, createdBy: creator })
+    expect(await codeOf(createAsBefore(creator, 'Ownerless'))).toBe('23502')
+    expect(await testDb.sql`SELECT 1 FROM orbit.workspaces WHERE name = 'Ownerless'`).toHaveLength(0)
   })
 
-  it('never presents such a workspace as whole, and never guesses its owner', async () => {
-    const creator = await createUser()
-    const id = await createAsBefore(creator, 'Unfinished')
-    await expect(listMembers(testDb.sql, id, creator)).rejects.toBeInstanceOf(OwnershipIncompleteError)
-    // Its steward keeps the authority the role gives; a NULL owner grants nobody anything.
-    expect(await getWorkspace(testDb.sql, creator, id)).toMatchObject({ role: 'admin', canManage: true })
-    const member = await createUser()
-    await join(member, id, 'member')
-    expect(await getWorkspace(testDb.sql, member, id)).toMatchObject({ canManage: false })
-    expect((await ownerOf(id)).ownerId).toBeNull() // nothing was written on the way
+  it('never lets ownership be emptied', async () => {
+    const ws = await createWorkspace(testDb.sql, await createUser(), 'Lighthouse')
+    expect(await codeOf(testDb.sql`UPDATE orbit.workspaces SET owner_id = NULL WHERE id = ${ws.id}`)).toBe('23502')
+    expect(await listMembers(testDb.sql, ws.id, (await ownerOf(ws.id)).ownerId))
+      .toEqual([{ name: null, you: true, role: 'admin', owner: true }])
   })
+})
 
-  it('keeps old- and new-style creations whole when they happen at once', async () => {
-    const people = await Promise.all(Array.from({ length: 12 }, createUser))
-    const ids = await Promise.all(people.map((p, i) =>
-      i % 2 ? createAsBefore(p, `Mixed ${i}`) : createWorkspace(testDb.sql, p, `Mixed ${i}`).then((w) => w.id)))
-    for (const [i, id] of ids.entries()) {
-      expect(await ownerOf(id)).toEqual({ ownerId: i % 2 ? null : people[i], createdBy: people[i] })
-      expect([...await testDb.sql`SELECT user_id, role FROM orbit.memberships WHERE workspace_id = ${id}`])
-        .toEqual([{ user_id: people[i], role: 'admin' }])
-    }
-  })
+describe('migration 005 on a database from between 004 and 005', () => {
+  const BETWEEN = '004_workspace_owner.sql'
+  const nullable = (sql: Awaited<ReturnType<typeof startTestDatabase>>['sql']) =>
+    sql<{ nullable: string }[]>`SELECT is_nullable AS nullable FROM information_schema.columns WHERE table_schema = 'orbit' AND table_name = 'workspaces' AND column_name = 'owner_id'`.then((r) => r[0]!.nullable)
 
-  it('is closed by the planned contract step (005), after which every workspace has its one owner', async () => {
-    // A rehearsal of migration 005 against a database in the in-between state, including
-    // workspaces made by older code. 005 itself ships later, once production writes owner_id.
-    const contract = await startTestDatabase()
+  it('gives each ownerless workspace its creator as owner, leaves set ownership alone, and makes ownership required', async () => {
+    const ids: Record<string, string> = {}
+    const db = await startTestDatabase({
+      upTo: BETWEEN,
+      prepare: async (sql) => {
+        for (const key of ['ada', 'grace', 'lin']) {
+          ids[key] = (await sql<{ id: string }[]>`INSERT INTO orbit.users (auth_subject, email) VALUES (${key}, ${`${key}@example.com`}) RETURNING id`)[0]!.id
+        }
+        // Made by code from before ownership, during the rollout: no owner yet.
+        await sql.begin(async (tx) => {
+          ids.early = (await tx<{ id: string }[]>`INSERT INTO orbit.workspaces (name, created_by) VALUES ('Early', ${ids.ada!}) RETURNING id`)[0]!.id
+          await tx`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${ids.ada!}, ${ids.early!}, 'admin')`
+        })
+        await sql`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${ids.lin!}, ${ids.early!}, 'admin')`
+        // Made with an owner, which has since changed hands: must not be reset to the creator.
+        ids.handed = (await createWorkspace(sql, ids.grace!, 'Handed on')).id
+        await sql`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${ids.lin!}, ${ids.handed!}, 'member')`
+        await sql`UPDATE orbit.workspaces SET owner_id = ${ids.lin!} WHERE id = ${ids.handed!}`
+      },
+    })
     try {
-      const sql = contract.sql
-      const user = async (key: string) =>
-        (await sql<{ id: string }[]>`INSERT INTO orbit.users (auth_subject, email) VALUES (${key}, ${`${key}@example.com`}) RETURNING id`)[0]!.id
-      const [old1, old2, fresh] = [await user('old1'), await user('old2'), await user('fresh')]
-      const asBefore = (u: string) => sql.begin(async (tx) => {
-        const [w] = await tx<{ id: string }[]>`INSERT INTO orbit.workspaces (name, created_by) VALUES ('Old', ${u}) RETURNING id`
-        await tx`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${u}, ${w!.id}, 'admin')`
-      })
-      await asBefore(old1)
-      await asBefore(old2)
-      await createWorkspace(sql, fresh, 'New')
+      const memberships = () => db.sql`SELECT user_id, workspace_id, role FROM orbit.memberships ORDER BY user_id, workspace_id`
+      const before = [...await memberships()]
+      expect(await nullable(db.sql)).toBe('YES')
 
-      await sql.begin(async (tx) => {
-        await tx`LOCK TABLE orbit.workspaces IN ACCESS EXCLUSIVE MODE`
-        await tx`UPDATE orbit.workspaces SET owner_id = created_by WHERE owner_id IS NULL`
-        await tx`SET CONSTRAINTS orbit.workspaces_owner_is_member IMMEDIATE`
-        await tx`ALTER TABLE orbit.workspaces ALTER COLUMN owner_id SET NOT NULL`
-      })
+      const { migrate } = await import('../server/db/migrate')
+      expect(await migrate(db.sql)).toEqual(['005_workspace_owner_required.sql'])
 
-      expect([...await sql`SELECT owner_id = created_by AS exact FROM orbit.workspaces`]).toEqual([{ exact: true }, { exact: true }, { exact: true }])
-      // Final state: ownership can't be emptied, and only code that names the owner can create.
-      expect(await codeOf(sql`UPDATE orbit.workspaces SET owner_id = NULL`)).toBe('23502')
-      expect(await codeOf(asBefore(old1))).toBe('23502')
-      expect(await createWorkspace(sql, old2, 'Still fine')).toMatchObject({ role: 'admin', canManage: true })
+      expect([...await db.sql`SELECT name, owner_id, created_by FROM orbit.workspaces ORDER BY name`]).toEqual([
+        { name: 'Early', owner_id: ids.ada, created_by: ids.ada }, // Lin is a steward there, not the owner
+        { name: 'Handed on', owner_id: ids.lin, created_by: ids.grace }, // untouched
+      ])
+      expect([...await memberships()]).toEqual(before)
+      expect(await nullable(db.sql)).toBe('NO')
+      // 004's owner-membership key is still there, unchanged.
+      expect([...await db.sql`SELECT condeferrable AS deferrable, condeferred AS deferred, convalidated AS validated, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'workspaces_owner_is_member'`])
+        .toEqual([{ deferrable: true, deferred: true, validated: true, def: 'FOREIGN KEY (owner_id, id) REFERENCES orbit.memberships(user_id, workspace_id) DEFERRABLE INITIALLY DEFERRED' }])
+      // Today's code still creates workspaces; code that doesn't name an owner can't.
+      expect(await createWorkspace(db.sql, ids.grace!, 'After')).toMatchObject({ role: 'admin', canManage: true })
+      expect(await codeOf(db.sql`INSERT INTO orbit.workspaces (name, created_by) VALUES ('Stale', ${ids.grace!})`)).toBe('23502')
+
+      // Repeating the migration's statements changes nothing.
+      const { readFileSync } = await import('node:fs')
+      const owners = [...await db.sql`SELECT id, owner_id FROM orbit.workspaces ORDER BY id`]
+      await db.sql.begin((tx) => tx.unsafe(readFileSync(new URL('../server/db/migrations/005_workspace_owner_required.sql', import.meta.url), 'utf8')))
+      expect([...await db.sql`SELECT id, owner_id FROM orbit.workspaces ORDER BY id`]).toEqual(owners)
     } finally {
-      await contract.close()
+      await db.close()
     }
   }, 30_000) // starts a database of its own
+
+  it('stops, naming the workspace and changing nothing, rather than invent an owner', async () => {
+    let orphan = ''
+    const db = await startTestDatabase({
+      upTo: BETWEEN,
+      prepare: async (sql) => {
+        const user = async (key: string) => (await sql<{ id: string }[]>`INSERT INTO orbit.users (auth_subject, email) VALUES (${key}, ${`${key}@example.com`}) RETURNING id`)[0]!.id
+        const [creator, member] = [await user('left'), await user('stayed')]
+        // No owner, and its creator isn't a member; someone else is. That person must not be guessed.
+        orphan = (await sql<{ id: string }[]>`INSERT INTO orbit.workspaces (name, created_by) VALUES ('Orphan', ${creator}) RETURNING id`)[0]!.id
+        await sql`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${member}, ${orphan}, 'admin')`
+        await sql.begin(async (tx) => { // and one that can be backfilled, to show it is rolled back too
+          const [w] = await tx<{ id: string }[]>`INSERT INTO orbit.workspaces (name, created_by) VALUES ('Fine', ${member}) RETURNING id`
+          await tx`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${member}, ${w!.id}, 'admin')`
+        })
+      },
+    })
+    try {
+      const { migrate } = await import('../server/db/migrate')
+      const error = await migrate(db.sql).then(() => null, (e) => e as Error)
+      expect(error?.message).toMatch(/^Migration 005: these workspaces have no owner, and their creator is not a member/)
+      expect(error?.message).toContain(orphan)
+      expect([...await db.sql`SELECT name, owner_id FROM orbit.workspaces ORDER BY name`])
+        .toEqual([{ name: 'Fine', owner_id: null }, { name: 'Orphan', owner_id: null }])
+      expect(await nullable(db.sql)).toBe('YES')
+      expect(await db.sql`SELECT 1 FROM orbit.schema_migrations WHERE name = '005_workspace_owner_required.sql'`).toHaveLength(0)
+    } finally {
+      await db.close()
+    }
+  }, 30_000)
 })
 
 describe('migration 004 on a database from before ownership', () => {
@@ -257,7 +293,8 @@ describe('migration 004 on a database from before ownership', () => {
       const before = [...await memberships()]
 
       const { migrate } = await import('../server/db/migrate')
-      expect(await migrate(old.sql)).toEqual(['004_workspace_owner.sql'])
+      // A database from before ownership goes straight to the final contract.
+      expect(await migrate(old.sql)).toEqual(['004_workspace_owner.sql', '005_workspace_owner_required.sql'])
 
       expect([...await old.sql`SELECT name, owner_id, created_by FROM orbit.workspaces ORDER BY name`]).toEqual([
         { name: 'garden', owner_id: ids.grace, created_by: ids.grace },
@@ -281,7 +318,7 @@ describe('migration 004 on a database from before ownership', () => {
       const { migrate } = await import('../server/db/migrate')
       await expect(migrate(old.sql)).rejects.toMatchObject({ code: '23503' })
       expect(await old.sql`SELECT 1 FROM information_schema.columns WHERE table_schema = 'orbit' AND table_name = 'workspaces' AND column_name = 'owner_id'`).toHaveLength(0)
-      expect(await old.sql`SELECT 1 FROM orbit.schema_migrations WHERE name = '004_workspace_owner.sql'`).toHaveLength(0)
+      expect(await old.sql`SELECT 1 FROM orbit.schema_migrations WHERE name LIKE '00%_workspace_owner%'`).toHaveLength(0)
     } finally {
       await old.close()
     }
