@@ -117,7 +117,7 @@ describe('migrations', () => {
   it('apply once; re-running changes nothing', async () => {
     expect(await migrate(testDb.sql)).toEqual([])
     const names = await testDb.sql`SELECT name FROM orbit.schema_migrations ORDER BY name`
-    expect(names.map((r) => r.name)).toEqual(['001_orbit_schema.sql', '002_user_display_name.sql', '003_workspace_description.sql'])
+    expect(names.map((r) => r.name)).toEqual(['001_orbit_schema.sql', '002_user_display_name.sql', '003_workspace_description.sql', '004_workspace_owner.sql'])
   })
 
   it('give orbit_app row access to Orbit tables only', async () => {

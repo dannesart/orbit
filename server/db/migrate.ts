@@ -7,8 +7,9 @@ import postgres, { type Sql } from 'postgres'
 
 const dir = fileURLToPath(new URL('./migrations/', import.meta.url))
 
-export async function migrate(sql: Sql): Promise<string[]> {
-  const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
+/** `upTo` (tests only): stop after that migration, to build a database as it once was. */
+export async function migrate(sql: Sql, { upTo }: { upTo?: string } = {}): Promise<string[]> {
+  const files = readdirSync(dir).filter((f) => f.endsWith('.sql') && (!upTo || f <= upTo)).sort()
   return sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('orbit-migrations'))`
     // Kept in the private schema: `public` is exposed through Supabase's Data API.

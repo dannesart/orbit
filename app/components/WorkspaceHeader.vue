@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { WorkspaceView } from '~~/server/utils/workspaces'
 
-defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name' | 'description' | 'role'> }>()
+defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name' | 'description' | 'canManage'> }>()
 </script>
 
 <template>

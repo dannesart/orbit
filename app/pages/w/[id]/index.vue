@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const route = useRoute()
 const account = useAccount()
-const { workspace: ws, isAdmin, save } = await useWorkspace(String(route.params.id))
+const { workspace: ws, canManage, save } = await useWorkspace(String(route.params.id))
 
 const justCreated = route.query.welcome === '1'
 useHead({ title: () => `${ws.value.name} · Orbit` })
@@ -48,7 +48,7 @@ const presence = computed(() => {
         <p v-if="justCreated" class="mt-2 animate-rise text-slate-500 [animation-delay:250ms]">
           Brand new. Nothing’s out of place yet.
         </p>
-        <WorkspacePurpose :description="ws.description" :editable="isAdmin" :save="save" />
+        <WorkspacePurpose :description="ws.description" :editable="canManage" :save="save" />
 
         <section class="mt-16 animate-rise [animation-delay:400ms]">
           <h2 class="text-lg font-semibold text-slate-900">It’s calm in here — and that’s fine.</h2>
@@ -68,6 +68,7 @@ const presence = computed(() => {
             </ul>
             <p class="text-slate-600">{{ presence }}</p>
           </div>
+          <NuxtLink :to="`/w/${ws.id}/people`" class="link text-sm">See everyone</NuxtLink>
         </section>
       </div>
     </main>

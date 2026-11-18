@@ -276,7 +276,7 @@ describe('what should we call you?', () => {
     await putName(browser, 'Veteran')
     expect(await location(browser, `/w/${workspace.id}`)).toBe(200)
     expect(await (await browser.request(`/api/workspaces/${workspace.id}`)).json())
-      .toEqual({ ...workspace, members: [{ name: 'Veteran', you: true }] })
+      .toEqual({ ...workspace, members: [{ name: 'Veteran', you: true, role: 'admin', owner: true }] })
   })
 
   it('only ever changes the signed-in person’s own name', async () => {
@@ -306,11 +306,11 @@ describe('workspace arrival', () => {
     const ownerCookie = `orbit_session=${await createSession(db, owner.id)}`
 
     const alone = await (await api(`/api/workspaces/${ws.id}`, ownerCookie)).json()
-    expect(alone.members).toEqual([{ name: 'Host', you: true }])
+    expect(alone.members).toEqual([{ name: 'Host', you: true, role: 'admin', owner: true }])
 
     await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${guest.id}, ${ws.id}, 'member')`
     const together = await (await api(`/api/workspaces/${ws.id}`, ownerCookie)).json()
-    expect(together.members).toEqual([{ name: 'Host', you: true }, { name: 'Guest', you: false }])
+    expect(together.members).toEqual([{ name: 'Host', you: true, role: 'admin', owner: true }, { name: 'Guest', you: false, role: 'member', owner: false }])
     expect(JSON.stringify(together)).not.toContain('@') // no emails
 
     const outsiderCookie = `orbit_session=${await createSession(db, outsider.id)}`
@@ -408,6 +408,45 @@ describe('workspace settings', () => {
     expect(asMember).toContain('<title>About · Honest Words · Orbit</title>')
     expect(asMember).not.toContain('Workspace settings')
   })
+
+  it('belongs to the owner as owner: with a member role, they still manage, on the server and on the page', async () => {
+    const owner = await setName(db, (await upsertAccount(db, 'supabase-owner-as-member', 'owner-member@example.com')).id, 'Olu')
+    const ws = await createWorkspaceFor(db, owner.id, 'Owned Outright')
+    await db`UPDATE orbit.memberships SET role = 'member' WHERE user_id = ${owner.id} AND workspace_id = ${ws.id}`
+    const cookie = `orbit_session=${await createSession(db, owner.id)}`
+
+    expect(await (await api(`/api/workspaces/${ws.id}`, cookie)).json()).toMatchObject({ role: 'member', canManage: true })
+    const saved = await patch(ws.id, cookie, { name: 'Still Owned' })
+    expect(saved.status).toBe(200)
+    expect(await saved.json()).toMatchObject({ name: 'Still Owned', role: 'member', canManage: true })
+
+    const settings = await (await api(`/w/${ws.id}/settings`, cookie, { headers: { accept: 'text/html' } })).text()
+    expect(settings).toMatch(/<h1[^>]*>Workspace settings<\/h1>/)
+    expect(settings).toMatch(/<form[^>]*>/) // the editing form, not the read-only view
+    expect(settings).not.toContain('Only the owner and stewards can change these')
+  })
+})
+
+describe('a workspace made by older code, before it has an owner (between migrations 004 and 005)', () => {
+  it('is reported as a failure everywhere it would show its people, never as whole or out of reach', async () => {
+    const creator = await setName(db, (await upsertAccount(db, 'supabase-ownerless', 'ownerless@example.com')).id, 'Early')
+    const [w] = await db<{ id: string }[]>`INSERT INTO orbit.workspaces (name, created_by) VALUES ('Half Made', ${creator.id}) RETURNING id`
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${creator.id}, ${w!.id}, 'admin')`
+    const cookie = `orbit_session=${await createSession(db, creator.id)}`
+
+    expect((await api(`/api/workspaces/${w!.id}`, cookie)).status).toBe(500)
+    for (const path of [`/w/${w!.id}`, `/w/${w!.id}/settings`, `/w/${w!.id}/people`]) {
+      const res = await api(path, cookie, { headers: { accept: 'text/html' } })
+      expect(res.status, path).toBe(503)
+      const html = await res.text()
+      expect(html, path).toContain('We couldn’t open this workspace right now')
+      expect(html, path).toContain('Try again')
+      expect(html, path).not.toContain('out of reach')
+      expect(html, path).not.toContain('Owner')
+    }
+    // Nothing was guessed or written on the way.
+    expect((await db`SELECT owner_id FROM orbit.workspaces WHERE id = ${w!.id}`)[0]!.owner_id).toBeNull()
+  })
 })
 
 describe('moving between workspaces', () => {
@@ -476,11 +515,12 @@ describe('moving between workspaces', () => {
     const { person, browser } = await browserFor('supabase-moved', 'Moved')
     const { person: other } = await browserFor('supabase-elsewhere', 'Elsewhere')
     const theirs = await createWorkspaceFor(db, other.id, 'Not Yours')
-    const left = await createWorkspaceFor(db, person.id, 'Left Behind')
+    const left = await createWorkspaceFor(db, other.id, 'Left Behind') // someone else's, joined as a member
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${person.id}, ${left.id}, 'member')`
     const stays = await createWorkspaceFor(db, person.id, 'Still Here')
     const home = `/w/${stays.id}`
 
-    // Lost membership: remembered, then removed.
+    // Lost membership: remembered, then removed. (An owner's own membership can't be removed.)
     await browser.request(`/w/${left.id}`, html)
     expect(browser.jar.get('orbit_last_workspace')).toBe(left.id)
     await db`DELETE FROM orbit.memberships WHERE user_id = ${person.id} AND workspace_id = ${left.id}`
@@ -515,5 +555,81 @@ describe('moving between workspaces', () => {
       const res = await api(path, `orbit_last_workspace=${ws!.id}`, html)
       expect(location(res), path).toEqual([302, '/sign-in'])
     }
+  })
+})
+
+describe('people', () => {
+  const html = { headers: { accept: 'text/html' } }
+  const person = async (subject: string, name: string | null) => {
+    const account = await upsertAccount(db, subject, `${subject}@example.com`)
+    return name ? setName(db, account.id, name) : account
+  }
+  const cookieFor = async (userId: string) => `orbit_session=${await createSession(db, userId)}`
+  const page = async (path: string, cookie?: string) => {
+    const res = await api(path, cookie, html)
+    return { status: res.status, location: res.headers.get('location'), text: await res.text() }
+  }
+
+  it('shows everyone in the workspace with their place in it, to every member alike', async () => {
+    const owner = await person('supabase-people-owner', 'Yusuf')
+    const steward = await person('supabase-people-steward', 'Bea')
+    const member = await person('supabase-people-member', 'Ada')
+    const ws = await createWorkspaceFor(db, owner.id, 'Commons')
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${steward.id}, ${ws.id}, 'admin')`
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${member.id}, ${ws.id}, 'member')`
+
+    for (const viewer of [owner, steward, member]) {
+      const res = await page(`/w/${ws.id}/people`, await cookieFor(viewer.id))
+      expect(res.status, viewer.name!).toBe(200)
+      expect(res.text).toContain('<title>People · Commons · Orbit</title>')
+      expect(res.text).toContain('3 people belong here.')
+      // In order (owner, steward, member), each with their standing, and only the viewer as "you".
+      // (Each row starts with its avatar's initial, which is hidden from assistive technology.)
+      const rows = [...res.text.matchAll(/<li(?:\s[^>]*)?>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+      expect(rows).toEqual([
+        `Y Yusuf ${viewer === owner ? '(you) ' : ''}Owner`,
+        `B Bea ${viewer === steward ? '(you) ' : ''}Steward`,
+        `A Ada ${viewer === member ? '(you) ' : ''}Member`,
+      ])
+      // Other people's emails stay private (your own appears only in your account menu).
+      for (const other of [owner, steward, member].filter((p) => p !== viewer)) expect(res.text).not.toContain(other.email)
+    }
+  })
+
+  it('is honest when you’re the only one here, and when someone hasn’t chosen a name', async () => {
+    const solo = await person('supabase-people-solo', 'Solo')
+    const ws = await createWorkspaceFor(db, solo.id, 'Hermitage')
+    const alone = await page(`/w/${ws.id}/people`, await cookieFor(solo.id))
+    expect(alone.text).toContain('Just you, for now.')
+    expect(alone.text).toMatch(/Solo\s*<\/span>\s*<span[^>]*>\(you\)/)
+
+    const unnamed = await person('supabase-people-unnamed', null)
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${unnamed.id}, ${ws.id}, 'member')`
+    expect((await page(`/w/${ws.id}/people`, await cookieFor(solo.id))).text).toContain('No name yet')
+  })
+
+  it('never shows people to anyone outside the workspace, nor people from another workspace', async () => {
+    const insider = await person('supabase-people-insider', 'Insider')
+    const outsider = await person('supabase-people-outsider', 'Outsider')
+    const ws = await createWorkspaceFor(db, insider.id, 'Walled Garden')
+    const theirs = await createWorkspaceFor(db, outsider.id, 'Next Door')
+
+    const blocked = await page(`/w/${ws.id}/people`, await cookieFor(outsider.id))
+    expect(blocked.status).toBe(404)
+    expect(blocked.text).not.toContain('Insider')
+    expect((await api(`/api/workspaces/${ws.id}`, await cookieFor(outsider.id))).status).toBe(404)
+
+    const own = await page(`/w/${theirs.id}/people`, await cookieFor(outsider.id))
+    expect(own.text).toContain('Outsider')
+    expect(own.text).not.toContain('Insider')
+
+    expect(await page(`/w/${ws.id}/people`)).toMatchObject({ status: 302, location: '/sign-in' })
+  })
+
+  it('is reached from “Who’s here” on the arrival page', async () => {
+    const host = await person('supabase-people-host', 'Host')
+    const ws = await createWorkspaceFor(db, host.id, 'Front Door')
+    const arrival = await page(`/w/${ws.id}`, await cookieFor(host.id))
+    expect(arrival.text).toMatch(new RegExp(`<a[^>]+href="/w/${ws.id}/people"[^>]*>See everyone</a>`))
   })
 })

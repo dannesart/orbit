@@ -1,7 +1,7 @@
-import type { Role, WorkspaceDetail, WorkspaceView } from '~~/server/utils/workspaces'
+import type { WorkspaceDetail, WorkspaceView } from '~~/server/utils/workspaces'
 
-/** The settings page is the same for everyone, but only admins can change things there. */
-export const settingsTitle = (role: Role) => (role === 'admin' ? 'Workspace settings' : 'About this workspace')
+/** The settings page is the same for everyone, but only the owner and stewards can change things there. */
+export const settingsTitle = (canManage: boolean) => (canManage ? 'Workspace settings' : 'About this workspace')
 
 /**
  * The current workspace, shared by every page and component that shows it, under one key:
@@ -31,12 +31,12 @@ export async function useWorkspace(id: string) {
 
   const workspace = computed(() => data.value!)
 
-  /** Send only the fields that change; the server checks the caller is an admin. */
+  /** Send only the fields that change; the server checks the caller is the owner or a steward. */
   async function save(changes: { name?: string; description?: string | null }) {
     const updated = await $fetch<WorkspaceView>(`/api/workspaces/${id}`, { method: 'PATCH', body: changes })
     data.value = { ...data.value!, ...updated }
     return updated
   }
 
-  return { workspace, isAdmin: computed(() => data.value?.role === 'admin'), save }
+  return { workspace, canManage: computed(() => data.value?.canManage === true), save }
 }

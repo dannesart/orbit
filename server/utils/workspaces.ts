@@ -8,6 +8,11 @@ export interface WorkspaceView {
   /** "What's this place for?": an optional thought, null when nobody has given one. */
   description: string | null
   role: Role
+  /**
+   * May look after the workspace (settings, purpose): its owner, or a steward (admin).
+   * Ownership carries this authority on its own, whatever the owner's membership role.
+   */
+  canManage: boolean
   createdAt: string
 }
 
@@ -41,25 +46,33 @@ export function parseDescription(input: unknown): { description: string | null }
 type Row = Omit<WorkspaceView, 'createdAt'> & { createdAt: Date }
 const toView = ({ createdAt, ...rest }: Row): WorkspaceView => ({ ...rest, createdAt: createdAt.toISOString() })
 
-/** Creates a workspace and makes its creator the administrator, atomically. */
+/**
+ * Creates a workspace with its creator as owner and steward (admin), atomically. The
+ * database checks at commit that the owner is a member, so both rows land or neither does.
+ */
 export async function createWorkspace(db: Db, userId: string, name: string): Promise<WorkspaceView> {
   return db.begin(async (tx) => {
     const [workspace] = await tx<{ id: string; createdAt: Date }[]>`
-      INSERT INTO orbit.workspaces (name, created_by) VALUES (${name}, ${userId})
+      INSERT INTO orbit.workspaces (name, created_by, owner_id) VALUES (${name}, ${userId}, ${userId})
       RETURNING id, created_at AS "createdAt"
     `
     await tx`
       INSERT INTO orbit.memberships (user_id, workspace_id, role, created_at)
       VALUES (${userId}, ${workspace!.id}, 'admin', ${workspace!.createdAt})
     `
-    return toView({ id: workspace!.id, name, description: null, role: 'admin', createdAt: workspace!.createdAt })
+    return toView({ id: workspace!.id, name, description: null, role: 'admin', canManage: true, createdAt: workspace!.createdAt })
   })
 }
+
+// Who may manage a workspace, as SQL over a membership `m` joined to its workspace `w`: a
+// steward, or the owner. An owner_id still NULL from before migration 005 grants nothing
+// (COALESCE), and is never filled in from created_by.
+const CAN_MANAGE = `(m.role = 'admin' OR COALESCE(w.owner_id = m.user_id, false))`
 
 /** Workspaces the user belongs to, most recently created first. */
 export async function listWorkspaces(db: Db, userId: string): Promise<WorkspaceView[]> {
   const rows = await db<Row[]>`
-    SELECT w.id, w.name, w.description, m.role, w.created_at AS "createdAt"
+    SELECT w.id, w.name, w.description, m.role, ${db.unsafe(CAN_MANAGE)} AS "canManage", w.created_at AS "createdAt"
     FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id
     WHERE m.user_id = ${userId}
     ORDER BY w.created_at DESC
@@ -73,7 +86,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export async function getWorkspace(db: Db, userId: string, workspaceId: string): Promise<WorkspaceView | null> {
   if (!UUID.test(workspaceId)) return null // not an id we could have issued
   const [row] = await db<Row[]>`
-    SELECT w.id, w.name, w.description, m.role, w.created_at AS "createdAt"
+    SELECT w.id, w.name, w.description, m.role, ${db.unsafe(CAN_MANAGE)} AS "canManage", w.created_at AS "createdAt"
     FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id
     WHERE m.user_id = ${userId} AND w.id = ${workspaceId}
   `
@@ -91,27 +104,25 @@ export type UpdateResult =
 
 /**
  * The one way to change a workspace, for every editing surface. Only the fields present in
- * `changes` are touched. Only admins may change it: the role is checked again inside the
- * UPDATE itself, so authorization and the write can't drift apart.
+ * `changes` are touched. Only its owner or a steward may change it: the same rule is checked
+ * again inside the UPDATE itself, so authorization and the write can't drift apart.
  */
 export async function updateWorkspace(
   db: Db, userId: string, workspaceId: string, changes: WorkspaceChanges,
 ): Promise<UpdateResult> {
   const current = await getWorkspace(db, userId, workspaceId)
   if (!current) return { ok: false, reason: 'not_found' } // non-members learn nothing
-  if (current.role !== 'admin') return { ok: false, reason: 'forbidden' }
+  if (!current.canManage) return { ok: false, reason: 'forbidden' }
 
   const fields = (['name', 'description'] as const).filter((key) => key in changes)
   if (fields.length === 0) return { ok: true, workspace: current }
 
   const [row] = await db<Row[]>`
     UPDATE orbit.workspaces w SET ${db(changes, ...fields)}
+    FROM orbit.memberships m
     WHERE w.id = ${workspaceId}
-      AND EXISTS (
-        SELECT 1 FROM orbit.memberships m
-        WHERE m.workspace_id = w.id AND m.user_id = ${userId} AND m.role = 'admin'
-      )
-    RETURNING w.id, w.name, w.description, 'admin' AS role, w.created_at AS "createdAt"
+      AND m.workspace_id = w.id AND m.user_id = ${userId} AND ${db.unsafe(CAN_MANAGE)}
+    RETURNING w.id, w.name, w.description, m.role, true AS "canManage", w.created_at AS "createdAt"
   `
   return row ? { ok: true, workspace: toView(row) } : { ok: false, reason: 'forbidden' }
 }
@@ -120,6 +131,10 @@ export interface Member {
   /** What they asked to be called; null if they haven't said yet. Emails are never exposed. */
   name: string | null
   you: boolean
+  /** Their membership role: admin (Steward in the product) or member. */
+  role: Role
+  /** The workspace's current owner, read from workspaces.owner_id (never from the creator). */
+  owner: boolean
 }
 
 /**
@@ -127,10 +142,29 @@ export interface Member {
  * person's own membership first (getWorkspace), so non-members learn nothing.
  */
 export async function listMembers(db: Db, workspaceId: string, userId: string): Promise<Member[]> {
-  return db<Member[]>`
-    SELECT u.display_name AS name, (u.id = ${userId}) AS you
-    FROM orbit.memberships m JOIN orbit.users u ON u.id = m.user_id
+  const members = await db<Member[]>`
+    SELECT u.display_name AS name, (u.id = ${userId}) AS you, m.role,
+      COALESCE(m.user_id = w.owner_id, false) AS owner
+    FROM orbit.memberships m
+      JOIN orbit.users u ON u.id = m.user_id
+      JOIN orbit.workspaces w ON w.id = m.workspace_id
     WHERE m.workspace_id = ${workspaceId}
     ORDER BY (u.id = ${userId}) DESC, m.created_at
   `
+  assertOneOwner(members)
+  return members
+}
+
+export class OwnershipIncompleteError extends Error {
+  constructor() { super('This workspace has no owner yet') }
+}
+
+/**
+ * TEMPORARY, until migration 005 makes owner_id NOT NULL (remove it there). Between 004 and
+ * 005, code from before ownership can still create a workspace with no owner. Rather than
+ * show such a workspace as if it were whole, or guess its owner from created_by, refuse:
+ * the request fails and the page shows Orbit's honest "couldn't load" state with Try again.
+ */
+function assertOneOwner(members: Member[]) {
+  if (members.filter((m) => m.owner).length !== 1) throw new OwnershipIncompleteError()
 }

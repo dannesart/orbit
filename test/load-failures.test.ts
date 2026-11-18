@@ -58,8 +58,8 @@ describe('when workspaces cannot be loaded', () => {
     expect(html).not.toContain('Create your workspace')
   })
 
-  it('the workspace page and its settings report a failure, not "out of reach"', async () => {
-    for (const path of [`/w/${workspaceId}`, `/w/${workspaceId}/settings`]) {
+  it('the workspace page, its settings and its people report a failure, not "out of reach"', async () => {
+    for (const path of [`/w/${workspaceId}`, `/w/${workspaceId}/settings`, `/w/${workspaceId}/people`]) {
       const res = await get(path)
       expect(res.status, path).toBe(503)
       const html = await res.text()
