@@ -47,12 +47,14 @@ describe('when workspaces cannot be loaded', () => {
     expect(html).not.toContain('Workspace name')
   })
 
-  it('the workspace page reports a failure, not "out of reach"', async () => {
-    const res = await get(`/w/${workspaceId}`)
-    expect(res.status).toBe(503)
-    const html = await res.text()
-    expect(html).toContain('We couldn’t open this workspace right now')
-    expect(html).toContain('Try again')
-    expect(html).not.toContain('out of reach')
+  it('the workspace page and its settings report a failure, not "out of reach"', async () => {
+    for (const path of [`/w/${workspaceId}`, `/w/${workspaceId}/settings`]) {
+      const res = await get(path)
+      expect(res.status, path).toBe(503)
+      const html = await res.text()
+      expect(html, path).toContain('We couldn’t open this workspace right now')
+      expect(html, path).toContain('Try again')
+      expect(html, path).not.toContain('out of reach')
+    }
   })
 })

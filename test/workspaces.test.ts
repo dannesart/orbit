@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { setName, upsertAccount } from '../server/utils/accounts'
-import { createWorkspace, getWorkspace, listMembers, listWorkspaces, parseWorkspaceName } from '../server/utils/workspaces'
+import {
+  createWorkspace,
+  getWorkspace,
+  listMembers,
+  listWorkspaces,
+  parseDescription,
+  parseWorkspaceName,
+  updateWorkspace,
+} from '../server/utils/workspaces'
 import { startTestDatabase } from './db'
 
 let testDb: Awaited<ReturnType<typeof startTestDatabase>>
@@ -84,5 +92,66 @@ describe('members', () => {
     const wsA = await createWorkspace(testDb.sql, a, 'A')
     await createWorkspace(testDb.sql, b, 'B')
     expect(await listMembers(testDb.sql, wsA.id, a)).toHaveLength(1)
+  })
+})
+
+describe('parseDescription', () => {
+  it('keeps one tidy line of thought', () => {
+    expect(parseDescription('  Planning   the spring\nlaunch ')).toEqual({ description: 'Planning the spring launch' })
+    expect(parseDescription('a'.repeat(280))).toEqual({ description: 'a'.repeat(280) })
+  })
+
+  it('treats null and empty text as a deliberate clear', () => {
+    for (const input of [null, '', '   ']) expect(parseDescription(input)).toEqual({ description: null })
+  })
+
+  it('rejects non-text, overlong and control characters', () => {
+    for (const input of [undefined, 42, {}, 'a'.repeat(281), 'nope\u0007']) {
+      expect(parseDescription(input)).toHaveProperty('error')
+    }
+  })
+})
+
+describe('updateWorkspace', () => {
+  const setup = async () => {
+    const admin = await createUser()
+    const ws = await createWorkspace(testDb.sql, admin, 'Before')
+    return { admin, ws }
+  }
+
+  it('changes only the fields it is given', async () => {
+    const { admin, ws } = await setup()
+    const withPurpose = await updateWorkspace(testDb.sql, admin, ws.id, { description: 'Planning the spring launch' })
+    expect(withPurpose).toMatchObject({ ok: true, workspace: { name: 'Before', description: 'Planning the spring launch', role: 'admin' } })
+
+    const renamed = await updateWorkspace(testDb.sql, admin, ws.id, { name: 'After' })
+    expect(renamed).toMatchObject({ ok: true, workspace: { name: 'After', description: 'Planning the spring launch' } })
+    expect(await getWorkspace(testDb.sql, admin, ws.id)).toMatchObject({ name: 'After', description: 'Planning the spring launch' })
+  })
+
+  it('clears the purpose when asked to, and does nothing when given nothing', async () => {
+    const { admin, ws } = await setup()
+    await updateWorkspace(testDb.sql, admin, ws.id, { description: 'Temporary' })
+    expect(await updateWorkspace(testDb.sql, admin, ws.id, { description: null }))
+      .toMatchObject({ ok: true, workspace: { description: null } })
+    expect(await updateWorkspace(testDb.sql, admin, ws.id, {}))
+      .toMatchObject({ ok: true, workspace: { name: 'Before', description: null } })
+  })
+
+  it('lets members look but not change, and tells non-members nothing', async () => {
+    const { ws } = await setup()
+    const member = await createUser()
+    await testDb.sql`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${member}, ${ws.id}, 'member')`
+    const outsider = await createUser()
+
+    expect(await updateWorkspace(testDb.sql, member, ws.id, { name: 'Mine now' })).toEqual({ ok: false, reason: 'forbidden' })
+    expect(await updateWorkspace(testDb.sql, outsider, ws.id, { name: 'Mine now' })).toEqual({ ok: false, reason: 'not_found' })
+    expect(await updateWorkspace(testDb.sql, outsider, 'not-a-uuid', { name: 'x' })).toEqual({ ok: false, reason: 'not_found' })
+    expect((await getWorkspace(testDb.sql, member, ws.id))?.name).toBe('Before')
+  })
+
+  it('is length-checked by the database too', async () => {
+    const { admin, ws } = await setup()
+    await expect(updateWorkspace(testDb.sql, admin, ws.id, { description: 'a'.repeat(281) })).rejects.toThrow(/check constraint/)
   })
 })

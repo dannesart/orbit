@@ -2,41 +2,9 @@
 <script setup lang="ts">
 const route = useRoute()
 const account = useAccount()
-const open = ref(false)
-const root = useTemplateRef<HTMLElement>('root')
-const trigger = useTemplateRef<HTMLButtonElement>('trigger')
-const menu = useTemplateRef<HTMLElement>('menu')
+const { open, root, trigger, menu, toggle, onKeydown } = useMenu()
 
 const name = computed(() => account.value?.name ?? account.value?.email ?? '')
-const items = () => [...(menu.value?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])]
-
-async function show() {
-  open.value = true
-  await nextTick()
-  items()[0]?.focus()
-}
-
-function close(returnFocus = true) {
-  open.value = false
-  if (returnFocus) trigger.value?.focus()
-}
-
-function onKeydown(event: KeyboardEvent) {
-  const list = items()
-  const at = list.indexOf(document.activeElement as HTMLElement)
-  if (event.key === 'Escape') close()
-  else if (event.key === 'ArrowDown') list[(at + 1) % list.length]?.focus()
-  else if (event.key === 'ArrowUp') list[(at - 1 + list.length) % list.length]?.focus()
-  else if (event.key === 'Tab') close(false)
-  else return
-  event.preventDefault()
-}
-
-function onClickOutside(event: MouseEvent) {
-  if (open.value && !root.value?.contains(event.target as Node)) close(false)
-}
-onMounted(() => document.addEventListener('click', onClickOutside))
-onBeforeUnmount(() => document.removeEventListener('click', onClickOutside))
 
 function changeName() {
   open.value = false
@@ -53,7 +21,7 @@ function changeName() {
       :aria-expanded="open"
       :aria-label="`${name}, account menu`"
       class="flex items-center gap-2.5 rounded-full py-1 pr-1 pl-1 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 sm:pr-3"
-      @click="open ? close() : show()"
+      @click="toggle"
     >
       <WorkspaceAvatar :name="name" class="size-8 rounded-full text-sm" />
       <span class="hidden max-w-40 truncate sm:inline">{{ name }}</span>

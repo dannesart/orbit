@@ -1,27 +1,10 @@
 <script setup lang="ts">
-import type { Member, WorkspaceView } from '~~/server/utils/workspaces'
-
 const route = useRoute()
 const account = useAccount()
-const { data: workspace, error } = await useFetch<WorkspaceView & { members: Member[] }>(
-  `/api/workspaces/${route.params.id}`,
-)
+const { workspace: ws, isAdmin, save } = await useWorkspace(String(route.params.id))
 
-if (error.value?.statusCode === 401) {
-  account.value = null
-  throw createError({ statusCode: 401, statusMessage: 'Signed out', fatal: true })
-}
-// "Out of reach" only when the API confirms it; any other failure is reported as one.
-if (error.value?.statusCode === 404) {
-  throw createError({ statusCode: 404, statusMessage: 'Workspace not found', fatal: true })
-}
-if (error.value || !workspace.value) {
-  throw createError({ statusCode: 503, statusMessage: 'Workspace unavailable', fatal: true })
-}
-
-const ws = workspace.value!
 const justCreated = route.query.welcome === '1'
-useHead({ title: `${ws.name} · Orbit` })
+useHead({ title: () => `${ws.value.name} · Orbit` })
 
 // The local hour is only known in the browser, so the greeting arrives with the page.
 const hello = ref('')
@@ -31,9 +14,8 @@ onMounted(() => {
   if (justCreated) useRouter().replace({ query: {} })
 })
 
-const others = ws.members.filter((m) => !m.you)
 const presence = computed(() => {
-  const names = others.map((m) => m.name ?? 'someone')
+  const names = ws.value.members.filter((m) => !m.you).map((m) => m.name ?? 'someone')
   if (names.length === 0) return 'Just you, for now.'
   if (names.length === 1) return `You and ${names[0]}.`
   if (names.length === 2) return `You, ${names[0]} and ${names[1]}.`
@@ -43,21 +25,7 @@ const presence = computed(() => {
 
 <template>
   <div class="min-h-dvh">
-    <!-- z-20: backdrop-blur creates a stacking context; keep the account menu above the page. -->
-    <header class="relative z-20 border-b border-slate-200/70 bg-white/70 backdrop-blur">
-      <div class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <div class="flex min-w-0 items-center gap-3">
-          <OrbitMark />
-          <span class="text-slate-300" aria-hidden="true">/</span>
-          <!-- Future home of the workspace switcher -->
-          <div class="flex min-w-0 items-center gap-2.5 rounded-full border border-slate-200 bg-white py-1 pr-4 pl-1 text-sm font-medium text-slate-700">
-            <WorkspaceAvatar :name="ws.name" class="size-7 rounded-full text-xs" />
-            <span class="max-w-48 truncate">{{ ws.name }}</span>
-          </div>
-        </div>
-        <IdentityMenu />
-      </div>
-    </header>
+    <WorkspaceHeader :workspace="ws" />
 
     <main class="relative overflow-hidden">
       <!-- A distant orbit behind everything; it never moves. -->
@@ -80,6 +48,7 @@ const presence = computed(() => {
         <p v-if="justCreated" class="mt-2 animate-rise text-slate-500 [animation-delay:250ms]">
           Brand new. Nothing’s out of place yet.
         </p>
+        <WorkspacePurpose :description="ws.description" :editable="isAdmin" :save="save" />
 
         <section class="mt-16 animate-rise [animation-delay:400ms]">
           <h2 class="text-lg font-semibold text-slate-900">It’s calm in here — and that’s fine.</h2>
