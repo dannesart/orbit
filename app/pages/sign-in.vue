@@ -112,7 +112,7 @@ function changeEmail() {
         class="field"
         @input="error = ''"
       >
-      <p id="email-hint" class="mt-2 min-h-5 text-sm text-rose-600" aria-live="polite">{{ error }}</p>
+      <p id="email-hint" class="mt-2 min-h-5 text-sm text-red-700" aria-live="polite">{{ error }}</p>
 
       <button type="submit" :disabled="busy" class="btn-primary mt-4">
         <Spinner v-if="busy" />
@@ -153,7 +153,7 @@ function changeEmail() {
       <p
         id="code-hint"
         class="mt-2 min-h-5 text-sm"
-        :class="error ? 'text-rose-600' : 'text-emerald-700'"
+        :class="error ? 'text-red-700' : 'text-emerald-700'"
         aria-live="polite"
       >
         {{ error || notice }}
