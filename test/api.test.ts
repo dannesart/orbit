@@ -325,3 +325,58 @@ describe('workspace arrival', () => {
     expect(plain.headers.get('location')).toBe('/')
   })
 })
+
+describe('workspace settings', () => {
+  const patch = (id: string, cookie: string | undefined, body: unknown) =>
+    api(`/api/workspaces/${id}`, cookie, { method: 'PATCH', body: JSON.stringify(body) })
+
+  it('lets the admin rename and describe, changing only what was sent', async () => {
+    const admin = await setName(db, (await upsertAccount(db, 'supabase-settings-admin', 'sadmin@example.com')).id, 'Admin')
+    const ws = await createWorkspaceFor(db, admin.id, 'Old name')
+    const cookie = `orbit_session=${await createSession(db, admin.id)}`
+
+    const described = await patch(ws.id, cookie, { description: '  A place for   planning ' })
+    expect(described.status).toBe(200)
+    expect(await described.json()).toMatchObject({ name: 'Old name', description: 'A place for planning' })
+
+    const renamed = await (await patch(ws.id, cookie, { name: 'New name' })).json()
+    expect(renamed).toMatchObject({ name: 'New name', description: 'A place for planning' })
+
+    // Reflected wherever the workspace is read
+    expect(await (await api(`/api/workspaces/${ws.id}`, cookie)).json()).toMatchObject({ name: 'New name', description: 'A place for planning' })
+    expect((await (await api('/api/workspaces', cookie)).json())[0]).toMatchObject({ name: 'New name' })
+
+    // Deliberate clearing, both ways
+    expect(await (await patch(ws.id, cookie, { description: null })).json()).toMatchObject({ description: null })
+    await patch(ws.id, cookie, { description: 'Back again' })
+    expect(await (await patch(ws.id, cookie, { description: '' })).json()).toMatchObject({ description: null, name: 'New name' })
+  })
+
+  it('rejects unusable input without changing anything', async () => {
+    const admin = await upsertAccount(db, 'supabase-settings-picky', 'picky-admin@example.com')
+    const ws = await createWorkspaceFor(db, admin.id, 'Steady')
+    const cookie = `orbit_session=${await createSession(db, admin.id)}`
+    for (const body of [{ name: '' }, { name: 'a'.repeat(65) }, { description: 'a'.repeat(281) }, { description: 42 }, [], 'nope']) {
+      expect((await patch(ws.id, cookie, body)).status).toBe(422)
+    }
+    expect(await (await api(`/api/workspaces/${ws.id}`, cookie)).json()).toMatchObject({ name: 'Steady', description: null })
+  })
+
+  it('is enforced on the server: members 403, outsiders 404, signed out 401', async () => {
+    const admin = await upsertAccount(db, 'supabase-settings-owner', 'owner2@example.com')
+    const member = await upsertAccount(db, 'supabase-settings-member', 'member2@example.com')
+    const outsider = await upsertAccount(db, 'supabase-settings-outsider', 'outsider2@example.com')
+    const ws = await createWorkspaceFor(db, admin.id, 'Guarded')
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${member.id}, ${ws.id}, 'member')`
+    await db`UPDATE orbit.workspaces SET description = 'For the guards' WHERE id = ${ws.id}`
+    const memberCookie = `orbit_session=${await createSession(db, member.id)}`
+
+    expect((await patch(ws.id, memberCookie, { name: 'Taken' })).status).toBe(403)
+    expect((await patch(ws.id, `orbit_session=${await createSession(db, outsider.id)}`, { name: 'Taken' })).status).toBe(404)
+    expect((await patch(ws.id, undefined, { name: 'Taken' })).status).toBe(401)
+
+    // Members can still see it all
+    const seen = await (await api(`/api/workspaces/${ws.id}`, memberCookie)).json()
+    expect(seen).toMatchObject({ name: 'Guarded', description: 'For the guards', role: 'member' })
+  })
+})
