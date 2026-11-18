@@ -9,7 +9,7 @@ useHead({ title: 'New workspace · Orbit' })
     <CreateWorkspaceForm another />
 
     <template #footer>
-      <p>You’ll be its administrator. Your other workspaces stay just as they are.</p>
+      <p>A new place for you and your people. Your other workspaces stay just as they are.</p>
       <p class="mt-2">
         <NuxtLink to="/" class="link text-sm">Never mind, take me back</NuxtLink>
       </p>

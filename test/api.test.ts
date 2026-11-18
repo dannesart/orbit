@@ -436,6 +436,8 @@ describe('moving between workspaces', () => {
     const markup = await page.text()
     expect(markup).toContain('Create another workspace')
     expect(markup).toContain('Workspace name')
+    expect(markup).toContain('A new place for you and your people.')
+    expect(markup).not.toContain('administrator') // no promise of a role Orbit hasn't modelled yet
 
     const created = await browser.request('/api/workspaces', { method: 'POST', body: JSON.stringify({ name: 'Second Place' }) })
     expect(created.status).toBe(201)
