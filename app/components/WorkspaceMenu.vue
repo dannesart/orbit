@@ -74,27 +74,22 @@ function goToSettings() {
 
         <div class="mx-1.5 mb-1.5 border-t border-slate-100" role="separator" />
 
-        <button
-          type="button" role="menuitem"
-          class="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition outline-none hover:bg-accent-50 hover:text-accent-700 focus-visible:bg-accent-50 focus-visible:text-accent-700"
-          @click="goToSettings"
-        >
-          <svg
-            viewBox="0 0 16 16" class="size-4 shrink-0 text-slate-400 transition group-hover:text-accent-600 group-focus-visible:text-accent-600"
-            fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"
-          >
-            <template v-if="workspace.role === 'admin'">
-              <path d="M2.5 4.5h6M12.5 4.5h1M2.5 11.5h1M7.5 11.5h6" />
-              <circle cx="10.5" cy="4.5" r="1.75" />
-              <circle cx="5.5" cy="11.5" r="1.75" />
-            </template>
-            <template v-else>
-              <circle cx="8" cy="8" r="5.75" />
-              <path d="M8 7.25v3.5M8 5.25v.01" />
-            </template>
-          </svg>
+        <MenuItem @click="goToSettings">
+          <template #icon>
+            <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <template v-if="workspace.role === 'admin'">
+                <path d="M2.5 4.5h6M12.5 4.5h1M2.5 11.5h1M7.5 11.5h6" />
+                <circle cx="10.5" cy="4.5" r="1.75" />
+                <circle cx="5.5" cy="11.5" r="1.75" />
+              </template>
+              <template v-else>
+                <circle cx="8" cy="8" r="5.75" />
+                <path d="M8 7.25v3.5M8 5.25v.01" />
+              </template>
+            </svg>
+          </template>
           {{ settingsLabel }}
-        </button>
+        </MenuItem>
       </div>
     </Transition>
   </div>
