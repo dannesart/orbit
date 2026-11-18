@@ -2,16 +2,20 @@
 import type { NuxtError } from '#app'
 
 const props = defineProps<{ error: NuxtError }>()
+const route = useRoute()
 
 const copy = computed(() => {
-  switch (props.error.statusCode) {
-    case 401:
-      return { title: 'You’ve been signed out', text: 'Sign in again to pick up where you left off.', action: 'Sign in', to: '/sign-in' }
-    case 404:
-      return { title: 'This workspace is out of reach', text: 'It doesn’t exist, or you’re not a member of it.', action: 'Back to Orbit', to: '/' }
-    default:
-      return { title: 'Something went wrong', text: 'Please try again in a moment.', action: 'Back to Orbit', to: '/' }
+  if (props.error.statusCode === 401) {
+    return { title: 'You’ve been signed out', text: 'Sign in again to pick up where you left off.', action: 'Sign in', to: '/sign-in' }
   }
+  if (props.error.statusCode === 404) {
+    return { title: 'This workspace is out of reach', text: 'It doesn’t exist, or you’re not a member of it.', action: 'Back to Orbit', to: '/' }
+  }
+  if (props.error.statusMessage === 'Workspace unavailable') {
+    // A failure, not a verdict: retry the same page rather than sending people away.
+    return { title: 'We couldn’t open this workspace right now', text: 'Something went wrong while loading it. Trying again often helps.', action: 'Try again', to: route.fullPath }
+  }
+  return { title: 'Something went wrong', text: 'Please try again in a moment.', action: 'Back to Orbit', to: '/' }
 })
 </script>
 

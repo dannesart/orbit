@@ -84,9 +84,11 @@ describe('signed-in accounts', () => {
     const [adas] = await (await api('/api/workspaces', adaLaptop)).json()
     expect((await api(`/api/workspaces/${adas.id}`, graceLaptop)).status).toBe(404)
     expect(await (await api('/api/workspaces', graceLaptop)).json()).toEqual([])
-    const page = await api(`/w/${adas.id}`, graceLaptop)
+    const page = await api(`/w/${adas.id}`, graceLaptop, { headers: { accept: 'text/html' } })
     expect(page.status).toBe(404)
-    expect(await page.text()).not.toContain('Analytical Engines')
+    const html = await page.text()
+    expect(html).not.toContain('Analytical Engines')
+    expect(html).toContain('This workspace is out of reach') // a confirmed 404 still says so
   })
 
   it('sign out one browser without affecting the other', async () => {
@@ -251,6 +253,9 @@ describe('what should we call you?', () => {
 
     expect(await location(browser, '/welcome')).toBe('/') // never asked again
     expect(await location(browser, '/')).toBe(200) // → create workspace
+    const home = await (await browser.request('/')).text()
+    expect(home).toContain('Create your workspace') // a confirmed-empty list still offers it
+    expect(home).not.toContain('We couldn’t reach your workspaces')
   })
 
   it('is skipped by returning people who already answered, in any browser', async () => {
