@@ -7,10 +7,10 @@
 <script setup lang="ts">
 import type { WorkspaceView } from '~~/server/utils/workspaces'
 
-const props = defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name' | 'description' | 'role'> }>()
+const props = defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name' | 'description' | 'canManage'> }>()
 const { open, root, trigger, menu, show, close, toggle, onKeydown } = useMenu()
 const ids = useId()
-const settingsLabel = computed(() => settingsTitle(props.workspace.role))
+const settingsLabel = computed(() => settingsTitle(props.workspace.canManage))
 
 // Every workspace you belong to. Lazy, so it never holds up the page; while it loads, or if it
 // fails, the menu still works for the workspace you're in, and a failure says so.
@@ -99,7 +99,7 @@ async function retry() {
         <MenuItem @click="goTo(`/w/${workspace.id}/settings`)">
           <template #icon>
             <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-              <template v-if="workspace.role === 'admin'">
+              <template v-if="workspace.canManage">
                 <path d="M2.5 4.5h6M12.5 4.5h1M2.5 11.5h1M7.5 11.5h6" />
                 <circle cx="10.5" cy="4.5" r="1.75" />
                 <circle cx="5.5" cy="11.5" r="1.75" />

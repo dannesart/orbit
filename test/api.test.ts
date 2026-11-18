@@ -408,6 +408,45 @@ describe('workspace settings', () => {
     expect(asMember).toContain('<title>About · Honest Words · Orbit</title>')
     expect(asMember).not.toContain('Workspace settings')
   })
+
+  it('belongs to the owner as owner: with a member role, they still manage, on the server and on the page', async () => {
+    const owner = await setName(db, (await upsertAccount(db, 'supabase-owner-as-member', 'owner-member@example.com')).id, 'Olu')
+    const ws = await createWorkspaceFor(db, owner.id, 'Owned Outright')
+    await db`UPDATE orbit.memberships SET role = 'member' WHERE user_id = ${owner.id} AND workspace_id = ${ws.id}`
+    const cookie = `orbit_session=${await createSession(db, owner.id)}`
+
+    expect(await (await api(`/api/workspaces/${ws.id}`, cookie)).json()).toMatchObject({ role: 'member', canManage: true })
+    const saved = await patch(ws.id, cookie, { name: 'Still Owned' })
+    expect(saved.status).toBe(200)
+    expect(await saved.json()).toMatchObject({ name: 'Still Owned', role: 'member', canManage: true })
+
+    const settings = await (await api(`/w/${ws.id}/settings`, cookie, { headers: { accept: 'text/html' } })).text()
+    expect(settings).toMatch(/<h1[^>]*>Workspace settings<\/h1>/)
+    expect(settings).toMatch(/<form[^>]*>/) // the editing form, not the read-only view
+    expect(settings).not.toContain('Only the owner and stewards can change these')
+  })
+})
+
+describe('a workspace made by older code, before it has an owner (between migrations 004 and 005)', () => {
+  it('is reported as a failure everywhere it would show its people, never as whole or out of reach', async () => {
+    const creator = await setName(db, (await upsertAccount(db, 'supabase-ownerless', 'ownerless@example.com')).id, 'Early')
+    const [w] = await db<{ id: string }[]>`INSERT INTO orbit.workspaces (name, created_by) VALUES ('Half Made', ${creator.id}) RETURNING id`
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${creator.id}, ${w!.id}, 'admin')`
+    const cookie = `orbit_session=${await createSession(db, creator.id)}`
+
+    expect((await api(`/api/workspaces/${w!.id}`, cookie)).status).toBe(500)
+    for (const path of [`/w/${w!.id}`, `/w/${w!.id}/settings`, `/w/${w!.id}/people`]) {
+      const res = await api(path, cookie, { headers: { accept: 'text/html' } })
+      expect(res.status, path).toBe(503)
+      const html = await res.text()
+      expect(html, path).toContain('We couldn’t open this workspace right now')
+      expect(html, path).toContain('Try again')
+      expect(html, path).not.toContain('out of reach')
+      expect(html, path).not.toContain('Owner')
+    }
+    // Nothing was guessed or written on the way.
+    expect((await db`SELECT owner_id FROM orbit.workspaces WHERE id = ${w!.id}`)[0]!.owner_id).toBeNull()
+  })
 })
 
 describe('moving between workspaces', () => {
