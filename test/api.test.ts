@@ -388,4 +388,24 @@ describe('workspace settings', () => {
     const seen = await (await api(`/api/workspaces/${ws.id}`, memberCookie)).json()
     expect(seen).toMatchObject({ name: 'Guarded', description: 'For the guards', role: 'member' })
   })
+  it('names the page honestly: admins get settings, members get "About this workspace"', async () => {
+    const admin = await setName(db, (await upsertAccount(db, 'supabase-about-admin', 'about-admin@example.com')).id, 'Ada')
+    const member = await setName(db, (await upsertAccount(db, 'supabase-about-member', 'about-member@example.com')).id, 'Grace')
+    const ws = await createWorkspaceFor(db, admin.id, 'Honest Words')
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${member.id}, ${ws.id}, 'member')`
+    const html = async (userId: string) => {
+      const res = await api(`/w/${ws.id}/settings`, `orbit_session=${await createSession(db, userId)}`, { headers: { accept: 'text/html' } })
+      expect(res.status).toBe(200)
+      return res.text()
+    }
+
+    const asAdmin = await html(admin.id)
+    expect(asAdmin).toMatch(/<h1[^>]*>Workspace settings<\/h1>/)
+    expect(asAdmin).toContain('<title>Settings · Honest Words · Orbit</title>')
+
+    const asMember = await html(member.id)
+    expect(asMember).toMatch(/<h1[^>]*>About this workspace<\/h1>/)
+    expect(asMember).toContain('<title>About · Honest Words · Orbit</title>')
+    expect(asMember).not.toContain('Workspace settings')
+  })
 })

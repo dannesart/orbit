@@ -1,4 +1,7 @@
-import type { WorkspaceDetail, WorkspaceView } from '~~/server/utils/workspaces'
+import type { Role, WorkspaceDetail, WorkspaceView } from '~~/server/utils/workspaces'
+
+/** The settings page is the same for everyone, but only admins can change things there. */
+export const settingsTitle = (role: Role) => (role === 'admin' ? 'Workspace settings' : 'About this workspace')
 
 /**
  * The current workspace, shared by every page and component that shows it, under one key:

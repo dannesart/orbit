@@ -10,8 +10,7 @@ import type { WorkspaceView } from '~~/server/utils/workspaces'
 const props = defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name' | 'description' | 'role'> }>()
 const { open, root, trigger, menu, toggle, onKeydown } = useMenu()
 const ids = useId()
-// Same page for everyone; only admins can change things there, so members are told what they will find.
-const settingsLabel = computed(() => (props.workspace.role === 'admin' ? 'Workspace settings' : 'About this workspace'))
+const settingsLabel = computed(() => settingsTitle(props.workspace.role))
 
 function goToSettings() {
   open.value = false

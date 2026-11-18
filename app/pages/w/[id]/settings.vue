@@ -1,7 +1,8 @@
 <script setup lang="ts">
 const route = useRoute()
 const { workspace: ws, isAdmin, save } = await useWorkspace(String(route.params.id))
-useHead({ title: () => `Settings · ${ws.value.name} · Orbit` })
+const heading = computed(() => settingsTitle(ws.value.role))
+useHead({ title: () => `${isAdmin.value ? 'Settings' : 'About'} · ${ws.value.name} · Orbit` })
 
 const name = ref(ws.value.name)
 const description = ref(ws.value.description ?? '')
@@ -55,7 +56,7 @@ async function submit() {
       </NuxtLink>
 
       <section class="mt-6 animate-rise rounded-3xl border border-slate-200/80 bg-white p-8 shadow-sm">
-        <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Workspace settings</h1>
+        <h1 class="text-2xl font-semibold tracking-tight text-slate-900">{{ heading }}</h1>
 
         <form v-if="isAdmin" class="mt-8 flex flex-col" novalidate @submit.prevent="submit">
           <label for="ws-name" class="text-sm font-medium text-slate-700">Name</label>
