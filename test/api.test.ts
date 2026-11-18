@@ -346,10 +346,19 @@ describe('workspace settings', () => {
     expect(await (await api(`/api/workspaces/${ws.id}`, cookie)).json()).toMatchObject({ name: 'New name', description: 'A place for planning' })
     expect((await (await api('/api/workspaces', cookie)).json())[0]).toMatchObject({ name: 'New name' })
 
-    // Deliberate clearing, both ways
+    // Deliberate clearing, both ways, and what is actually stored is NULL, never ''
+    const stored = async () => (await db`SELECT description FROM orbit.workspaces WHERE id = ${ws.id}`)[0]!.description
     expect(await (await patch(ws.id, cookie, { description: null })).json()).toMatchObject({ description: null })
+    expect(await stored()).toBeNull()
     await patch(ws.id, cookie, { description: 'Back again' })
+    expect(await stored()).toBe('Back again')
     expect(await (await patch(ws.id, cookie, { description: '' })).json()).toMatchObject({ description: null, name: 'New name' })
+    expect(await stored()).toBeNull()
+    expect((await patch(ws.id, cookie, { description: '   ' })).status).toBe(200)
+    expect(await stored()).toBeNull()
+
+    // And the database itself refuses an empty description, whatever the code does
+    await expect(db`UPDATE orbit.workspaces SET description = '' WHERE id = ${ws.id}`).rejects.toMatchObject({ code: '23514' })
   })
 
   it('rejects unusable input without changing anything', async () => {
