@@ -11,8 +11,12 @@ if (error.value?.statusCode === 401) {
   account.value = null
   throw createError({ statusCode: 401, statusMessage: 'Signed out', fatal: true })
 }
-if (error.value || !workspace.value) {
+// "Out of reach" only when the API confirms it; any other failure is reported as one.
+if (error.value?.statusCode === 404) {
   throw createError({ statusCode: 404, statusMessage: 'Workspace not found', fatal: true })
+}
+if (error.value || !workspace.value) {
+  throw createError({ statusCode: 503, statusMessage: 'Workspace unavailable', fatal: true })
 }
 
 const ws = workspace.value!
