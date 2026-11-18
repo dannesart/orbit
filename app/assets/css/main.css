@@ -88,7 +88,7 @@ body {
 
 @layer components {
   .field {
-    @apply mt-2 block w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 shadow-xs outline-none transition placeholder:text-slate-400 focus:border-accent-500 focus:ring-4 focus:ring-accent-100 aria-invalid:border-red-300 aria-invalid:focus:border-red-500 aria-invalid:focus:ring-red-100;
+    @apply mt-2 block w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 shadow-xs outline-none transition placeholder:text-slate-400 focus:border-accent-500 focus:ring-4 focus:ring-accent-100 aria-invalid:border-red-500 aria-invalid:focus:ring-red-100;
   }
   .btn-primary {
     @apply flex w-full items-center justify-center gap-2 rounded-xl bg-accent-600 px-4 py-3 font-medium text-white shadow-sm shadow-accent-600/30 transition hover:bg-accent-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70;
