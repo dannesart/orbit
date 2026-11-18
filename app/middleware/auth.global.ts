@@ -1,4 +1,7 @@
 export default defineNuxtRouteMiddleware(async (to) => {
+  // Navigation playground (exploration branch only): sample data, no account, no API calls.
+  if (to.path.startsWith('/playground/')) return
+
   const account = useAccount()
   if (account.value === undefined) {
     // useRequestFetch forwards the browser's cookies during server rendering.
