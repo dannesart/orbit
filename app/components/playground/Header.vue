@@ -4,7 +4,7 @@
   drawer. D: the places in the workspace menu, and the current place named after the pill.
 -->
 <script setup lang="ts">
-import { type ConceptKey, type Place, placeHref, places } from '~/playground/sample'
+import { type ConceptKey, type Place, frame, placeHref, places } from '~/playground/sample'
 
 const props = defineProps<{ concept: ConceptKey; place: Place }>()
 const drawer = useState('pg-drawer', () => false)
@@ -13,7 +13,7 @@ const here = computed(() => places.find((p) => p.key === props.place)!)
 
 <template>
   <header class="relative z-20 border-b border-slate-200/70 bg-white/70 backdrop-blur">
-    <div class="mx-auto flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8" :class="concept === 'c' ? '' : 'max-w-7xl'">
+    <div class="flex h-16 items-center justify-between gap-4" :class="[frame.gutter, concept === 'c' ? '' : frame.width]">
       <div class="flex min-w-0 items-center gap-3">
         <button
           v-if="concept === 'c'"
@@ -40,7 +40,7 @@ const here = computed(() => places.find((p) => p.key === props.place)!)
     </div>
 
     <!-- A · The Quiet Line -->
-    <nav v-if="concept === 'a'" aria-label="Workspace" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <nav v-if="concept === 'a'" aria-label="Workspace" :class="[frame.gutter, frame.width]">
       <ul class="-mb-px flex gap-7">
         <li v-for="p in places" :key="p.key">
           <NuxtLink

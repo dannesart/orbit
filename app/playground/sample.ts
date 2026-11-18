@@ -3,7 +3,14 @@
 // Remove the playground: delete app/playground, app/components/playground,
 // app/pages/playground and the one early return in app/middleware/auth.global.ts.
 
-export type ConceptKey = 'a' | 'b' | 'c' | 'd' | 'e1' | 'e2'
+export type ConceptKey = 'a' | 'b' | 'c' | 'd' | 'e1' | 'e2' | 'e3'
+
+/**
+ * Orbit's shared frame: the bounded content area of the workspace header (WorkspaceHeader.vue
+ * uses exactly these classes). The playground header and E3's rail both take it from here, so
+ * the rail lines up with the logo by construction, at every width, instead of by offsets.
+ */
+export const frame = { gutter: 'mx-auto px-4 sm:px-6 lg:px-8', width: 'max-w-7xl' }
 export type Place = 'home' | 'people' | 'settings'
 export type Standing = 'Owner' | 'Steward' | 'Member'
 
@@ -71,6 +78,14 @@ export const concepts: Record<ConceptKey, {
     gains: ['All three places one click away, close to where the eye already is', 'Arrival stays centred; the rail feels like part of the page', 'Doesn’t drift away from content on very wide screens'],
     costs: ['Needs a wide window: below 1024 px it switches to the bottom pill', 'Closer to the content, so slightly more present on Arrival'],
     arrival: 'Arrival stays centred, with a quiet companion beside it.',
+  },
+  e3: {
+    letter: 'E3',
+    name: 'The Workspace Frame',
+    idea: 'The same floating rail, aligned with the left edge of Orbit’s header content, directly beneath the logo. It belongs to Orbit’s frame, so it stays put whatever the page’s layout. If a page’s content would ever reach it, it steps aside into the bottom pill.',
+    gains: ['Same place on every page, whatever its width', 'Logo, rail and header read as one frame', 'Never drifts to the window edge on wide screens'],
+    costs: ['Further from narrow content than E2 on mid-size screens', 'A permanent object beside Arrival, like E1 and E2'],
+    arrival: 'Arrival stays centred; the rail belongs to the frame around it.',
   },
 }
 

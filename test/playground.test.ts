@@ -11,7 +11,7 @@ const get = (path: string) => fetch(path, { redirect: 'manual', headers: { accep
 describe('navigation playground', () => {
   it('serves every concept and place without signing in or touching the database', async () => {
     expect((await get('/playground/navigation')).status).toBe(200)
-    for (const concept of ['a', 'b', 'c', 'd', 'e1', 'e2']) {
+    for (const concept of ['a', 'b', 'c', 'd', 'e1', 'e2', 'e3']) {
       for (const place of ['', '/people', '/settings']) {
         const res = await get(`/playground/navigation/${concept}${place}`)
         expect(res.status, `${concept}${place}`).toBe(200)
@@ -26,7 +26,7 @@ describe('navigation playground', () => {
 
   it('refuses concepts and places that don’t exist', async () => {
     expect((await get('/playground/navigation/e')).status).toBe(404)
-    expect((await get('/playground/navigation/e3')).status).toBe(404)
+    expect((await get('/playground/navigation/e4')).status).toBe(404)
     expect((await get('/playground/navigation/a/billing')).status).toBe(404)
   })
 
