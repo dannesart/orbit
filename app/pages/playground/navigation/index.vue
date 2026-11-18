@@ -69,7 +69,7 @@ const views: { key: View; label: string }[] = [
             @click="concept = k"
           >
             <span
-              class="grid size-5 place-items-center rounded-md text-[11px] font-semibold"
+              class="grid h-5 min-w-5 place-items-center rounded-md px-1 text-[11px] font-semibold"
               :class="concept === k ? 'bg-accent-600 text-white' : 'bg-slate-200 text-slate-600'"
             >{{ concepts[k].letter }}</span>
             {{ concepts[k].name }}

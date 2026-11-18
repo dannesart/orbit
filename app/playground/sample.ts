@@ -3,7 +3,7 @@
 // Remove the playground: delete app/playground, app/components/playground,
 // app/pages/playground and the one early return in app/middleware/auth.global.ts.
 
-export type ConceptKey = 'a' | 'b' | 'c' | 'd'
+export type ConceptKey = 'a' | 'b' | 'c' | 'd' | 'e1' | 'e2'
 export type Place = 'home' | 'people' | 'settings'
 export type Standing = 'Owner' | 'Steward' | 'Member'
 
@@ -55,6 +55,22 @@ export const concepts: Record<ConceptKey, {
     gains: ['Arrival is exactly today’s Arrival: nothing added', 'Navigation belongs to the workspace, which is what it is', 'One pattern on desktop and phone'],
     costs: ['Least discoverable: People and Settings are one click deeper', 'Relies on content links like “See everyone” for the common path'],
     arrival: 'Arrival is untouched; navigation appears only when asked for.',
+  },
+  e1: {
+    letter: 'E1',
+    name: 'Edge Floating Rail',
+    idea: 'C’s icons and labels on B’s glass: a small floating rail near the left edge of the window, its pink moon gliding between places. On phones and narrow windows it becomes a bottom pill.',
+    gains: ['All three places one click away, always', 'Leaves Arrival exactly centred, with the header for identity only', 'Reads as a small Orbit object, not a sidebar'],
+    costs: ['On wide screens it sits far from the content, at the edge of attention', 'A permanent object in the margin, even on Arrival'],
+    arrival: 'Arrival stays centred; a small object rests in the margin.',
+  },
+  e2: {
+    letter: 'E2',
+    name: 'Content Companion',
+    idea: 'The same floating rail, placed just outside the content column and level with the top of the page, so it belongs to what you are reading rather than to the window. On phones and narrow windows it becomes a bottom pill.',
+    gains: ['All three places one click away, close to where the eye already is', 'Arrival stays centred; the rail feels like part of the page', 'Doesn’t drift away from content on very wide screens'],
+    costs: ['Needs a wide window: below 1024 px it switches to the bottom pill', 'Closer to the content, so slightly more present on Arrival'],
+    arrival: 'Arrival stays centred, with a quiet companion beside it.',
   },
 }
 
