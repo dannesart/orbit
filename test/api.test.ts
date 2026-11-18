@@ -503,7 +503,10 @@ describe('moving between workspaces', () => {
 
     const res = await browser.request('/', html)
     expect(res.status).toBe(200)
-    expect(await res.text()).toContain('Create your workspace')
+    const markup = await res.text()
+    expect(markup).toContain('Create your workspace')
+    expect(markup).toContain('A new place for you and your people. Nothing else to set up.')
+    expect(markup).not.toContain('administrator')
   })
 
   it('sends signed-out visitors to sign in, remembered workspace or not', async () => {

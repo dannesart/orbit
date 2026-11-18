@@ -59,7 +59,7 @@ async function retry() {
     <CreateWorkspaceForm v-else />
 
     <template #footer>
-      <p v-if="confirmedEmpty">You’ll be its administrator. Nothing else to set up.</p>
+      <p v-if="confirmedEmpty">A new place for you and your people. Nothing else to set up.</p>
       <p class="mt-2">
         Signed in as <span class="font-medium text-slate-500">{{ account?.email }}</span> ·
         <button type="button" class="link text-sm" @click="signOut">Sign out</button>
