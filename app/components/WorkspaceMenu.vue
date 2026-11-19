@@ -1,16 +1,16 @@
 <!--
   The workspace in the header: its avatar and name, opening a small identity card for the
-  place you're in, with what you can do here beneath it. The current workspace always comes
-  from the page's own useWorkspace() state, so a renamed workspace or new purpose appears at
-  once. Below that, the other workspaces you belong to, and a way to create another.
+  place you're in. The current workspace always comes from the workspace's own useWorkspace()
+  state, so a renamed workspace or new purpose appears at once. Below that, the other workspaces
+  you belong to, and a way to create another. It is about identity and switching only: moving
+  around inside a workspace belongs to the workspace navigation (WorkspaceNav).
 -->
 <script setup lang="ts">
 import type { WorkspaceView } from '~~/server/utils/workspaces'
 
-const props = defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name' | 'description' | 'canManage'> }>()
+const props = defineProps<{ workspace: Pick<WorkspaceView, 'id' | 'name' | 'description'> }>()
 const { open, root, trigger, menu, show, close, toggle, onKeydown } = useMenu()
 const ids = useId()
-const settingsLabel = computed(() => settingsTitle(props.workspace.canManage))
 
 // Every workspace you belong to. Lazy, so it never holds up the page; while it loads, or if it
 // fails, the menu still works for the workspace you're in, and a failure says so.
@@ -95,25 +95,6 @@ async function retry() {
         </div>
 
         <div class="mx-1.5 mb-1.5 border-t border-slate-100" role="separator" />
-
-        <MenuItem @click="goTo(`/w/${workspace.id}/settings`)">
-          <template #icon>
-            <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-              <template v-if="workspace.canManage">
-                <path d="M2.5 4.5h6M12.5 4.5h1M2.5 11.5h1M7.5 11.5h6" />
-                <circle cx="10.5" cy="4.5" r="1.75" />
-                <circle cx="5.5" cy="11.5" r="1.75" />
-              </template>
-              <template v-else>
-                <circle cx="8" cy="8" r="5.75" />
-                <path d="M8 7.25v3.5M8 5.25v.01" />
-              </template>
-            </svg>
-          </template>
-          {{ settingsLabel }}
-        </MenuItem>
-
-        <div class="mx-1.5 my-1.5 border-t border-slate-100" role="separator" />
 
         <template v-if="switchable">
           <p class="px-3 pt-1.5 pb-1 text-xs font-medium tracking-wide text-slate-400 uppercase" aria-hidden="true">
