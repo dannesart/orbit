@@ -66,7 +66,8 @@ export async function createWorkspace(db: Db, userId: string, name: string): Pro
 
 // Who may manage a workspace, as SQL over a membership `m` joined to its workspace `w`: a
 // steward, or the owner. Ownership is read only from owner_id, never from created_by.
-const CAN_MANAGE = `(m.role = 'admin' OR w.owner_id = m.user_id)`
+// Shared by every rule about looking after a workspace (settings, purpose, invitations).
+export const CAN_MANAGE = `(m.role = 'admin' OR w.owner_id = m.user_id)`
 
 /** Workspaces the user belongs to, most recently created first. */
 export async function listWorkspaces(db: Db, userId: string): Promise<WorkspaceView[]> {
@@ -80,10 +81,12 @@ export async function listWorkspaces(db: Db, userId: string): Promise<WorkspaceV
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** Whether a string could be an id Orbit issued (workspaces, invitations), checked before querying. */
+export const isOrbitId = (id: string) => UUID.test(id)
 
 /** Returns the workspace only if the user is a member of it. */
 export async function getWorkspace(db: Db, userId: string, workspaceId: string): Promise<WorkspaceView | null> {
-  if (!UUID.test(workspaceId)) return null // not an id we could have issued
+  if (!isOrbitId(workspaceId)) return null // not an id we could have issued
   const [row] = await db<Row[]>`
     SELECT w.id, w.name, w.description, m.role, ${db.unsafe(CAN_MANAGE)} AS "canManage", w.created_at AS "createdAt"
     FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id

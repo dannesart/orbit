@@ -211,7 +211,7 @@ describe('migration 005 on a database from between 004 and 005', () => {
       expect(await nullable(db.sql)).toBe('YES')
 
       const { migrate } = await import('../server/db/migrate')
-      expect(await migrate(db.sql)).toEqual(['005_workspace_owner_required.sql'])
+      expect(await migrate(db.sql)).toEqual(['005_workspace_owner_required.sql', '006_invitations.sql'])
 
       expect([...await db.sql`SELECT name, owner_id, created_by FROM orbit.workspaces ORDER BY name`]).toEqual([
         { name: 'Early', owner_id: ids.ada, created_by: ids.ada }, // Lin is a steward there, not the owner
@@ -294,7 +294,7 @@ describe('migration 004 on a database from before ownership', () => {
 
       const { migrate } = await import('../server/db/migrate')
       // A database from before ownership goes straight to the final contract.
-      expect(await migrate(old.sql)).toEqual(['004_workspace_owner.sql', '005_workspace_owner_required.sql'])
+      expect(await migrate(old.sql)).toEqual(['004_workspace_owner.sql', '005_workspace_owner_required.sql', '006_invitations.sql'])
 
       expect([...await old.sql`SELECT name, owner_id, created_by FROM orbit.workspaces ORDER BY name`]).toEqual([
         { name: 'garden', owner_id: ids.grace, created_by: ids.grace },

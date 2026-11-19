@@ -1,6 +1,7 @@
 // An in-process PostgreSQL (PGlite) served over the wire protocol, with Orbit's real
 // migrations applied. Same dialect and driver as production; no Docker, no network.
 import { PGlite } from '@electric-sql/pglite'
+import { btree_gist } from '@electric-sql/pglite/contrib/btree_gist'
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket'
 import postgres from 'postgres'
 import { migrate } from '../server/db/migrate'
@@ -17,7 +18,8 @@ export async function startTestDatabase({
   /** Apply migrations only up to this one (e.g. to test a later migration's backfill). */
   upTo,
 }: { asApp?: boolean; prepare?: (sql: postgres.Sql) => Promise<void>; upTo?: string } = {}) {
-  const pg = await PGlite.create()
+  // btree_gist, as on Supabase (migration 006 installs it; PGlite bundles it as an extension).
+  const pg = await PGlite.create({ extensions: { btree_gist } })
   // Supabase's API roles, so the migration's revokes run exactly as they would there.
   await pg.exec('CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;')
 
