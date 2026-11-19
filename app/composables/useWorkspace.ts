@@ -1,3 +1,4 @@
+import type { InjectionKey } from 'vue'
 import type { WorkspaceDetail, WorkspaceView } from '~~/server/utils/workspaces'
 
 /** The settings page is the same for everyone, but only the owner and stewards can change things there. */
@@ -39,4 +40,22 @@ export async function useWorkspace(id: string) {
   }
 
   return { workspace, canManage: computed(() => data.value?.canManage === true), save }
+}
+
+type WorkspaceContext = Awaited<ReturnType<typeof useWorkspace>>
+const CURRENT: InjectionKey<WorkspaceContext> = Symbol('current workspace')
+
+/**
+ * For the workspace frame (pages/w/[id].vue), which loads the workspace once for all its pages.
+ * Call it synchronously in the frame's setup, right after awaiting useWorkspace().
+ */
+export function provideCurrentWorkspace(context: WorkspaceContext) {
+  provide(CURRENT, context)
+}
+
+/** For the pages inside the workspace frame: the workspace it loaded, with save(). */
+export function useCurrentWorkspace(): WorkspaceContext {
+  const context = inject(CURRENT, null)
+  if (!context) throw new Error('useCurrentWorkspace() only works inside a workspace page (pages/w/[id]/).')
+  return context
 }

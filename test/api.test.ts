@@ -563,7 +563,10 @@ describe('people', () => {
       expect(res.text).toContain('3 people belong here.')
       // In order (owner, steward, member), each with their standing, and only the viewer as "you".
       // (Each row starts with its avatar's initial, which is hidden from assistive technology.)
-      const rows = [...res.text.matchAll(/<li(?:\s[^>]*)?>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+      // (Only the People card's own list: the page also carries the workspace navigation.)
+      const start = res.text.indexOf('aria-labelledby="people"')
+      const card = res.text.slice(start, res.text.indexOf('</section>', start))
+      const rows = [...card.matchAll(/<li(?:\s[^>]*)?>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
       expect(rows).toEqual([
         `Y Yusuf ${viewer === owner ? '(you) ' : ''}Owner`,
         `B Bea ${viewer === steward ? '(you) ' : ''}Steward`,
@@ -609,5 +612,67 @@ describe('people', () => {
     const ws = await createWorkspaceFor(db, host.id, 'Front Door')
     const arrival = await page(`/w/${ws.id}`, await cookieFor(host.id))
     expect(arrival.text).toMatch(new RegExp(`<a[^>]+href="/w/${ws.id}/people"[^>]*>See everyone</a>`))
+  })
+})
+
+describe('workspace navigation', () => {
+  const html = { headers: { accept: 'text/html' } }
+  const cookieFor = async (userId: string) => `orbit_session=${await createSession(db, userId)}`
+  const page = async (path: string, cookie?: string) => {
+    const res = await api(path, cookie, html)
+    return { status: res.status, location: res.headers.get('location'), text: await res.text() }
+  }
+  /** Each workspace navigation on the page (the rail and the pill; CSS shows one), as its links. */
+  const navs = (text: string) =>
+    [...text.matchAll(/<nav[^>]*aria-label="Workspace"[^>]*>([\s\S]*?)<\/nav>/g)].map(([, inner]) =>
+      [...inner!.matchAll(/<a([^>]*)>([\s\S]*?)<\/a>/g)].map(([, attrs, label]) => ({
+        href: attrs!.match(/href="([^"]+)"/)?.[1],
+        label: label!.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+        current: /aria-current="page"/.test(attrs!),
+      })))
+
+  it('offers Home, People and Settings on every page, marking where you are', async () => {
+    const steward = await setName(db, (await upsertAccount(db, 'supabase-nav-steward', 'nav-steward@example.com')).id, 'Nia')
+    const ws = await createWorkspaceFor(db, steward.id, 'Wayfinding')
+    const cookie = await cookieFor(steward.id)
+    for (const [path, here] of [[`/w/${ws.id}`, 'Home'], [`/w/${ws.id}/people`, 'People'], [`/w/${ws.id}/settings`, 'Settings']] as const) {
+      const res = await page(path, cookie)
+      expect(res.status, path).toBe(200)
+      const found = navs(res.text)
+      expect(found, path).toHaveLength(2) // the rail and the pill
+      for (const links of found) {
+        expect(links, path).toEqual([
+          { href: `/w/${ws.id}`, label: 'Home', current: here === 'Home' },
+          { href: `/w/${ws.id}/people`, label: 'People', current: here === 'People' },
+          { href: `/w/${ws.id}/settings`, label: 'Settings', current: here === 'Settings' },
+        ])
+      }
+      expect(res.text, path).not.toContain('Back to Wayfinding') // the navigation replaces the Back links
+    }
+    // Arrival keeps its own way to People, in context.
+    expect((await page(`/w/${ws.id}`, cookie)).text).toMatch(new RegExp(`<a[^>]+href="/w/${ws.id}/people"[^>]*>See everyone</a>`))
+  })
+
+  it('names Settings for what members can do there: About', async () => {
+    const owner = await upsertAccount(db, 'supabase-nav-owner', 'nav-owner@example.com')
+    const member = await setName(db, (await upsertAccount(db, 'supabase-nav-member', 'nav-member@example.com')).id, 'Mo')
+    const ws = await createWorkspaceFor(db, owner.id, 'Reading Room')
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${member.id}, ${ws.id}, 'member')`
+    const res = await page(`/w/${ws.id}/settings`, await cookieFor(member.id))
+    for (const links of navs(res.text)) {
+      expect(links.map((l) => l.label)).toEqual(['Home', 'People', 'About'])
+      expect(links[2]).toMatchObject({ href: `/w/${ws.id}/settings`, current: true })
+    }
+    expect(res.text).toMatch(/<h1[^>]*>About this workspace<\/h1>/)
+  })
+
+  it('appears only inside a workspace you belong to', async () => {
+    const insider = await upsertAccount(db, 'supabase-nav-insider', 'nav-insider@example.com')
+    const outsider = await setName(db, (await upsertAccount(db, 'supabase-nav-outsider', 'nav-outsider@example.com')).id, 'Otto')
+    const ws = await createWorkspaceFor(db, insider.id, 'Members Only')
+    const blocked = await page(`/w/${ws.id}/people`, await cookieFor(outsider.id))
+    expect(blocked.status).toBe(404)
+    expect(navs(blocked.text)).toHaveLength(0)
+    expect(await page(`/w/${ws.id}/settings`)).toMatchObject({ status: 302, location: '/sign-in' })
   })
 })
