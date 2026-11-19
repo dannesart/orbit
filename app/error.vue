@@ -6,7 +6,7 @@ const route = useRoute()
 
 const copy = computed(() => {
   if (props.error.statusCode === 401) {
-    return { title: 'You’ve been signed out', text: 'Sign in again to pick up where you left off.', action: 'Sign in', to: '/sign-in' }
+    return { title: 'You’ve been signed out', text: 'Sign in again to pick up where you left off.', action: 'Sign in', to: signInPath(route.fullPath) }
   }
   if (props.error.statusCode === 404) {
     return { title: 'This workspace is out of reach', text: 'It doesn’t exist, or you’re not a member of it.', action: 'Back to Orbit', to: '/' }

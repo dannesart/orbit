@@ -5,7 +5,8 @@ const route = useRoute()
 const account = useAccount()
 // Same question, also used to change an existing name (from the account menu).
 const changing = Boolean(account.value?.name)
-const back = typeof route.query.back === 'string' && /^\/(?!\/)/.test(route.query.back) ? route.query.back : '/'
+// Where to continue afterwards: where they were going when Orbit asked, or where they changed it from.
+const back = safeDestination(route.query.back) ?? '/'
 const name = ref(account.value?.name ?? '')
 const error = ref('')
 const saving = ref(false)
