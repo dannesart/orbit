@@ -1,6 +1,6 @@
 /**
- * Change a workspace's name and/or purpose. The single endpoint behind both the inline purpose
- * editor and Settings. Fields left out are untouched; `description: null` or "" clears it.
+ * Change a workspace's name and/or purpose. The single endpoint behind both the purpose dialog
+ * on Arrival and Settings. Fields left out are untouched; `description: null` or "" clears it.
  */
 export default defineEventHandler(async (event) => {
   const account = await requireAccount(event)

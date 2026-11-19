@@ -317,6 +317,42 @@ describe('workspace arrival', () => {
     expect((await api(`/api/workspaces/${ws.id}`, outsiderCookie)).status).toBe(404)
   })
 
+  it('lets the owner and stewards change the purpose in a dialog that stays closed, and members only read it', async () => {
+    const owner = await setName(db, (await upsertAccount(db, 'supabase-purpose-owner', 'purpose-owner@example.com')).id, 'Pia')
+    const steward = await setName(db, (await upsertAccount(db, 'supabase-purpose-steward', 'purpose-steward@example.com')).id, 'Sol')
+    const member = await setName(db, (await upsertAccount(db, 'supabase-purpose-member', 'purpose-member@example.com')).id, 'Max')
+    const ws = await createWorkspaceFor(db, owner.id, 'Purposeful')
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${member.id}, ${ws.id}, 'member'), (${steward.id}, ${ws.id}, 'admin')`
+    const arrival = async (userId: string) =>
+      (await api(`/w/${ws.id}`, `orbit_session=${await createSession(db, userId)}`, { headers: { accept: 'text/html' } })).text()
+    const dialogs = (html: string) => [...html.matchAll(/<dialog([^>]*)>/g)].map(([, attrs]) => attrs!)
+
+    // No purpose yet: the owner and stewards are invited to give one, members see nothing at all
+    for (const editor of [owner, steward]) {
+      const html = await arrival(editor.id)
+      expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>\s*What’s this place for\?\s*<\/button>/)
+      expect(dialogs(html)).toHaveLength(1)
+      expect(dialogs(html)[0]).toContain('aria-labelledby="purpose-title"')
+      expect(dialogs(html)[0]).not.toMatch(/\bopen\b/) // closed: Arrival renders exactly as before
+    }
+    let asMember = await arrival(member.id)
+    expect(asMember).not.toContain('What’s this place for')
+    expect(dialogs(asMember)).toHaveLength(0)
+
+    // With a purpose: everyone reads it; only those who can change it get the pencil, dialog closed
+    await db`UPDATE orbit.workspaces SET description = 'Planning the spring launch' WHERE id = ${ws.id}`
+    const asOwner = await arrival(owner.id)
+    expect(asOwner).toContain('Planning the spring launch')
+    expect(asOwner).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*aria-label="Edit what this place is for"/)
+    expect(dialogs(asOwner)).toHaveLength(1)
+    expect(dialogs(asOwner)[0]).not.toMatch(/\bopen\b/)
+    expect(asOwner).not.toContain('>Remove<') // clearing is saving it empty, not a separate action
+    asMember = await arrival(member.id)
+    expect(asMember).toContain('Planning the spring launch')
+    expect(asMember).not.toContain('Edit what this place is for')
+    expect(dialogs(asMember)).toHaveLength(0)
+  })
+
   it('lets named people reach "Change name", but sends them past the first-time question', async () => {
     const change = await api('/welcome?change=1', adaPhone) // adaLaptop was signed out above
     expect([change.status, change.headers.get('location')]).toEqual([200, null])
