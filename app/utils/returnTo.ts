@@ -30,16 +30,20 @@ export function safeDestination(input: unknown): string | null {
 
   let url: URL
   let path: string
+  let queryAndHash: string
   try {
     url = new URL(input, ORIGIN)
-    path = decodeURIComponent(url.pathname) // also rejects malformed percent-encoding
-    decodeURIComponent(url.search)
+    // Decoding also rejects malformed percent-encoding, in every part.
+    path = decodeURIComponent(url.pathname)
+    queryAndHash = decodeURIComponent(url.search + url.hash)
   } catch {
     return null
   }
   if (url.origin !== ORIGIN) return null
   // Encoded tricks ("/%2F%2Fevil.com", "/%5Cevil.com") stay paths here, but are never meaningful.
   if (path.startsWith('//') || /[\\\p{Cc}]/u.test(path)) return null
+  // Query and hash may hold slashes and backslashes as data, but no encoded control characters.
+  if (/\p{Cc}/u.test(queryAndHash)) return null
 
   const route = path.toLowerCase().replace(/\/+$/, '') || '/'
   if (route === '/' || isAuthStepOrApi(route)) return null

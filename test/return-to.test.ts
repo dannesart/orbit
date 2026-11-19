@@ -31,8 +31,23 @@ describe('safeDestination', () => {
       expect(safeDestination(input), JSON.stringify(input)).toBeNull()
   })
 
+  it('refuses encoded control characters in the path, the query and the hash alike', () => {
+    for (const input of [
+      '/w/%0a', '/w/%7F', '/w/%C2%85',
+      '/w/abc?q=%0d%0a', '/w/abc?q=%00', '/w/abc?q=ok&r=%09', '/w/abc?q=%C2%85',
+      '/w/abc#%0a', '/w/abc#%00', '/w/abc#top%7F', '/w/abc?q=ok#%C2%9F',
+    ]) expect(safeDestination(input), input).toBeNull()
+  })
+
+  it('still keeps real queries and anchors: Unicode, emoji, and slashes or backslashes as data', () => {
+    for (const input of [
+      '/w/abc?q=caf%C3%A9#R%C3%A9sum%C3%A9', '/w/abc?q=%F0%9F%AA%90', '/w/abc#%F0%9F%AA%90',
+      '/w/abc?from=%2Fw%2Fdef', '/w/abc?q=a%5Cb', '/w/abc?q=a%20b&r=1', '/w/abc#section-2',
+    ]) expect(safeDestination(input), input).toBe(input)
+  })
+
   it('refuses malformed paths', () => {
-    for (const input of ['', '/%', '/w/%zz', '/w/abc?q=%E0%A4%A', '/' + 'a'.repeat(2048)]) expect(safeDestination(input), input.slice(0, 20)).toBeNull()
+    for (const input of ['', '/%', '/w/%zz', '/w/abc?q=%E0%A4%A', '/w/abc#%zz', '/w/abc#50%', '/' + 'a'.repeat(2048)]) expect(safeDestination(input), input.slice(0, 20)).toBeNull()
   })
 
   it('refuses anything that isn’t one plain string', () => {
