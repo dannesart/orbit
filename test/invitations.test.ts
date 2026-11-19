@@ -339,6 +339,23 @@ describe('the database’s own guarantees', () => {
     expect((await stored(invitation.id)).accepted_at).toBeNull()
   })
 
+  it('refuses an acceptance by anyone but the recipient, even an existing member of the workspace', async () => {
+    const { ws, owner, member } = await workspace()
+    const guest = await person()
+    const invitation = await invite(owner.id, ws.id, guest.email)
+    // The member already belongs, so only the recipient check stands in the way
+    await expect(sql()`UPDATE orbit.invitations SET accepted_at = now(), accepted_by = ${member.id} WHERE id = ${invitation.id}`)
+      .rejects.toThrow(/can only be accepted by the account it was addressed to/)
+    await expect(sql().begin(async (tx) => {
+      await tx`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${guest.id}, ${ws.id}, 'member')` // even with the recipient made a member
+      await tx`UPDATE orbit.invitations SET accepted_at = now(), accepted_by = ${owner.id} WHERE id = ${invitation.id}`
+    })).rejects.toThrow(/can only be accepted by the account it was addressed to/)
+
+    expect((await stored(invitation.id)).accepted_at).toBeNull()
+    expect(await membership(guest.id, ws.id)).toBeNull() // the whole transaction rolled back
+    expect(await acceptInvitation(sql(), guest.id, invitation.id)).toMatchObject({ ok: true, joined: true }) // still the recipient's to answer
+  })
+
   it('refuses to record an answer after expiry, and stamps answers with its own clock', async () => {
     const { ws, owner } = await workspace()
     const late = await invite(owner.id, ws.id, 'late-answer@example.com')

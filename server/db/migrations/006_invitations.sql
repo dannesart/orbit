@@ -26,15 +26,25 @@
 --     re-inviting works, and concurrent creations can't both succeed. This needs btree_gist
 --     (for "=" on uuid and text in the same GiST index): trusted, available on Supabase, and
 --     installed below into its `extensions` schema.
---   * An acceptance is never recorded unless its recipient is, at commit, a member of the
---     workspace (invitation_accepted_means_member, deferred to the end of the transaction, so
---     the acceptance and the membership land together or not at all). Checked only when the
---     acceptance happens, so history stays true if a member later leaves.
+--   * An acceptance is recorded only for the account the invitation was addressed to (its email
+--     matches), and only if, at commit, that account is a member of the workspace
+--     (invitation_acceptance_check, deferred to the end of the transaction, so the acceptance and
+--     the membership land together or not at all). Checked only when the acceptance happens, so
+--     history stays true if the member later leaves or their address changes.
+--
+-- What the database does NOT decide: who may invite or revoke (the owner or a steward), or that
+-- joining grants Member only. Orbit's server owns authorization (server/utils/invitations.ts,
+-- checked inside the same statements); orbit_app is trusted with Orbit's data as a whole, as for
+-- every other table. These constraints keep the facts consistent whatever code writes them.
 --
 -- Privileges: orbit_app may read invitations, create them (workspace, email and inviter only:
 -- the database decides the id and times), and record closing facts. It can't change who or what
 -- an invitation was for, move its dates, or delete history (no DELETE; invitations go only with
 -- their workspace, by cascade).
+--
+-- Retention (adopted, not implemented here): 90 days after an invitation closes or expires,
+-- accepted ones included, it is to be deleted or anonymised by a later, separately privileged
+-- mechanism. Memberships never depend on invitations, so that can't affect who belongs where.
 
 DO $$
 BEGIN
@@ -104,9 +114,16 @@ $$;
 CREATE TRIGGER invitations_record_facts BEFORE UPDATE ON orbit.invitations
   FOR EACH ROW EXECUTE FUNCTION orbit.invitations_record_facts();
 
--- Accepting means belonging: at commit, the person who accepted must be a member.
-CREATE FUNCTION orbit.invitation_accepted_means_member() RETURNS trigger LANGUAGE plpgsql AS $$
+-- Only the recipient accepts, and accepting means belonging: at commit, the account that accepted
+-- must be the one the invitation was addressed to, and a member of the workspace.
+CREATE FUNCTION orbit.invitation_acceptance_check() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM orbit.users u WHERE u.id = NEW.accepted_by AND lower(u.email) = NEW.email
+  ) THEN
+    RAISE EXCEPTION 'Invitation % can only be accepted by the account it was addressed to', NEW.id
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM orbit.memberships m
     WHERE m.user_id = NEW.accepted_by AND m.workspace_id = NEW.workspace_id
@@ -117,13 +134,13 @@ BEGIN
   RETURN NULL;
 END
 $$;
-CREATE CONSTRAINT TRIGGER invitation_accepted_means_member AFTER UPDATE OF accepted_at ON orbit.invitations
+CREATE CONSTRAINT TRIGGER invitation_acceptance_check AFTER UPDATE OF accepted_at ON orbit.invitations
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW WHEN (OLD.accepted_at IS NULL AND NEW.accepted_at IS NOT NULL)
-  EXECUTE FUNCTION orbit.invitation_accepted_means_member();
+  EXECUTE FUNCTION orbit.invitation_acceptance_check();
 
 REVOKE ALL ON orbit.invitations FROM PUBLIC;
-REVOKE ALL ON FUNCTION orbit.invitations_record_facts(), orbit.invitation_accepted_means_member() FROM PUBLIC;
+REVOKE ALL ON FUNCTION orbit.invitations_record_facts(), orbit.invitation_acceptance_check() FROM PUBLIC;
 GRANT SELECT ON orbit.invitations TO orbit_app;
 GRANT INSERT (workspace_id, email, invited_by) ON orbit.invitations TO orbit_app;
 GRANT UPDATE (accepted_at, accepted_by, declined_at, revoked_at, revoked_by) ON orbit.invitations TO orbit_app;
