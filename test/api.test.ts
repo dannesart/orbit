@@ -46,11 +46,11 @@ describe('signed-out visitors', () => {
     expect(await db`SELECT 1 FROM orbit.workspaces`).toHaveLength(0)
   })
 
-  it('are sent to sign-in from any page', async () => {
-    for (const path of ['/', '/w/anything']) {
+  it('are sent to sign-in from any page, remembering where they were going', async () => {
+    for (const [path, location] of [['/', '/sign-in'], ['/w/anything', '/sign-in?next=%2Fw%2Fanything']]) {
       const res = await api(path)
       expect(res.status).toBe(302)
-      expect(res.headers.get('location')).toBe('/sign-in')
+      expect(res.headers.get('location')).toBe(location)
     }
     expect((await api('/sign-in')).status).toBe(200)
   })
@@ -244,7 +244,7 @@ describe('what should we call you?', () => {
     const browser = await signIn('newcomer@example.com')
     expect(await (await browser.request('/api/me')).json()).toEqual({ email: 'newcomer@example.com', name: null })
     expect(await location(browser, '/')).toBe('/welcome')
-    expect(await location(browser, '/w/anything')).toBe('/welcome')
+    expect(await location(browser, '/w/anything')).toBe('/welcome?back=%2Fw%2Fanything')
     expect(await location(browser, '/welcome')).toBe(200)
 
     const saved = await putName(browser, '  Linnea  ')
@@ -272,7 +272,7 @@ describe('what should we call you?', () => {
     const browser = new Browser()
     browser.jar.set('orbit_session', await createSession(db, veteran.id))
 
-    expect(await location(browser, `/w/${workspace.id}`)).toBe('/welcome')
+    expect(await location(browser, `/w/${workspace.id}`)).toBe(`/welcome?back=%2Fw%2F${workspace.id}`)
     await putName(browser, 'Veteran')
     expect(await location(browser, `/w/${workspace.id}`)).toBe(200)
     expect(await (await browser.request(`/api/workspaces/${workspace.id}`)).json())
@@ -294,6 +294,107 @@ describe('what should we call you?', () => {
       expect(res.status).toBe(422)
     }
     expect(await (await browser.request('/api/me')).json()).toEqual({ email: 'picky@example.com', name: null })
+  })
+})
+
+// The sign-in page and the name question navigate to the remembered destination in the browser;
+// here, the server-rendered middleware is checked to carry and honour it the same way.
+describe('returning after sign-in', () => {
+  const html = { headers: { accept: 'text/html' } }
+  const location = async (browser: Browser | undefined, path: string) => {
+    const res = browser ? await browser.request(path, html) : await api(path, undefined, html)
+    return res.status === 302 ? res.headers.get('location') : res.status
+  }
+  const signIn = async (email: string) => {
+    const browser = new Browser()
+    await browser.requestCode(email)
+    await browser.verify(email, supabase.codeFor(email))
+    return browser
+  }
+  const giveName = (browser: Browser, name: string) => browser.request('/api/me', { method: 'PUT', body: JSON.stringify({ name }) })
+  const named = async (email: string, name: string) => {
+    const browser = await signIn(email)
+    await giveName(browser, name)
+    return browser
+  }
+
+  it('brings a returning person back to the page they opened, path and query intact', async () => {
+    const person = await named('returner@example.com', 'Rhea')
+    const [{ id }] = await db<{ id: string }[]>`SELECT id FROM orbit.users WHERE email = 'returner@example.com'`
+    const ws = await createWorkspaceFor(db, id!, 'Return Trip')
+    const destination = `/w/${ws.id}/people?tab=stewards&q=caf%C3%A9`
+
+    const signInAt = await location(undefined, destination)
+    expect(signInAt).toBe(`/sign-in?next=${encodeURIComponent(destination)}`)
+    expect(new URL(signInAt as string, 'http://orbit.test').searchParams.get('next')).toBe(destination)
+
+    expect(await location(person, signInAt as string)).toBe(destination)
+    expect(await location(person, destination)).toBe(200) // and nothing else in the way
+  })
+
+  it('keeps it through the name question for someone new, then returns there, which still has to let them in', async () => {
+    const host = await upsertAccount(db, 'supabase-return-host', 'return-host@example.com')
+    const ws = await createWorkspaceFor(db, host.id, 'Somewhere Else')
+    const destination = `/w/${ws.id}?from=link`
+    const signInAt = await location(undefined, destination)
+
+    const newcomer = await signIn('first-timer@example.com')
+    const welcomeAt = await location(newcomer, signInAt as string)
+    expect(welcomeAt).toBe(`/welcome?back=${encodeURIComponent(destination)}`)
+    expect(await location(newcomer, destination)).toBe(welcomeAt) // the same from the page itself
+    expect(await location(newcomer, welcomeAt as string)).toBe(200)
+
+    await giveName(newcomer, 'Fia')
+    expect(await location(newcomer, welcomeAt as string)).toBe(destination)
+
+    // Arriving is not belonging: the destination is authorized on its own, as always
+    expect(await location(newcomer, destination)).toBe(404)
+    expect((await newcomer.request(`/api/workspaces/${ws.id}`)).status).toBe(404)
+  })
+
+  it('leaves signing in directly, and changing your name, exactly as they were', async () => {
+    expect(await location(undefined, '/sign-in')).toBe(200)
+    expect(await location(undefined, '/')).toBe('/sign-in')
+    expect(await location(undefined, '/welcome?back=%2Fw%2Fx')).toBe('/sign-in')
+
+    const person = await named('direct@example.com', 'Dara')
+    expect(await location(person, '/sign-in')).toBe('/')
+    expect(await location(person, '/welcome')).toBe('/')
+    expect(await location(person, '/welcome?change=1&back=%2Fw%2Fx')).toBe(200)
+
+    const newcomer = await signIn('direct-new@example.com')
+    expect(await location(newcomer, '/sign-in')).toBe('/welcome')
+    expect(await location(newcomer, '/')).toBe('/welcome')
+  })
+
+  it('never sends anyone outside Orbit, whatever the link says', async () => {
+    const person = await named('careful@example.com', 'Cato')
+    const newcomer = await signIn('careful-new@example.com')
+    const attempts = [
+      'https://evil.example', '//evil.example', '/\\evil.example', '\\\\evil.example', '/%2F%2Fevil.example',
+      '/%5Cevil.example', 'javascript:alert(1)', '/w/%zz', ' /w/x', '/w/x\r\nSet-Cookie: a=b',
+    ]
+    for (const attempt of attempts) {
+      const q = encodeURIComponent(attempt)
+      expect(await location(undefined, `/sign-in?next=${q}`), attempt).toBe(200) // the page works; it just won't follow it
+      expect(await location(person, `/sign-in?next=${q}`), attempt).toBe('/')
+      expect(await location(person, `/welcome?back=${q}`), attempt).toBe('/')
+      expect(await location(newcomer, `/sign-in?next=${q}`), attempt).toBe('/welcome')
+    }
+    expect(await location(person, '/sign-in?next=%2Fnew&next=%2Fw%2Fx'), 'two destinations').toBe('/')
+  })
+
+  it('never loops through sign-in or the name question', async () => {
+    const person = await named('loop@example.com', 'Lo')
+    const newcomer = await signIn('loop-new@example.com')
+    for (const step of ['/sign-in', '/sign-in?next=%2Fw%2Fx', '/welcome', '/welcome?back=%2Fsign-in', '/SIGN-IN/', '/w/../sign-in']) {
+      const q = encodeURIComponent(step)
+      expect(await location(undefined, `/sign-in?next=${q}`), step).toBe(200)
+      expect(await location(person, `/sign-in?next=${q}`), step).toBe('/')
+      expect(await location(person, `/welcome?back=${q}`), step).toBe('/')
+      expect(await location(newcomer, `/sign-in?next=${q}`), step).toBe('/welcome')
+      expect(await location(newcomer, `/welcome?back=${q}`), step).toBe(200)
+    }
   })
 })
 
@@ -565,9 +666,9 @@ describe('moving between workspaces', () => {
 
   it('sends signed-out visitors to sign in, remembered workspace or not', async () => {
     const [ws] = await db<{ id: string }[]>`SELECT id FROM orbit.workspaces LIMIT 1`
-    for (const path of ['/', '/new']) {
+    for (const [path, signIn] of [['/', '/sign-in'], ['/new', '/sign-in?next=%2Fnew']]) {
       const res = await api(path, `orbit_last_workspace=${ws!.id}`, html)
-      expect(location(res), path).toEqual([302, '/sign-in'])
+      expect(location(res), path).toEqual([302, signIn])
     }
   })
 })
@@ -640,7 +741,7 @@ describe('people', () => {
     expect(own.text).toContain('Outsider')
     expect(own.text).not.toContain('Insider')
 
-    expect(await page(`/w/${ws.id}/people`)).toMatchObject({ status: 302, location: '/sign-in' })
+    expect(await page(`/w/${ws.id}/people`)).toMatchObject({ status: 302, location: `/sign-in?next=%2Fw%2F${ws.id}%2Fpeople` })
   })
 
   it('is reached from “Who’s here” on the arrival page', async () => {
@@ -709,6 +810,6 @@ describe('workspace navigation', () => {
     const blocked = await page(`/w/${ws.id}/people`, await cookieFor(outsider.id))
     expect(blocked.status).toBe(404)
     expect(navs(blocked.text)).toHaveLength(0)
-    expect(await page(`/w/${ws.id}/settings`)).toMatchObject({ status: 302, location: '/sign-in' })
+    expect(await page(`/w/${ws.id}/settings`)).toMatchObject({ status: 302, location: `/sign-in?next=%2Fw%2F${ws.id}%2Fsettings` })
   })
 })

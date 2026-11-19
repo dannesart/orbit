@@ -1,6 +1,10 @@
 <script setup lang="ts">
 useHead({ title: 'Sign in · Orbit' })
 
+const route = useRoute()
+// Where the visitor was going before Orbit asked who they are (see utils/returnTo.ts).
+const destination = safeDestination(route.query.next) ?? '/'
+
 const step = ref<'email' | 'code'>('email')
 const email = ref('')
 const code = ref('')
@@ -73,7 +77,7 @@ async function verify() {
       method: 'POST',
       body: { email: email.value, code: code.value },
     })
-    await navigateTo('/') // the auth middleware asks for a name first, if we don't have one yet
+    await navigateTo(destination) // the auth middleware asks for a name first, keeping the destination
   } catch (e) {
     error.value = message(e)
     busy.value = false
