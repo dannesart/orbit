@@ -70,6 +70,32 @@ describe('what the server tells the page', () => {
   })
 })
 
+describe('autofill', () => {
+  /** The opening tag of the element with this id, from rendered HTML. */
+  const tagOf = (html: string, pattern: RegExp) => html.match(pattern)?.[0] ?? ''
+
+  it('never offers your own details for the person you invite, with standard signals only', async () => {
+    const { ws, owner } = await world()
+    const { html } = await page(`/w/${ws.id}/people`, owner)
+    const input = tagOf(html, /<input[^>]*id="invite-email"[^>]*>/)
+    expect(input).toContain('autocomplete="off"')
+    expect(input).toContain('name="invitee"') // not "email": not matched to your own address
+    expect(input).toContain('type="email"') // still an email keyboard and validation
+    expect(input).toContain('autocapitalize="none"')
+    expect(input).toContain('spellcheck="false"')
+    expect(tagOf(html, /<form[^>]*>(?=\s*<h2 id="invite-title")/)).toContain('autocomplete="off"')
+    expect(textOf(html)).toContain('Their email address')
+  })
+
+  it('keeps helpful autofill where it is your own: signing in and your name', async () => {
+    const signIn = await page('/sign-in')
+    expect(tagOf(signIn.html, /<input[^>]*id="email"[^>]*>/)).toContain('autocomplete="email"')
+    const newcomer = await person(null)
+    const welcome = await page('/welcome', newcomer)
+    expect(tagOf(welcome.html, /<input[^>]*id="name"[^>]*>/)).toContain('autocomplete="name"')
+  })
+})
+
 describe('the People page', () => {
   it('lets the owner invite as Member or Steward, and shows their pending invitations with links and withdrawal', async () => {
     const { ws, owner } = await world()
@@ -122,10 +148,11 @@ describe('an invitation’s page', () => {
     expect(res.headers.get('x-robots-tag')).toBe('noindex')
     expect(res.headers.get('referrer-policy')).toBe('no-referrer')
     const text = textOf(res.html)
-    expect(text).toContain(`Join ${ws.name}`)
-    expect(text).toContain('as a Steward')
-    expect(text).toContain('help look after it')
-    expect(res.html).toContain(`href="/sign-in?next=${encodeURIComponent(`/invitations/${id}`)}"`)
+    expect(text).toContain(`You’ve been invited to join ${ws.name}`)
+    expect(text).toMatch(/as a Steward ?\. You’ll belong here, take part and help look after it\./)
+    // One clear way on, which keeps the link through sign-in
+    expect(res.html).toMatch(new RegExp(`href="/sign-in\\?next=${encodeURIComponent(`/invitations/${id}`)}"[^>]*>\\s*Continue\\s*<`))
+    expect(text).toContain('with the email address this invitation was sent to')
     // Nothing private, anywhere in the page (its data payload included)
     for (const secret of ['recipient@example.com', owner.email, 'Olive', 'Secret purpose', ws.id]) expect(res.html).not.toContain(secret)
   })
@@ -152,9 +179,15 @@ describe('an invitation’s page', () => {
     const { id } = await invite(ws.id, owner, recipient.email, 'member')
 
     const mine = textOf((await page(`/invitations/${id}`, recipient)).html)
-    expect(mine).toContain(`Join ${ws.name}`)
+    expect(mine).toContain(`You’re ready to join ${ws.name}`)
+    expect(mine).toMatch(/as a Member ?\. You’ll belong here and take part\./) // the same words as before signing in
     expect(mine).toContain('Accept')
     expect(mine).toContain('Decline')
+    expect(mine).not.toContain('You’ve been invited') // the next step, not the same screen again
+    // Arriving signed in never answers it: still pending, and the recipient isn't a member
+    const [row] = await db`SELECT accepted_at, declined_at FROM orbit.invitations WHERE id = ${id}`
+    expect(row).toEqual({ accepted_at: null, declined_at: null })
+    expect(await db`SELECT 1 FROM orbit.memberships WHERE user_id = ${recipient.id} AND workspace_id = ${ws.id}`).toHaveLength(0)
 
     const theirs = await page(`/invitations/${id}`, other)
     const text = textOf(theirs.html)

@@ -1,7 +1,7 @@
 // The invitation experience's behaviour, apart from its components (no DOM in this repo's
 // tests): the invite dialog's request and link, copying, and what an invitation's page shows.
 import { describe, expect, it } from 'vitest'
-import { arrivalOf, copyText, createInvitationEditor, invitationLink, isInvitationPath, roleName } from '../app/utils/invitations'
+import { arrivalOf, arrivalTitle, copyText, createInvitationEditor, invitationLink, isInvitationPath, roleMeaning, roleName } from '../app/utils/invitations'
 import { safeDestination, signInPath, welcomePath } from '../app/utils/returnTo'
 
 const ID = '0b6f7f5e-3c9a-4c1e-9b1a-2d6c1f8e9a01'
@@ -149,5 +149,31 @@ describe('what an invitation’s page shows', () => {
 
   it('names the roles as the product does', () => {
     expect([roleName('member'), roleName('admin')]).toEqual(['Member', 'Steward'])
+  })
+})
+
+describe('arriving at an invitation reads as one journey', () => {
+  const preview = { workspaceName: 'Harbour', role: 'member' as const }
+  const mine = (status: 'pending' | 'accepted', acceptable = true) => ({
+    id: ID, workspace: { id: 'w', name: 'Harbour', description: null }, role: 'member' as const, invitedBy: 'Olive',
+    expiresAt: '2026-12-04T00:00:00Z', status, acceptable, closedAt: null,
+  })
+  const title = (input: Parameters<typeof arrivalOf>[0]) => arrivalTitle(arrivalOf(input), 'Harbour')
+
+  it('invited before signing in, ready to join after', () => {
+    expect(title({ signedIn: false, preview, invitation: null })).toBe('You’ve been invited to join Harbour')
+    expect(title({ signedIn: true, preview, invitation: mine('pending') })).toBe('You’re ready to join Harbour')
+  })
+
+  it('never says “invited” or “ready” to someone it isn’t for, or about an invitation already settled', () => {
+    expect(title({ signedIn: true, preview, invitation: null })).toBe('An invitation to join Harbour')
+    expect(title({ signedIn: true, preview: null, invitation: mine('accepted') })).toBe('Your invitation to join Harbour')
+    expect(title({ signedIn: true, preview: null, invitation: mine('pending', false) })).toBe('Your invitation to join Harbour')
+    expect(title({ signedIn: false, preview: null, invitation: null })).toBe('This invitation isn’t available')
+  })
+
+  it('explains each role in one sentence, the same before and after signing in', () => {
+    expect(roleMeaning.member).toBe('You’ll belong here and take part.')
+    expect(roleMeaning.admin).toBe('You’ll belong here, take part and help look after it.')
   })
 })

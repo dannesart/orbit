@@ -5,6 +5,12 @@ import type { Role } from '~~/server/utils/workspaces'
 /** The product's names for the roles an invitation can offer. */
 export const roleName = (role: Role) => (role === 'admin' ? 'Steward' : 'Member')
 
+/** What an offered role means, in one sentence, said the same way before and after signing in. */
+export const roleMeaning: Record<Role, string> = {
+  member: 'You’ll belong here and take part.',
+  admin: 'You’ll belong here, take part and help look after it.',
+}
+
 /**
  * An invitation's link, built in the browser from the origin the person is actually using
  * (window.location.origin): never from a server-side Host header, which a request can set.
@@ -119,6 +125,21 @@ export function arrivalOf(input: { signedIn: boolean; preview: InvitationPreview
   }
   if (!preview) return { kind: 'unavailable' }
   return { kind: signedIn ? 'someone_else' : 'sign_in', preview }
+}
+
+/**
+ * The heading for each step of arriving at an invitation, so that signing in reads as one
+ * journey: invited, then ready to join. Never a step that accepts by itself.
+ */
+export function arrivalTitle(arrival: Arrival, workspaceName: string): string {
+  switch (arrival.kind) {
+    case 'sign_in': return `You’ve been invited to join ${workspaceName}`
+    case 'answer': return `You’re ready to join ${workspaceName}`
+    case 'someone_else': return `An invitation to join ${workspaceName}`
+    case 'no_longer_valid':
+    case 'answered': return `Your invitation to join ${workspaceName}`
+    case 'unavailable': return 'This invitation isn’t available'
+  }
 }
 
 /** Whether a path is an invitation's page: open to signed-out visitors, for its public preview. */
