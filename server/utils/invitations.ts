@@ -10,14 +10,22 @@ import { CAN_MANAGE, getWorkspace, isOrbitId } from './workspaces'
  */
 export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired'
 
+/**
+ * An invitation as the workspace's owner and stewards see it: the only view that includes the
+ * address it was made to. Never anyone's account id or the inviter's email.
+ */
 export interface Invitation {
   id: string
   workspaceId: string
   /** The address it was made to, normalised like sign-in addresses. Shown only to those who manage the workspace. */
   email: string
   status: InvitationStatus
+  /** What the inviter asked to be called; null if they haven't said. */
+  invitedBy: string | null
   createdAt: string
   expiresAt: string
+  /** When it was accepted, declined or revoked; null while pending, and for one that simply expired. */
+  closedAt: string | null
 }
 
 /** An invitation as its recipient sees it: who is asking, and to what. Never the inviter's email. */
@@ -29,6 +37,12 @@ export interface ReceivedInvitation {
   expiresAt: string
 }
 
+/**
+ * One invitation, as its recipient sees it when they open its link, whatever has become of it:
+ * pending, or honestly expired, declined, revoked or already accepted.
+ */
+export type RecipientInvitation = ReceivedInvitation & { status: InvitationStatus; closedAt: string | null }
+
 // Over an invitation `i`. No closing fact yet; and pending = open and not yet expired.
 const OPEN = `(i.accepted_at IS NULL AND i.declined_at IS NULL AND i.revoked_at IS NULL)`
 const PENDING = `(${OPEN} AND i.expires_at > now())`
@@ -38,11 +52,14 @@ const STATUS = `CASE
   WHEN i.declined_at IS NOT NULL THEN 'declined'
   WHEN i.expires_at <= now() THEN 'expired'
   ELSE 'pending' END`
-const COLUMNS = `i.id, i.workspace_id AS "workspaceId", i.email, ${STATUS} AS status, i.created_at AS "createdAt", i.expires_at AS "expiresAt"`
+const CLOSED_AT = `COALESCE(i.accepted_at, i.declined_at, i.revoked_at)`
+// The managers' view (Invitation), over an invitation `i` joined to its `inviter`.
+const MANAGED = `i.id, i.workspace_id AS "workspaceId", i.email, ${STATUS} AS status, inviter.display_name AS "invitedBy",
+  i.created_at AS "createdAt", i.expires_at AS "expiresAt", ${CLOSED_AT} AS "closedAt"`
 
-type Row = Omit<Invitation, 'createdAt' | 'expiresAt'> & { createdAt: Date; expiresAt: Date }
-const toInvitation = ({ createdAt, expiresAt, ...rest }: Row): Invitation =>
-  ({ ...rest, createdAt: createdAt.toISOString(), expiresAt: expiresAt.toISOString() })
+type Row = Omit<Invitation, 'createdAt' | 'expiresAt' | 'closedAt'> & { createdAt: Date; expiresAt: Date; closedAt: Date | null }
+const toInvitation = ({ createdAt, expiresAt, closedAt, ...rest }: Row): Invitation =>
+  ({ ...rest, createdAt: createdAt.toISOString(), expiresAt: expiresAt.toISOString(), closedAt: closedAt?.toISOString() ?? null })
 
 export type CreateInvitationResult =
   | { ok: true; invitation: Invitation }
@@ -67,11 +84,14 @@ export async function createInvitation(
 
   try {
     const [row] = await db<Row[]>`
-      INSERT INTO orbit.invitations AS i (workspace_id, email, invited_by)
-      SELECT w.id, ${email}, m.user_id
-      FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id
-      WHERE w.id = ${workspaceId} AND m.user_id = ${inviterId} AND ${db.unsafe(CAN_MANAGE)}
-      RETURNING ${db.unsafe(COLUMNS)}
+      WITH i AS (
+        INSERT INTO orbit.invitations (workspace_id, email, invited_by)
+        SELECT w.id, ${email}, m.user_id
+        FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id
+        WHERE w.id = ${workspaceId} AND m.user_id = ${inviterId} AND ${db.unsafe(CAN_MANAGE)}
+        RETURNING *
+      )
+      SELECT ${db.unsafe(MANAGED)} FROM i JOIN orbit.users inviter ON inviter.id = i.invited_by
     `
     return row ? { ok: true, invitation: toInvitation(row) } : { ok: false, reason: 'forbidden' }
   } catch (error) {
@@ -104,14 +124,43 @@ export async function revokeInvitation(db: Db, userId: string, invitationId: str
   if (!current.canManage) return { ok: false, reason: 'forbidden' }
 
   const [row] = await db<Row[]>`
-    UPDATE orbit.invitations i SET revoked_at = now(), revoked_by = m.user_id
-    FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id
-    WHERE i.id = ${invitationId} AND ${db.unsafe(PENDING)}
-      AND m.workspace_id = i.workspace_id AND m.user_id = ${userId} AND ${db.unsafe(CAN_MANAGE)}
-    RETURNING ${db.unsafe(COLUMNS)}
+    WITH i AS (
+      UPDATE orbit.invitations i SET revoked_at = now(), revoked_by = m.user_id
+      FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id
+      WHERE i.id = ${invitationId} AND ${db.unsafe(PENDING)}
+        AND m.workspace_id = i.workspace_id AND m.user_id = ${userId} AND ${db.unsafe(CAN_MANAGE)}
+      RETURNING i.*
+    )
+    SELECT ${db.unsafe(MANAGED)} FROM i JOIN orbit.users inviter ON inviter.id = i.invited_by
   `
   if (row) return { ok: true, invitation: toInvitation(row) }
   return { ok: false, reason: 'not_pending', status: await statusOf(db, invitationId) }
+}
+
+export type ListInvitationsResult =
+  | { ok: true; invitations: Invitation[] }
+  | { ok: false; reason: 'not_found' | 'forbidden' }
+
+/**
+ * A workspace's invitations, newest first, whatever became of them, for its owner and stewards
+ * only: members get 'forbidden', outsiders 'not_found'. As elsewhere, authority is checked first
+ * and again inside the query, so a list is never read without it.
+ */
+export async function listWorkspaceInvitations(db: Db, userId: string, workspaceId: string): Promise<ListInvitationsResult> {
+  const workspace = await getWorkspace(db, userId, workspaceId)
+  if (!workspace) return { ok: false, reason: 'not_found' } // non-members learn nothing
+  if (!workspace.canManage) return { ok: false, reason: 'forbidden' }
+
+  const rows = await db<Row[]>`
+    SELECT ${db.unsafe(MANAGED)}
+    FROM orbit.invitations i
+      JOIN orbit.users inviter ON inviter.id = i.invited_by
+      JOIN orbit.workspaces w ON w.id = i.workspace_id
+      JOIN orbit.memberships m ON m.workspace_id = w.id AND m.user_id = ${userId}
+    WHERE w.id = ${workspaceId} AND ${db.unsafe(CAN_MANAGE)}
+    ORDER BY i.created_at DESC, i.id
+  `
+  return { ok: true, invitations: rows.map(toInvitation) }
 }
 
 /**
@@ -134,6 +183,38 @@ export async function findInvitationsFor(db: Db, userId: string): Promise<Receiv
     invitedBy: r.invitedBy,
     expiresAt: r.expiresAt.toISOString(),
   }))
+}
+
+/**
+ * One invitation, for its recipient opening its link: matched, like answering, by this account's
+ * verified address, never by anything the caller says. Its status is told as it is, so an
+ * expired or answered invitation is never presented as pending. Someone else's invitation, a
+ * nonexistent one, and an id Orbit could never have issued are all null: indistinguishable.
+ * Reading never answers it or changes anything.
+ */
+export async function getInvitationFor(db: Db, userId: string, invitationId: string): Promise<RecipientInvitation | null> {
+  if (!isOrbitId(invitationId)) return null
+  const [row] = await db<{
+    id: string; workspaceId: string; name: string; description: string | null; invitedBy: string | null
+    status: InvitationStatus; expiresAt: Date; closedAt: Date | null
+  }[]>`
+    SELECT i.id, w.id AS "workspaceId", w.name, w.description, inviter.display_name AS "invitedBy",
+      ${db.unsafe(STATUS)} AS status, i.expires_at AS "expiresAt", ${db.unsafe(CLOSED_AT)} AS "closedAt"
+    FROM orbit.users u
+      JOIN orbit.invitations i ON i.email = lower(u.email)
+      JOIN orbit.workspaces w ON w.id = i.workspace_id
+      JOIN orbit.users inviter ON inviter.id = i.invited_by
+    WHERE u.id = ${userId} AND i.id = ${invitationId}
+  `
+  if (!row) return null
+  return {
+    id: row.id,
+    workspace: { id: row.workspaceId, name: row.name, description: row.description },
+    invitedBy: row.invitedBy,
+    expiresAt: row.expiresAt.toISOString(),
+    status: row.status,
+    closedAt: row.closedAt?.toISOString() ?? null,
+  }
 }
 
 export type AnswerResult<T> =

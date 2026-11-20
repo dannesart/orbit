@@ -4,7 +4,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { setName, upsertAccount } from '../server/utils/accounts'
 import {
-  acceptInvitation, createInvitation, declineInvitation, findInvitationsFor, revokeInvitation,
+  acceptInvitation, createInvitation, declineInvitation, findInvitationsFor, getInvitationFor, listWorkspaceInvitations,
+  revokeInvitation,
 } from '../server/utils/invitations'
 import { createWorkspace, getWorkspace, listMembers } from '../server/utils/workspaces'
 import { startTestDatabase } from './db'
@@ -297,6 +298,54 @@ describe('the recipient', () => {
     ])
     expect([accepted.ok, revoked.ok].filter(Boolean)).toHaveLength(1)
     expect(await membership(guest.id, ws.id)).toBe(accepted.ok ? 'member' : null)
+  })
+})
+
+describe('reading invitations', () => {
+  it('lists a workspace’s invitations, whatever became of them, to its owner and stewards only', async () => {
+    const { ws, owner, steward, member } = await workspace()
+    const outsider = await person()
+    const guest = await person()
+    const declined = await invite(owner.id, ws.id, guest.email)
+    await declineInvitation(sql(), guest.id, declined.id)
+    const pending = await invite(steward.id, ws.id, 'pending@example.com')
+
+    for (const manager of [owner, steward]) {
+      const result = await listWorkspaceInvitations(sql(), manager.id, ws.id)
+      expect(result).toEqual({ ok: true, invitations: [
+        { ...pending, invitedBy: 'Steward' },
+        expect.objectContaining({ id: declined.id, status: 'declined', invitedBy: 'Owner', closedAt: expect.any(String) }),
+      ] })
+    }
+    expect(await listWorkspaceInvitations(sql(), member.id, ws.id)).toEqual({ ok: false, reason: 'forbidden' })
+    expect(await listWorkspaceInvitations(sql(), outsider.id, ws.id)).toEqual({ ok: false, reason: 'not_found' })
+    expect(await listWorkspaceInvitations(sql(), owner.id, 'nope')).toEqual({ ok: false, reason: 'not_found' })
+  })
+
+  it('shows one invitation to its recipient only, with its real status', async () => {
+    const { ws, owner } = await workspace()
+    const guest = await person()
+    const stranger = await person()
+    const invitation = await invite(owner.id, ws.id, guest.email)
+
+    expect(await getInvitationFor(sql(), guest.id, invitation.id)).toEqual({
+      id: invitation.id,
+      workspace: { id: ws.id, name: ws.name, description: null },
+      invitedBy: 'Owner',
+      expiresAt: invitation.expiresAt,
+      status: 'pending',
+      closedAt: null,
+    })
+    // Not theirs, nonexistent, or not an id at all: the same nothing. Not even its managers.
+    for (const [who, id] of [[stranger.id, invitation.id], [owner.id, invitation.id], [guest.id, '00000000-0000-0000-0000-000000000000'], [guest.id, 'nope']]) {
+      expect(await getInvitationFor(sql(), who!, id!)).toBeNull()
+    }
+
+    await ageInvitation(invitation.id)
+    expect(await getInvitationFor(sql(), guest.id, invitation.id)).toMatchObject({ status: 'expired', closedAt: null })
+    const accepted = await invite(owner.id, ws.id, guest.email)
+    await acceptInvitation(sql(), guest.id, accepted.id)
+    expect(await getInvitationFor(sql(), guest.id, accepted.id)).toMatchObject({ status: 'accepted', closedAt: expect.any(String) })
   })
 })
 

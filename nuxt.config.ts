@@ -12,6 +12,12 @@ export default defineNuxtConfig({
     supabaseUrl: '',
     supabaseKey: '',
   },
+  routeRules: {
+    // Invitations are personal (an address, an offer to one person): never stored by a browser,
+    // proxy or CDN, whatever the answer, errors included.
+    '/api/invitations/**': { headers: { 'cache-control': 'private, no-store' } },
+    '/api/workspaces/*/invitations/**': { headers: { 'cache-control': 'private, no-store' } },
+  },
   app: {
     head: {
       title: 'Orbit',
