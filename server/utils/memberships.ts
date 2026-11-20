@@ -1,4 +1,4 @@
-import { type MembershipAction, SQL_MAY, allowedActions, parseRole } from './authority'
+import { type MembershipAction, SQL_MAY, allowedActions, blockedByStewardshipOffer, parseRole } from './authority'
 import type { Db, Queryable } from './db'
 import { SQL_PENDING } from './invitations'
 import { type Role, isOrbitId, lockStanding, standingOf } from './workspaces'
@@ -64,7 +64,7 @@ export async function setMemberRole(
 
 export type RemoveMemberResult =
   | { ok: true; revokedInvitations: number }
-  | { ok: false; reason: 'not_found' | 'forbidden' }
+  | { ok: false; reason: 'not_found' | 'forbidden' | 'stewardship_offered' }
   | { ok: false; reason: 'role_changed'; role: Role }
 
 /** Thrown inside the transaction to roll it back, invitation revocations included. */
@@ -74,6 +74,12 @@ class NotRemoved extends Error {}
  * Removes someone from a workspace: the owner removes Members and Stewards; a steward removes
  * Members. In the same transaction, their pending invitations to this workspace are withdrawn
  * (revoked by the remover), so an earlier offer can't bring them back.
+ *
+ * Owners grant stewardship: while the owner has a standing offer of stewardship to a Member, a
+ * steward can't remove them ('stewardship_offered'), and so can never close that offer either.
+ * The owner can, and their removal withdraws it with everything else. Only invitations the
+ * remover may withdraw are ever withdrawn (SQL_MAY.revoke): a steward never closes a Steward
+ * invitation, not even one whose inviter is no longer the owner (which doesn't block removal).
  *
  * The order matters, and is verified against real concurrent PostgreSQL sessions
  * (test/concurrency): invitations are revoked BEFORE the membership is deleted. An acceptance
@@ -91,9 +97,10 @@ export async function removeMember(db: Db, actorId: string, workspaceId: string,
       if (!actor) return { ok: false, reason: 'not_found' } // outsiders learn nothing
       const target = await standingOf(tx, workspaceId, membershipId)
       if (!target) return { ok: false, reason: 'not_found' }
+      if (blockedByStewardshipOffer(actor, target)) return { ok: false, reason: 'stewardship_offered' }
       if (!allowedActions(actor, target).includes('remove')) return { ok: false, reason: 'forbidden' }
 
-      // 1. Their pending invitations here, first.
+      // 1. Their pending invitations here (those the remover may withdraw), first.
       const revoked = await tx`
         UPDATE orbit.invitations i SET revoked_at = now(), revoked_by = m.user_id
         FROM orbit.memberships t JOIN orbit.users u ON u.id = t.user_id,
@@ -101,7 +108,7 @@ export async function removeMember(db: Db, actorId: string, workspaceId: string,
         WHERE t.id = ${membershipId} AND t.workspace_id = ${workspaceId}
           AND m.workspace_id = t.workspace_id AND m.user_id = ${actorId}
           AND i.workspace_id = t.workspace_id AND i.email = lower(u.email) AND ${tx.unsafe(SQL_PENDING)}
-          AND ${tx.unsafe(SQL_MAY.remove)}
+          AND ${tx.unsafe(SQL_MAY.remove)} AND ${tx.unsafe(SQL_MAY.revoke)}
         RETURNING i.id
       `
       // 2. Then the membership itself.
@@ -117,6 +124,10 @@ export async function removeMember(db: Db, actorId: string, workspaceId: string,
     })
   } catch (error) {
     if (!(error instanceof NotRemoved)) throw error
+    // Allowed when checked, refused by the writes: the target changed, or (for a steward) the
+    // owner offered them stewardship in between.
+    const now = await standingOf(db, workspaceId, membershipId)
+    if (now?.role === 'member' && now.stewardshipOffered) return { ok: false, reason: 'stewardship_offered' }
     return changedMeanwhile(db, workspaceId, membershipId)
   }
 }

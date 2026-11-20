@@ -18,20 +18,35 @@ export interface Standing {
   userId: string
   role: Role
   owner: boolean
+  /**
+   * They hold a pending Steward invitation from the workspace's current owner: the owner has
+   * offered them stewardship and it can still be accepted. (Known for a target; see standingOf.)
+   */
+  stewardshipOffered?: boolean
 }
 
 export type MembershipAction = 'promote' | 'demote' | 'remove'
 
 /**
  * What `actor` may do to `target`'s membership. Nobody acts on themselves or on the owner.
- * The owner promotes Members, demotes Stewards and removes either; a Steward removes Members.
- * Members manage nobody.
+ * The owner promotes Members, demotes Stewards and removes either; a Steward removes Members,
+ * except a Member the owner has offered stewardship to, whose place is the owner's decision
+ * while that offer stands. Members manage nobody.
  */
 export function allowedActions(actor: Standing, target: Standing): MembershipAction[] {
   if (target.owner || target.userId === actor.userId) return []
   if (actor.owner) return target.role === 'member' ? ['promote', 'remove'] : ['demote', 'remove']
-  if (actor.role === 'admin' && target.role === 'member') return ['remove']
+  if (actor.role === 'admin' && target.role === 'member' && !target.stewardshipOffered) return ['remove']
   return []
+}
+
+/**
+ * Whether the only thing keeping `actor` from removing `target` is the owner's standing offer of
+ * stewardship to them ('stewardship_offered', rather than a plain 'forbidden').
+ */
+export function blockedByStewardshipOffer(actor: Standing, target: Standing): boolean {
+  return !!target.stewardshipOffered && !allowedActions(actor, target).includes('remove')
+    && allowedActions(actor, { ...target, stewardshipOffered: false }).includes('remove')
 }
 
 /** Which roles `actor` may offer by invitation: the owner offers either; a Steward, Member only. */
@@ -58,10 +73,20 @@ export function parseRole(input: unknown): Role | null {
 const IS_OWNER = `(w.owner_id = m.user_id)`
 const NOT_SELF_OR_OWNER = `(t.user_id <> w.owner_id AND t.user_id <> m.user_id)`
 
+/**
+ * Standing.stewardshipOffered, over target `t` in workspace `w`: a pending Steward invitation to
+ * t's address, from w's current owner (so still acceptable; one from a former owner doesn't count).
+ */
+export const SQL_STEWARDSHIP_OFFERED = `EXISTS (
+  SELECT 1 FROM orbit.invitations offer, orbit.users offered
+  WHERE offered.id = t.user_id AND offer.workspace_id = t.workspace_id AND offer.email = lower(offered.email)
+    AND offer.role = 'admin' AND offer.invited_by = w.owner_id
+    AND offer.accepted_at IS NULL AND offer.declined_at IS NULL AND offer.revoked_at IS NULL AND offer.expires_at > now())`
+
 export const SQL_MAY = {
   promote: `(${IS_OWNER} AND t.role = 'member' AND ${NOT_SELF_OR_OWNER})`,
   demote: `(${IS_OWNER} AND t.role = 'admin' AND ${NOT_SELF_OR_OWNER})`,
-  remove: `(${NOT_SELF_OR_OWNER} AND (${IS_OWNER} OR (m.role = 'admin' AND t.role = 'member')))`,
+  remove: `(${NOT_SELF_OR_OWNER} AND (${IS_OWNER} OR (m.role = 'admin' AND t.role = 'member' AND NOT ${SQL_STEWARDSHIP_OFFERED})))`,
   /** Offering `role` by invitation. */
   invite: (role: Role) => (role === 'admin' ? IS_OWNER : `(m.role = 'admin' OR ${IS_OWNER})`),
   /** Withdrawing invitation `i`. */

@@ -1,4 +1,4 @@
-import type { Standing } from './authority'
+import { SQL_STEWARDSHIP_OFFERED, type Standing } from './authority'
 import type { Db, Queryable } from './db'
 
 export type Role = 'admin' | 'member'
@@ -102,11 +102,15 @@ export async function lockStanding(tx: Queryable, userId: string, workspaceId: s
   return row ? { userId, ...row } : null
 }
 
-/** A membership's standing, found by its own id within one workspace only (not locked). */
+/**
+ * A membership's standing, found by its own id within one workspace only (not locked), including
+ * whether the owner has a standing offer of stewardship to them.
+ */
 export async function standingOf(db: Queryable, workspaceId: string, membershipId: string): Promise<Standing | null> {
   if (!isOrbitId(membershipId) || !isOrbitId(workspaceId)) return null
   const [row] = await db<Standing[]>`
-    SELECT t.user_id AS "userId", t.role, (w.owner_id = t.user_id) AS owner
+    SELECT t.user_id AS "userId", t.role, (w.owner_id = t.user_id) AS owner,
+      ${db.unsafe(SQL_STEWARDSHIP_OFFERED)} AS "stewardshipOffered"
     FROM orbit.memberships t JOIN orbit.workspaces w ON w.id = t.workspace_id
     WHERE t.id = ${membershipId} AND t.workspace_id = ${workspaceId}
   `

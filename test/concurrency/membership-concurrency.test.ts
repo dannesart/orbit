@@ -4,7 +4,7 @@
 // specific row locks to force each order, and pg_stat_activity proves who waits for whom, so
 // every scenario is reproducible rather than timing-dependent.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { acceptInvitation } from '../../server/utils/invitations'
+import { acceptInvitation, createInvitation } from '../../server/utils/invitations'
 import { removeMember, setMemberRole } from '../../server/utils/memberships'
 import { type Session, startPostgres } from './postgres'
 
@@ -113,25 +113,7 @@ describe('acceptance against removal', () => {
     expect(await w.roleOf(w.M)).toBe('none')
   })
 
-  it('a Steward invitation accepted first makes the member a steward, whom a steward then can’t remove', async () => {
-    const w = await world()
-    const inv = await w.invite(w.M, w.O, 'admin')
-    const target = await w.membership(w.M)
-    await hold('memberships', target)
-
-    const accepting = acceptInvitation(A.sql, w.M.id, inv)
-    await pg.waitsFor(A, X)
-    const removing = removeMember(R.sql, w.S.id, w.ws, target)
-    await pg.waitsFor(R, A)
-    await release()
-
-    expect(await accepting).toEqual({ ok: true, workspaceId: w.ws, joined: false, role: 'admin' })
-    expect(await removing).toEqual({ ok: false, reason: 'role_changed', role: 'admin' }) // nothing used stale authority
-    expect(await w.roleOf(w.M)).toBe('admin')
-    expect(await w.invitation(inv)).toMatchObject({ status: 'accepted' })
-  })
-
-  it('…while the owner, who may remove stewards, does remove them', async () => {
+  it('the owner removes someone while their Steward acceptance is in flight: they accept, then are removed', async () => {
     const w = await world()
     const inv = await w.invite(w.M, w.O, 'admin')
     const target = await w.membership(w.M)
@@ -148,14 +130,14 @@ describe('acceptance against removal', () => {
     expect(await w.roleOf(w.M)).toBe('none')
   })
 
-  it('a Steward invitation can’t bring back someone being removed', async () => {
+  it('the owner removes someone first: their own Steward invitation is withdrawn, and can’t bring them back', async () => {
     const w = await world()
     const inv = await w.invite(w.M, w.O, 'admin')
     const target = await w.membership(w.M)
     await hold('memberships', target)
 
-    const removing = removeMember(R.sql, w.S.id, w.ws, target)
-    await pg.waitsFor(R, X)
+    const removing = removeMember(R.sql, w.O.id, w.ws, target)
+    await pg.waitsFor(R, X) // has withdrawn the invitation, waits to delete
     const accepting = acceptInvitation(A.sql, w.M.id, inv)
     await pg.waitsFor(A, R)
     await release()
@@ -163,6 +145,7 @@ describe('acceptance against removal', () => {
     expect(await removing).toEqual({ ok: true, revokedInvitations: 1 })
     expect(await accepting).toEqual({ ok: false, reason: 'not_pending', status: 'revoked' })
     expect(await w.roleOf(w.M)).toBe('none')
+    expect(await w.invitation(inv)).toMatchObject({ status: 'revoked', revokedBy: w.O.id })
   })
 
   it('an invitation accepted before the removal stays accepted; the removed person can’t reuse it', async () => {
@@ -172,6 +155,114 @@ describe('acceptance against removal', () => {
     expect(await removeMember(R.sql, w.S.id, w.ws, await w.membership(w.M))).toEqual({ ok: true, revokedInvitations: 0 })
     expect(await acceptInvitation(A.sql, w.M.id, inv)).toEqual({ ok: false, reason: 'not_pending', status: 'accepted' })
     expect(await w.roleOf(w.M)).toBe('none')
+  })
+})
+
+describe('a steward removing a Member the owner has offered stewardship to', () => {
+  it('while the member is accepting the offer: refused at once, without waiting; the acceptance completes', async () => {
+    const w = await world()
+    const inv = await w.invite(w.M, w.O, 'admin')
+    const target = await w.membership(w.M)
+    await hold('memberships', target) // the acceptance has recorded itself, and is not yet committed
+
+    const accepting = acceptInvitation(A.sql, w.M.id, inv)
+    await pg.waitsFor(A, X)
+    // The offer is still pending in every committed view, so the steward's removal is refused
+    // before it writes anything (and so never waits for the acceptance).
+    expect(await removeMember(R.sql, w.S.id, w.ws, target)).toEqual({ ok: false, reason: 'stewardship_offered' })
+    await release()
+
+    expect(await accepting).toEqual({ ok: true, workspaceId: w.ws, joined: false, role: 'admin' })
+    expect(await w.roleOf(w.M)).toBe('admin')
+    expect(await w.invitation(inv)).toMatchObject({ status: 'accepted', revokedBy: null })
+  })
+
+  it('removal started first, acceptance committed before it decides: the member is now a steward, so refused', async () => {
+    const w = await world()
+    const inv = await w.invite(w.M, w.O, 'admin')
+    const target = await w.membership(w.M)
+    await hold('memberships', await w.membership(w.S), 'FOR UPDATE') // pauses the removal at its first lock
+
+    const removing = removeMember(R.sql, w.S.id, w.ws, target)
+    await pg.waitsFor(R, X)
+    expect(await acceptInvitation(A.sql, w.M.id, inv)).toMatchObject({ ok: true, role: 'admin' })
+    await release()
+
+    expect(await removing).toEqual({ ok: false, reason: 'forbidden' }) // a steward never removes a steward
+    expect(await w.roleOf(w.M)).toBe('admin')
+  })
+
+  it('offer made first: refused, and the offer is untouched', async () => {
+    const w = await world()
+    const offer = await createInvitation(D.sql, w.O.id, w.ws, w.M.email, 'admin')
+    expect(offer).toMatchObject({ ok: true })
+    expect(await removeMember(R.sql, w.S.id, w.ws, await w.membership(w.M))).toEqual({ ok: false, reason: 'stewardship_offered' })
+    expect(await w.roleOf(w.M)).toBe('member')
+    expect(await w.invitation((offer as { invitation: { id: string } }).invitation.id)).toMatchObject({ status: 'pending', revokedBy: null })
+  })
+
+  it('removal started first, but the offer committed before the removal decided: refused (each statement sees what has committed)', async () => {
+    const w = await world()
+    const target = await w.membership(w.M)
+    await hold('memberships', await w.membership(w.S), 'FOR UPDATE') // pauses the removal before it reads anything
+
+    const removing = removeMember(R.sql, w.S.id, w.ws, target)
+    await pg.waitsFor(R, X)
+    const offer = await createInvitation(D.sql, w.O.id, w.ws, w.M.email, 'admin') // doesn't wait for the removal
+    expect(offer).toMatchObject({ ok: true })
+    await release()
+
+    expect(await removing).toEqual({ ok: false, reason: 'stewardship_offered' })
+    expect(await w.roleOf(w.M)).toBe('member')
+    expect(await w.invitation((offer as { invitation: { id: string } }).invitation.id)).toMatchObject({ status: 'pending', revokedBy: null })
+  })
+
+  it('offer committed between the removal’s check and its writes: the writes refuse it themselves, and roll back', async () => {
+    const w = await world()
+    const target = await w.membership(w.M)
+    let offerId = ''
+    // The removal runs unchanged in its own session; only its first write is held back until the
+    // owner's offer (in another session) has committed. Its check had already said yes.
+    const heldBack = new Proxy(R.sql, {
+      get: (sql, prop, receiver) => prop !== 'begin' ? Reflect.get(sql, prop, receiver)
+        : (fn: (tx: typeof sql) => unknown) => sql.begin((tx) => fn(new Proxy(tx, {
+            apply: async (t, self, args) => {
+              const text = Array.isArray(args[0]) && 'raw' in args[0] ? (args[0] as TemplateStringsArray).join('') : ''
+              if (text.includes('UPDATE orbit.invitations i SET revoked_at') && !offerId) {
+                const offer = await createInvitation(D.sql, w.O.id, w.ws, w.M.email, 'admin')
+                offerId = (offer as { invitation: { id: string } }).invitation.id
+              }
+              return Reflect.apply(t, self, args)
+            },
+          }) as unknown as typeof sql)),
+    })
+
+    expect(await removeMember(heldBack, w.S.id, w.ws, target)).toEqual({ ok: false, reason: 'stewardship_offered' })
+    expect(offerId).not.toBe('')
+    expect(await w.roleOf(w.M)).toBe('member')
+    expect(await w.invitation(offerId)).toMatchObject({ status: 'pending', revokedBy: null })
+  })
+
+  it('removal already deleting when the offer commits: the removal stands, and the owner’s later offer stays open to them', async () => {
+    const w = await world()
+    const target = await w.membership(w.M)
+    await hold('memberships', target) // the removal is past its checks and its revoke, waiting to delete
+
+    const removing = removeMember(R.sql, w.S.id, w.ws, target)
+    await pg.waitsFor(R, X)
+    const offer = await createInvitation(D.sql, w.O.id, w.ws, w.M.email, 'admin') // commits while the delete waits
+    expect(offer).toMatchObject({ ok: true })
+    await release()
+
+    // Under READ COMMITTED the delete keeps the snapshot it started with, from before the offer
+    // existed; and the row it waited for was locked, not changed, so nothing is re-checked. The
+    // outcome is the serial order "removal, then offer": Alex is removed, and the owner's offer,
+    // made to someone no longer a member, stays open. It was never the steward's to close.
+    expect(await removing).toEqual({ ok: true, revokedInvitations: 0 })
+    expect(await w.roleOf(w.M)).toBe('none')
+    const id = (offer as { invitation: { id: string } }).invitation.id
+    expect(await w.invitation(id)).toMatchObject({ status: 'pending', revokedBy: null })
+    expect(await acceptInvitation(A.sql, w.M.id, id)).toEqual({ ok: true, workspaceId: w.ws, joined: true, role: 'admin' })
   })
 })
 

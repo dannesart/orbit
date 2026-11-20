@@ -3,7 +3,7 @@
 // itself refuses, all as orbit_app. Concurrent sessions are tested in test/concurrency.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { setName, upsertAccount } from '../server/utils/accounts'
-import { type Standing, allowedActions, mayInvite, mayRevoke, parseRole } from '../server/utils/authority'
+import { type Standing, allowedActions, blockedByStewardshipOffer, mayInvite, mayRevoke, parseRole } from '../server/utils/authority'
 import {
   acceptInvitation, createInvitation, declineInvitation, findInvitationsFor, getInvitationFor, getInvitationPreview,
   listWorkspaceInvitations, revokeInvitation,
@@ -174,7 +174,7 @@ describe('changing roles and removing people', () => {
 
   it('removes someone together with their pending invitations here, which can’t bring them back', async () => {
     const { ws, owner, steward, member } = await world()
-    const pending = await invite(owner, ws.id, member.email, 'admin') // an offer they hadn't answered
+    const pending = await invite(owner, ws.id, member.email) // an offer they hadn't answered
     const expired = await asSuperuser(async () => (await sql()`
       INSERT INTO orbit.invitations (workspace_id, email, invited_by, created_at, expires_at)
       VALUES (${ws.id}, ${member.email}, ${owner.id}, now() - interval '20 days', now() - interval '6 days') RETURNING id`)[0]!.id as string)
@@ -217,6 +217,82 @@ describe('changing roles and removing people', () => {
     expect(await removeMember(racing, steward.id, ws.id, id)).toEqual({ ok: false, reason: 'role_changed', role: 'member' })
     expect((await stored(pending.id)).revoked_at).toBeNull() // the revocation was rolled back with it
     expect(await roleOf(member, ws.id)).toBe('member') // as was everything else in that transaction
+  })
+})
+
+describe('a Member the owner has offered stewardship to', () => {
+  const steward: Standing = { userId: 's', role: 'admin', owner: false }
+  const owner: Standing = { userId: 'o', role: 'admin', owner: true }
+  const member: Standing = { userId: 'm', role: 'member', owner: false }
+  const alex: Standing = { userId: 'a', role: 'member', owner: false, stewardshipOffered: true }
+
+  it('is the owner’s decision while the offer stands: in the matrix', () => {
+    expect(allowedActions(steward, alex)).toEqual([])
+    expect(allowedActions(owner, alex)).toEqual(['promote', 'remove'])
+    expect(blockedByStewardshipOffer(steward, alex)).toBe(true)
+    expect(blockedByStewardshipOffer(owner, alex)).toBe(false) // the owner isn't blocked at all
+    expect(blockedByStewardshipOffer(member, alex)).toBe(false) // a member is simply forbidden
+    expect(blockedByStewardshipOffer(steward, { ...alex, role: 'admin' })).toBe(false) // stewards never remove stewards anyway
+  })
+
+  it('can’t be removed by a steward, and the owner’s offer is left exactly as it was', async () => {
+    const { ws, owner: o, steward: s, member: alexP } = await world()
+    const offer = await invite(o, ws.id, alexP.email, 'admin')
+    expect(await removeMember(sql(), s.id, ws.id, (await membershipId(alexP, ws.id))!)).toEqual({ ok: false, reason: 'stewardship_offered' })
+    expect(await roleOf(alexP, ws.id)).toBe('member')
+    const row = await stored(offer.id)
+    expect([row.revoked_at, row.revoked_by, row.accepted_at]).toEqual([null, null, null])
+    expect(await acceptInvitation(sql(), alexP.id, offer.id)).toMatchObject({ ok: true, role: 'admin' }) // still theirs to accept
+  })
+
+  it('can be removed by the owner, whose removal withdraws the offer with everything else', async () => {
+    const { ws, owner: o, member: alexP } = await world()
+    const offer = await invite(o, ws.id, alexP.email, 'admin')
+    expect(await removeMember(sql(), o.id, ws.id, (await membershipId(alexP, ws.id))!)).toEqual({ ok: true, revokedInvitations: 1 })
+    expect(await roleOf(alexP, ws.id)).toBeNull()
+    expect((await stored(offer.id)).revoked_by).toBe(o.id)
+    expect(await acceptInvitation(sql(), alexP.id, offer.id)).toEqual({ ok: false, reason: 'not_pending', status: 'revoked' })
+  })
+
+  it('can be removed by a steward once the offer is withdrawn, declined or expired', async () => {
+    for (const close of ['revoked', 'declined', 'expired'] as const) {
+      const { ws, owner: o, steward: s, member: alexP } = await world()
+      const offer = await invite(o, ws.id, alexP.email, 'admin')
+      if (close === 'revoked') await revokeInvitation(sql(), o.id, offer.id)
+      if (close === 'declined') await declineInvitation(sql(), alexP.id, offer.id)
+      if (close === 'expired') await asSuperuser(() => sql()`UPDATE orbit.invitations SET created_at = created_at - interval '15 days', expires_at = expires_at - interval '15 days' WHERE id = ${offer.id}`)
+      expect(await removeMember(sql(), s.id, ws.id, (await membershipId(alexP, ws.id))!), close).toEqual({ ok: true, revokedInvitations: 0 })
+    }
+  })
+
+  it('isn’t protected by an offer whose inviter no longer owns the workspace, and a steward still never withdraws it', async () => {
+    const { ws, owner: o, steward: s, member: alexP } = await world()
+    const heir = await person('Heir')
+    await sql()`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${heir.id}, ${ws.id}, 'member')`
+    const offer = await invite(o, ws.id, alexP.email, 'admin')
+    await transferOwnership(ws.id, heir) // the offer no longer stands
+
+    expect(await removeMember(sql(), s.id, ws.id, (await membershipId(alexP, ws.id))!)).toEqual({ ok: true, revokedInvitations: 0 })
+    expect(await roleOf(alexP, ws.id)).toBeNull()
+    expect((await stored(offer.id)).revoked_at).toBeNull() // not the steward's to withdraw; it can't be accepted anyway
+    expect(await acceptInvitation(sql(), alexP.id, offer.id)).toEqual({ ok: false, reason: 'no_longer_valid' })
+  })
+
+  it('a steward’s removal still withdraws Member invitations, and only those', async () => {
+    const { ws, owner: o, steward: s, member: alexP } = await world()
+    const memberOffer = await invite(o, ws.id, alexP.email, 'member')
+    expect(await removeMember(sql(), s.id, ws.id, (await membershipId(alexP, ws.id))!)).toEqual({ ok: true, revokedInvitations: 1 })
+    expect((await stored(memberOffer.id)).revoked_by).toBe(s.id)
+  })
+
+  it('agrees with the operation for every actor', async () => {
+    for (const actorKey of ['owner', 'steward', 'member'] as const) {
+      const w = await world()
+      await invite(w.owner, w.ws.id, w.member.email, 'admin')
+      const result = await removeMember(sql(), w[actorKey].id, w.ws.id, (await membershipId(w.member, w.ws.id))!)
+      const expected = { owner: { ok: true, revokedInvitations: 1 }, steward: { ok: false, reason: 'stewardship_offered' }, member: { ok: false, reason: 'forbidden' } }[actorKey]
+      expect(result, actorKey).toEqual(expected)
+    }
   })
 })
 
