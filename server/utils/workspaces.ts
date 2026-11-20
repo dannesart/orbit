@@ -1,4 +1,4 @@
-import { SQL_STEWARDSHIP_OFFERED, type Standing } from './authority'
+import { type MembershipAction, SQL_STEWARDSHIP_OFFERED, type Standing, allowedActions } from './authority'
 import type { Db, Queryable } from './db'
 
 export type Role = 'admin' | 'member'
@@ -163,6 +163,8 @@ export async function updateWorkspace(
 }
 
 export interface Member {
+  /** This membership's own id (not the person's account id): what membership actions name. */
+  id: string
   /** What they asked to be called; null if they haven't said yet. Emails are never exposed. */
   name: string | null
   you: boolean
@@ -170,6 +172,11 @@ export interface Member {
   role: Role
   /** The workspace's current owner, read from workspaces.owner_id (never from the creator). */
   owner: boolean
+  /**
+   * What the asking person may do to this membership right now, from allowedActions. A snapshot
+   * for showing choices, not a promise: every action is decided again, under lock, when taken.
+   */
+  actions: MembershipAction[]
 }
 
 /**
@@ -178,12 +185,24 @@ export interface Member {
  */
 export async function listMembers(db: Db, workspaceId: string, userId: string): Promise<Member[]> {
   // Exactly one row is the owner: owner_id is NOT NULL and must name a member (migrations 004, 005).
-  return db<Member[]>`
-    SELECT u.display_name AS name, (u.id = ${userId}) AS you, m.role, (m.user_id = w.owner_id) AS owner
-    FROM orbit.memberships m
-      JOIN orbit.users u ON u.id = m.user_id
-      JOIN orbit.workspaces w ON w.id = m.workspace_id
-    WHERE m.workspace_id = ${workspaceId}
-    ORDER BY (u.id = ${userId}) DESC, m.created_at
+  const rows = await db<{ id: string; userId: string; name: string | null; you: boolean; role: Role; owner: boolean; stewardshipOffered: boolean }[]>`
+    SELECT t.id, t.user_id AS "userId", u.display_name AS name, (u.id = ${userId}) AS you, t.role,
+      (t.user_id = w.owner_id) AS owner, ${db.unsafe(SQL_STEWARDSHIP_OFFERED)} AS "stewardshipOffered"
+    FROM orbit.memberships t
+      JOIN orbit.users u ON u.id = t.user_id
+      JOIN orbit.workspaces w ON w.id = t.workspace_id
+    WHERE t.workspace_id = ${workspaceId}
+    ORDER BY (u.id = ${userId}) DESC, t.created_at
   `
+  const me = rows.find((r) => r.you)
+  const asking: Standing | null = me ? { userId: me.userId, role: me.role, owner: me.owner } : null
+  // Each field chosen explicitly: account ids and stewardship offers stay inside.
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    you: r.you,
+    role: r.role,
+    owner: r.owner,
+    actions: asking ? allowedActions(asking, { userId: r.userId, role: r.role, owner: r.owner, stewardshipOffered: r.stewardshipOffered }) : [],
+  }))
 }
