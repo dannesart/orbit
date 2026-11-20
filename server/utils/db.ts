@@ -1,6 +1,8 @@
-import postgres, { type Sql } from 'postgres'
+import postgres, { type Sql, type TransactionSql } from 'postgres'
 
 export type Db = Sql
+/** A connection or a transaction in progress: for helpers that also run inside db.begin(). */
+export type Queryable = Sql | TransactionSql
 
 let sql: Sql | undefined
 
