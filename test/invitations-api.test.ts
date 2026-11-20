@@ -104,24 +104,56 @@ describe('every invitation endpoint', () => {
     expect((await api(`/api/invitations/${invitation.id}`, guest)).status).toBe(200) // still pending, untouched
   })
 
-  it('is never stored by a cache, whatever the answer', async () => {
-    const { ws, owner, member, guest } = await world()
-    const invitation = await invited(ws.id, owner, guest.email)
-    for (const res of [
-      await api(`/api/workspaces/${ws.id}/invitations`, owner), // 200
-      await api(`/api/workspaces/${ws.id}/invitations`, member), // 403
-      await api('/api/invitations', guest),
-      await api(`/api/invitations/${invitation.id}`, guest),
-      await invite(ws.id, owner, guest.email), // 409
-      await invite(ws.id, owner, 'nope'), // 422
-    ]) {
-      expect(res.headers.get('cache-control')).toBe('private, no-store')
+  it('is never stored by a cache, whatever the answer: every endpoint, collections and errors included', async () => {
+    const { ws, owner, member, guest, outsider } = await world()
+    const pending = await invited(ws.id, owner, guest.email)
+    const toRevoke = await invited(ws.id, owner, 'revoke-me@example.com')
+    const toDecline = await invited(ws.id, owner, 'decliner@example.com')
+    const decliner = await person('Dee')
+    await db`UPDATE orbit.users SET email = 'decliner@example.com' WHERE id = ${decliner.id}`
+    const wsPath = `/api/workspaces/${ws.id}/invitations`
+
+    // [endpoint, expected status, request], one at a time (see world())
+    const matrix: [string, number, () => Promise<Response>][] = [
+      ['POST workspace invitations', 401, () => invite(ws.id, undefined, 'x@example.com')],
+      ['POST workspace invitations', 403, () => invite(ws.id, member, 'x@example.com')],
+      ['POST workspace invitations', 404, () => invite(ws.id, outsider, 'x@example.com')],
+      ['POST workspace invitations', 409, () => invite(ws.id, owner, guest.email)],
+      ['POST workspace invitations', 422, () => invite(ws.id, owner, 'nope')],
+      ['POST workspace invitations', 201, () => invite(ws.id, owner, 'fresh@example.com')],
+      ['GET workspace invitations', 200, () => api(wsPath, owner)],
+      ['GET workspace invitations', 401, () => api(wsPath)],
+      ['GET workspace invitations', 403, () => api(wsPath, member)],
+      ['GET workspace invitations', 404, () => api(wsPath, outsider)],
+      ['POST revoke', 401, () => post(`/api/invitations/${toRevoke.id}/revoke`)],
+      ['POST revoke', 403, () => post(`/api/invitations/${toRevoke.id}/revoke`, member)],
+      ['POST revoke', 404, () => post(`/api/invitations/${toRevoke.id}/revoke`, outsider)],
+      ['POST revoke', 200, () => post(`/api/invitations/${toRevoke.id}/revoke`, owner)],
+      ['GET invitations', 200, () => api('/api/invitations', guest)],
+      ['GET invitations', 401, () => api('/api/invitations')],
+      ['GET invitation', 200, () => api(`/api/invitations/${pending.id}`, guest)],
+      ['GET invitation', 401, () => api(`/api/invitations/${pending.id}`)],
+      ['GET invitation', 404, () => api(`/api/invitations/${pending.id}`, outsider)],
+      ['GET invitation', 404, () => api(`/api/invitations/${NOBODY}`, guest)],
+      ['POST decline', 401, () => post(`/api/invitations/${toDecline.id}/decline`)],
+      ['POST decline', 404, () => post(`/api/invitations/${toDecline.id}/decline`, outsider)],
+      ['POST decline', 204, () => post(`/api/invitations/${toDecline.id}/decline`, decliner)],
+      ['POST accept', 401, () => post(`/api/invitations/${pending.id}/accept`)],
+      ['POST accept', 404, () => post(`/api/invitations/${pending.id}/accept`, outsider)],
+      ['POST accept', 200, () => post(`/api/invitations/${pending.id}/accept`, guest)],
+      ['POST accept', 409, () => post(`/api/invitations/${pending.id}/accept`, guest)],
+    ]
+    const observed: string[] = []
+    for (const [endpoint, _status, request] of matrix) {
+      const res = await request()
+      observed.push(`${endpoint} ${res.status} → ${res.headers.get('cache-control')}`)
     }
-    // Nitro's error handler always marks a 404 `no-cache` (any cache must ask the server again
-    // before reusing it). Its body is the same for everyone and names nothing private.
-    const missing = await api(`/api/invitations/${NOBODY}`, guest)
-    expect(missing.headers.get('cache-control')).toBe('no-cache')
-    expect(Object.keys(await missing.json()).sort()).toEqual(['data', 'error', 'message', 'statusCode', 'statusMessage', 'url'])
+    expect(observed).toEqual(matrix.map(([endpoint, status]) => `${endpoint} ${status} → private, no-store`))
+
+    // Also a path under the rule that matches no endpoint at all (Nitro's own 404).
+    expect((await api('/api/invitations/a/b/c', guest)).headers.get('cache-control')).toBe('private, no-store')
+    // Only routes with a rule are affected: other errors keep Nitro's defaults.
+    expect((await api(`/api/workspaces/${NOBODY}`, guest)).headers.get('cache-control')).toBe('no-cache')
   })
 })
 
