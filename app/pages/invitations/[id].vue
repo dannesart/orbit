@@ -32,11 +32,6 @@ const role = computed<Role | null>(() => {
   return 'preview' in a ? a.preview.role : 'invitation' in a ? a.invitation.role : null
 })
 
-const responsibility: Record<Role, string> = {
-  member: 'You’d belong here and take part, alongside everyone else.',
-  admin: 'You’d belong here and take part, and help look after it: inviting people and keeping it in good shape.',
-}
-
 const busy = ref<'accept' | 'decline' | null>(null)
 const error = ref('')
 
@@ -104,16 +99,19 @@ const answeredMessage = computed(() => {
     </div>
 
     <div v-else class="text-center">
-      <p class="text-sm font-medium text-accent-700">You’re invited</p>
-      <h1 class="mt-2 text-2xl font-semibold tracking-tight text-balance text-slate-900">Join {{ workspaceName }}</h1>
-      <p v-if="role" class="mx-auto mt-3 max-w-sm text-balance text-slate-500">
-        as a <span class="font-medium text-slate-700">{{ roleName(role) }}</span>. {{ responsibility[role] }}
+      <h1 class="text-2xl font-semibold tracking-tight text-balance text-slate-900">{{ arrivalTitle(arrival, workspaceName) }}</h1>
+      <!-- The role, and what it means, wherever there is still a choice to make; the same words before and after signing in. -->
+      <p v-if="role && (arrival.kind === 'sign_in' || arrival.kind === 'answer')" class="mx-auto mt-3 max-w-sm text-balance text-slate-500">
+        as a <span class="font-medium text-slate-700">{{ roleName(role) }}</span>. {{ roleMeaning[role] }}
+      </p>
+      <p v-else-if="role && arrival.kind === 'someone_else'" class="mt-3 text-slate-500">
+        as a <span class="font-medium text-slate-700">{{ roleName(role) }}</span>
       </p>
 
       <template v-if="arrival.kind === 'sign_in'">
-        <NuxtLink :to="signInPath(`/invitations/${id}`)" class="btn-primary mt-8">Sign in to accept</NuxtLink>
+        <NuxtLink :to="signInPath(`/invitations/${id}`)" class="btn-primary mt-8">Continue</NuxtLink>
         <p class="mt-4 text-sm text-pretty text-slate-500">
-          Use the email address this invitation was sent to. New to Orbit? Signing in creates your account.
+          Sign in, or create your account, with the email address this invitation was sent to.
         </p>
       </template>
 

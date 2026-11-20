@@ -78,17 +78,26 @@ function onClick(event: MouseEvent) {
       @pointerdown="onPointerDown"
       @click="onClick"
     >
-      <form v-if="!link" class="animate-rise p-6" novalidate @submit.prevent="submit">
+      <!--
+        Someone else's address, never your own: no autofill or suggestions. There is no standard
+        autocomplete token for another person's email, so this gives browsers every standard signal
+        (off on the form and the field, a name that isn't "email") rather than any trick. Extensions
+        such as password managers decide for themselves.
+      -->
+      <form v-if="!link" class="animate-rise p-6" novalidate autocomplete="off" @submit.prevent="submit">
         <h2 id="invite-title" class="text-lg font-semibold tracking-tight text-slate-900">Invite someone</h2>
 
-        <label for="invite-email" class="mt-4 block text-sm font-medium text-slate-700">Email address</label>
+        <label for="invite-email" class="mt-4 block text-sm font-medium text-slate-700">Their email address</label>
         <input
           id="invite-email"
           ref="input"
           v-model="email"
+          name="invitee"
           type="email"
           inputmode="email"
           autocomplete="off"
+          autocapitalize="none"
+          spellcheck="false"
           placeholder="name@example.com"
           :readonly="saving"
           :aria-invalid="!!error"
