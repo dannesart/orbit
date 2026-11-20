@@ -167,7 +167,9 @@ describe('creating an invitation: POST /api/workspaces/:id/invitations', () => {
       id: expect.any(String),
       workspaceId: ws.id,
       email: guest.email, // normalised
+      role: 'member',
       status: 'pending',
+      acceptable: true,
       invitedBy: 'Olive',
       createdAt: expect.any(String),
       expiresAt: expect.any(String),
@@ -313,6 +315,7 @@ describe('the recipient: GET /api/invitations and GET /api/invitations/:id', () 
     expect(list).toEqual([{
       id: invitation.id,
       workspace: { id: ws.id, name: ws.name, description: 'Planning the spring launch' },
+      role: 'member',
       invitedBy: 'Olive',
       expiresAt: expect.any(String),
     }])
@@ -332,9 +335,11 @@ describe('the recipient: GET /api/invitations and GET /api/invitations/:id', () 
     expect(seen).toEqual({
       id: invitation.id,
       workspace: { id: ws.id, name: ws.name, description: null },
+      role: 'member',
       invitedBy: 'Olive',
       expiresAt: expect.any(String),
       status: 'pending',
+      acceptable: true,
       closedAt: null,
     })
     for (const secret of [owner.email, guest.email, owner.id, guest.id, owner.token]) expect(JSON.stringify(seen)).not.toContain(secret)

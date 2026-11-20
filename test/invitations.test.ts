@@ -171,6 +171,7 @@ describe('the recipient', () => {
     expect(await findInvitationsFor(sql(), guest.id)).toEqual([{
       id: invitation.id,
       workspace: { id: ws.id, name: ws.name, description: 'Planning the spring launch' },
+      role: 'member',
       invitedBy: 'Owner',
       expiresAt: invitation.expiresAt,
     }])
@@ -187,7 +188,7 @@ describe('the recipient', () => {
     const account = await upsertAccount(sql(), 'auth-mixed-case', 'Mixed.Case@Example.com') // Supabase lowercases; be safe anyway
     const invitation = await invite(owner.id, ws.id, 'mixed.case@example.com')
     expect((await findInvitationsFor(sql(), account.id)).map((i) => i.id)).toEqual([invitation.id])
-    expect(await acceptInvitation(sql(), account.id, invitation.id)).toEqual({ ok: true, workspaceId: ws.id, joined: true })
+    expect(await acceptInvitation(sql(), account.id, invitation.id)).toEqual({ ok: true, workspaceId: ws.id, joined: true, role: 'member' })
   })
 
   it('becomes a Member by accepting, which records who accepted, in the same moment', async () => {
@@ -195,7 +196,7 @@ describe('the recipient', () => {
     const guest = await person('Guest')
     const invitation = await invite(owner.id, ws.id, guest.email)
 
-    expect(await acceptInvitation(sql(), guest.id, invitation.id)).toEqual({ ok: true, workspaceId: ws.id, joined: true })
+    expect(await acceptInvitation(sql(), guest.id, invitation.id)).toEqual({ ok: true, workspaceId: ws.id, joined: true, role: 'member' })
     expect(await membership(guest.id, ws.id)).toBe('member')
     const row = await stored(invitation.id)
     expect(row.accepted_by).toBe(guest.id)
@@ -253,11 +254,11 @@ describe('the recipient', () => {
   it('keeps their place and role if they already belong: a steward is never made a member', async () => {
     const { ws, owner, steward } = await workspace()
     const toSteward = await invite(owner.id, ws.id, steward.email)
-    expect(await acceptInvitation(sql(), steward.id, toSteward.id)).toEqual({ ok: true, workspaceId: ws.id, joined: false })
+    expect(await acceptInvitation(sql(), steward.id, toSteward.id)).toEqual({ ok: true, workspaceId: ws.id, joined: false, role: 'admin' })
     expect(await membership(steward.id, ws.id)).toBe('admin')
 
     const toOwner = await invite(steward.id, ws.id, owner.email)
-    expect(await acceptInvitation(sql(), owner.id, toOwner.id)).toEqual({ ok: true, workspaceId: ws.id, joined: false })
+    expect(await acceptInvitation(sql(), owner.id, toOwner.id)).toEqual({ ok: true, workspaceId: ws.id, joined: false, role: 'admin' })
     expect((await listMembers(sql(), ws.id, owner.id)).find((m) => m.you)).toMatchObject({ role: 'admin', owner: true })
   })
 
@@ -331,9 +332,11 @@ describe('reading invitations', () => {
     expect(await getInvitationFor(sql(), guest.id, invitation.id)).toEqual({
       id: invitation.id,
       workspace: { id: ws.id, name: ws.name, description: null },
+      role: 'member',
       invitedBy: 'Owner',
       expiresAt: invitation.expiresAt,
       status: 'pending',
+      acceptable: true,
       closedAt: null,
     })
     // Not theirs, nonexistent, or not an id at all: the same nothing. Not even its managers.

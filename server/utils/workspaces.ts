@@ -1,4 +1,5 @@
-import type { Db } from './db'
+import type { Standing } from './authority'
+import type { Db, Queryable } from './db'
 
 export type Role = 'admin' | 'member'
 
@@ -81,8 +82,36 @@ export async function listWorkspaces(db: Db, userId: string): Promise<WorkspaceV
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-/** Whether a string could be an id Orbit issued (workspaces, invitations), checked before querying. */
+/** Whether a string could be an id Orbit issued (workspaces, invitations, memberships), checked before querying. */
 export const isOrbitId = (id: string) => UUID.test(id)
+
+/**
+ * The acting person's standing in a workspace, locked (FOR SHARE) until the end of the calling
+ * transaction: their membership row and the workspace row. Anything that changes their role, or
+ * who owns the workspace, waits until the action that relied on it has committed, and an action
+ * that starts after such a change sees it. Null if they aren't a member (outsiders learn nothing).
+ */
+export async function lockStanding(tx: Queryable, userId: string, workspaceId: string): Promise<Standing | null> {
+  if (!isOrbitId(workspaceId)) return null
+  const [row] = await tx<{ role: Role; owner: boolean }[]>`
+    SELECT m.role, (w.owner_id = m.user_id) AS owner
+    FROM orbit.memberships m JOIN orbit.workspaces w ON w.id = m.workspace_id
+    WHERE m.user_id = ${userId} AND w.id = ${workspaceId}
+    FOR SHARE
+  `
+  return row ? { userId, ...row } : null
+}
+
+/** A membership's standing, found by its own id within one workspace only (not locked). */
+export async function standingOf(db: Queryable, workspaceId: string, membershipId: string): Promise<Standing | null> {
+  if (!isOrbitId(membershipId) || !isOrbitId(workspaceId)) return null
+  const [row] = await db<Standing[]>`
+    SELECT t.user_id AS "userId", t.role, (w.owner_id = t.user_id) AS owner
+    FROM orbit.memberships t JOIN orbit.workspaces w ON w.id = t.workspace_id
+    WHERE t.id = ${membershipId} AND t.workspace_id = ${workspaceId}
+  `
+  return row ?? null
+}
 
 /** Returns the workspace only if the user is a member of it. */
 export async function getWorkspace(db: Db, userId: string, workspaceId: string): Promise<WorkspaceView | null> {

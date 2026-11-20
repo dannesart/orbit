@@ -8,7 +8,7 @@ import type { InvitationStatus } from './invitations'
  * server/utils/invitations.ts; this only reports what was decided.
  */
 export type InvitationFailure =
-  | { reason: 'invalid_body' | 'invalid_email' | 'not_found' | 'forbidden' | 'already_invited' }
+  | { reason: 'invalid_body' | 'invalid_email' | 'invalid_role' | 'not_found' | 'forbidden' | 'already_invited' | 'no_longer_valid' }
   | { reason: 'not_pending'; status: InvitationStatus }
 
 const NO_LONGER: Record<InvitationStatus, string> = {
@@ -30,10 +30,15 @@ export function invitationFailure(failure: InvitationFailure, notFound = 'Invita
       return createError({ statusCode: 422, statusMessage: 'Send the invitation as an object with an email.', data })
     case 'invalid_email':
       return createError({ statusCode: 422, statusMessage: 'That doesn’t look like an email address.', data: { ...data, field: 'email' } })
+    case 'invalid_role':
+      return createError({ statusCode: 422, statusMessage: 'An invitation offers the role member or admin.', data: { ...data, field: 'role' } })
     case 'not_found':
       return createError({ statusCode: 404, statusMessage: notFound, data })
     case 'forbidden':
-      return createError({ statusCode: 403, statusMessage: 'Only this workspace’s owner and stewards can manage its invitations.', data })
+      // Members manage no invitations; stewards offer and withdraw Member invitations only.
+      return createError({ statusCode: 403, statusMessage: 'You can’t do that with this workspace’s invitations.', data })
+    case 'no_longer_valid':
+      return createError({ statusCode: 409, statusMessage: 'This invitation can no longer be accepted as it was offered.', data })
     case 'already_invited':
       return createError({ statusCode: 409, statusMessage: 'That address already has a pending invitation to this workspace.', data })
     case 'not_pending':
