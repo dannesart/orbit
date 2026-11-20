@@ -1,19 +1,24 @@
 // Changing someone's place from People, apart from its components: the exact requests, one
 // confirmation before removal, refreshing after every outcome, and calm answers to conflicts.
 import { describe, expect, it } from 'vitest'
-import { actionLabel, conflictMessage, createMemberActions, membershipRequest, type MembershipRequest } from '../app/utils/memberActions'
+import { STALE_NOTICE, actionLabel, conflictMessage, createMemberActions, membershipRequest, type MembershipRequest } from '../app/utils/memberActions'
 
 const WS = 'w-1'
 const MIA = { id: 'm-1', name: 'Mia' }
 
-function harness(fail?: unknown) {
+/** `reload`: what refresh() does: load the current state (true), fail to (false), or throw. */
+function harness(fail?: unknown, reload: 'current' | 'failed' | 'throws' = 'current') {
   const sent: MembershipRequest[] = []
   let refreshed = 0
   const actions = createMemberActions({
     workspaceId: () => WS,
     workspaceName: () => 'Harbour',
     send: async (request) => { sent.push(request); if (fail) throw fail },
-    refresh: async () => { refreshed++ },
+    refresh: async () => {
+      refreshed++
+      if (reload === 'throws') throw new Error('network')
+      return reload === 'current'
+    },
   })
   return { actions, sent, refreshed: () => refreshed }
 }
@@ -123,5 +128,44 @@ describe('when the server doesn’t make the change', () => {
 
   it('names someone without a name gently', () => {
     expect(conflictMessage(refusal(404, 'not_found'), { id: 'x', name: null })).toBe('This person is no longer part of this workspace.')
+  })
+})
+
+describe('when People can’t be loaded again afterwards (regression)', () => {
+  for (const reload of ['failed', 'throws'] as const) {
+    it(`reports a successful change truthfully, without presenting the list as current: reload ${reload}`, async () => {
+      const { actions, sent, refreshed } = harness(undefined, reload)
+      await actions.choose(MIA, 'promote')
+      expect(sent).toHaveLength(1) // the change itself is neither undone nor retried
+      expect(refreshed()).toBe(1) // nor is the reload retried
+      expect(actions.notice.value).toEqual({ text: `Mia is now a Steward. ${STALE_NOTICE}`, problem: true })
+      expect(actions.busy.value).toBeNull()
+    })
+  }
+
+  it('never says “this is how things are now” about a list that wasn’t reloaded', async () => {
+    for (const reason of ['role_changed', 'forbidden']) {
+      const { actions } = harness(refusal(reason === 'forbidden' ? 403 : 409, reason), 'failed')
+      await actions.choose(MIA, 'remove')
+      await actions.confirmRemoval()
+      expect(actions.notice.value?.text, reason).not.toContain('This is how things are now')
+      expect(actions.notice.value?.text, reason).toContain(STALE_NOTICE)
+      expect(actions.notice.value?.problem).toBe(true)
+    }
+  })
+
+  it('after a removal too', async () => {
+    const { actions } = harness(undefined, 'failed')
+    await actions.choose(MIA, 'remove')
+    await actions.confirmRemoval()
+    expect(actions.notice.value).toEqual({ text: `Mia was removed from Harbour. ${STALE_NOTICE}`, problem: true })
+    expect(actions.removing.value).toBeNull()
+  })
+
+  it('keeps the plain message when the reload did succeed', async () => {
+    const { actions } = harness(refusal(409, 'role_changed'))
+    await actions.choose(MIA, 'promote')
+    expect(actions.notice.value?.text).toBe('Mia’s responsibilities changed in the meantime, so nothing was changed. This is how things are now.')
+    expect(conflictMessage(refusal(409, 'role_changed'), MIA, false)).toBe('Mia’s responsibilities changed in the meantime, so nothing was changed.')
   })
 })

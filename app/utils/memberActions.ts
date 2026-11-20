@@ -31,14 +31,21 @@ export function membershipRequest(workspaceId: string, membershipId: string, act
 export interface Person { id: string; name: string | null }
 const called = (person: Person) => person.name ?? 'This person'
 
-/** What to say when the server didn't make the change: calmly, and without retrying anything. */
-export function conflictMessage(error: unknown, person: Person): string {
+/** Said whenever People couldn't be loaded again: what is shown may not be current. */
+export const STALE_NOTICE = 'People couldn’t be updated, so the list may be out of date. Reload the page to see the latest.'
+
+/**
+ * What to say when the server didn't make the change: calmly, and without retrying anything.
+ * "This is how things are now" only when the list was in fact loaded again (`fresh`).
+ */
+export function conflictMessage(error: unknown, person: Person, fresh = true): string {
   const e = error as { statusCode?: number; data?: { data?: { reason?: string } } }
   const reason = e?.data?.data?.reason
   const name = called(person)
+  const now = fresh ? ' This is how things are now.' : ''
   if (reason === 'stewardship_offered') return `The owner has offered ${name} stewardship, so only the owner can remove them while that offer stands.`
-  if (reason === 'role_changed') return `${name}’s responsibilities changed in the meantime, so nothing was changed. This is how things are now.`
-  if (reason === 'forbidden') return 'You can no longer do that here. This is how things are now.'
+  if (reason === 'role_changed') return `${name}’s responsibilities changed in the meantime, so nothing was changed.${now}`
+  if (reason === 'forbidden') return `You can no longer do that here.${now}`
   if (reason === 'not_found' || e?.statusCode === 404) return `${name} is no longer part of this workspace.`
   return 'That didn’t work. Please try again.'
 }
@@ -54,8 +61,11 @@ export function createMemberActions(options: {
   workspaceId: () => string
   workspaceName: () => string
   send: (request: MembershipRequest) => Promise<unknown>
-  /** Loads the workspace (and anything shown with it) again, as the server sees it now. */
-  refresh: () => Promise<unknown>
+  /**
+   * Loads the workspace (and anything shown with it) again, as the server sees it now. Resolves
+   * true only when what is shown is now current; false (or a throw) means it may not be.
+   */
+  refresh: () => Promise<boolean>
 }) {
   /** The membership whose change is with the server. */
   const busy = ref<string | null>(null)
@@ -63,19 +73,25 @@ export function createMemberActions(options: {
   const removing = ref<Person | null>(null)
   const notice = ref<{ text: string; problem: boolean } | null>(null)
 
+  /**
+   * Two separate facts, each told truthfully: whether the server made the change, and whether
+   * the list was loaded again afterwards. A change that succeeded is never undone or retried
+   * because the reload failed; the list is just never presented as current when it may not be.
+   */
   async function perform(person: Person, action: MembershipAction) {
     busy.value = person.id
     notice.value = null
+    let refused: unknown = null
     try {
       await options.send(membershipRequest(options.workspaceId(), person.id, action))
-      notice.value = { text: doneMessage(action, person, options.workspaceName()), problem: false }
     } catch (error) {
-      notice.value = { text: conflictMessage(error, person), problem: true }
-    } finally {
-      // Either way, show how things are now: the change, or why it didn't happen.
-      await options.refresh()
-      busy.value = null
+      refused = error ?? new Error('refused')
     }
+    // Either way, load how things are now: the change, or why it didn't happen.
+    const fresh = await options.refresh().then((current) => current === true, () => false)
+    const outcome = refused ? conflictMessage(refused, person, fresh) : doneMessage(action, person, options.workspaceName())
+    notice.value = { text: fresh ? outcome : `${outcome} ${STALE_NOTICE}`, problem: !!refused || !fresh }
+    busy.value = null
   }
 
   /** Changing responsibilities happens at once; removal asks once first. */

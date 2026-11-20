@@ -40,13 +40,16 @@ export async function useWorkspace(id: string) {
   }
 
   /**
-   * Loads the workspace again, as the server sees it now (after a membership change, say). The
-   * current view stays until the new one arrives. If you no longer belong here, or are signed
-   * out, the page says so, as it would on arrival.
+   * Loads the workspace again, as the server sees it now (after a membership change, say), and
+   * says whether it did: true only when what is shown is now current. The current view stays
+   * until the new one arrives. If you no longer belong here, or are signed out, the page says so,
+   * as it would on arrival. Any other failure keeps what was shown, and returns false, so callers
+   * never present it as current.
    */
-  async function refresh() {
+  async function refresh(): Promise<boolean> {
     try {
       data.value = await $fetch<WorkspaceDetail>(`/api/workspaces/${id}`)
+      return true
     } catch (e: any) {
       const status = e?.statusCode ?? e?.response?.status
       if (status === 401) {
@@ -55,7 +58,7 @@ export async function useWorkspace(id: string) {
       } else if (status === 404) {
         showError({ statusCode: 404, statusMessage: 'Workspace not found', fatal: true })
       }
-      // Anything else: keep what is shown; the next action or visit will try again.
+      return false
     }
   }
 

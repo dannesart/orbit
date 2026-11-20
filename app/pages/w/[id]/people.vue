@@ -15,7 +15,7 @@ const together = computed(() =>
 const mayInvite = computed(() => ws.value.invitationRoles.length > 0)
 
 // Pending invitations, only for those who look after this workspace (the API refuses anyone else).
-const { data: invitations, refresh } = await useFetch<ListedInvitation[]>(() => `/api/workspaces/${ws.value.id}/invitations`, {
+const { data: invitations, refresh, error: invitationsError } = await useFetch<ListedInvitation[]>(() => `/api/workspaces/${ws.value.id}/invitations`, {
   key: `invitations:${ws.value.id}`,
   immediate: ws.value.canManage,
   default: () => [],
@@ -48,7 +48,15 @@ const members = createMemberActions({
   workspaceId: () => ws.value.id,
   workspaceName: () => ws.value.name,
   send: (request) => $fetch(request.path, { method: request.method, body: request.body }),
-  refresh: () => Promise.all([refreshWorkspace(), ws.value.canManage ? refresh() : null]),
+  // Current only if everything shown was loaded again: the people, and (for those who see them)
+  // the pending invitations.
+  refresh: async () => {
+    const [people, invited] = await Promise.all([
+      refreshWorkspace(),
+      ws.value.canManage ? refresh().then(() => !invitationsError.value) : true,
+    ])
+    return people && invited
+  },
 })
 const { busy, removing, notice: memberNotice } = members
 // Rows keep one width for the role label, whether or not that person has a menu.
