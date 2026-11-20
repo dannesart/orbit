@@ -1,19 +1,21 @@
 <!--
   A quiet menu beside someone in People, offering only what the server says the viewer may do
-  for them (`actions`). Shown only when there is at least one; never for yourself or the owner,
-  because the server offers nothing there.
+  for them (`actions`, and Transfer ownership when `transferable`). Shown only when there is at
+  least one; never for yourself or the owner, because the server offers nothing there.
 -->
 <script setup lang="ts">
 import type { MembershipAction } from '~~/server/utils/authority'
+import type { PersonChoice } from '~/utils/memberActions'
 
-const props = defineProps<{ name: string | null; actions: MembershipAction[]; busy: boolean }>()
-const emit = defineEmits<{ choose: [action: MembershipAction] }>()
+const props = defineProps<{ name: string | null; actions: MembershipAction[]; transferable: boolean; busy: boolean }>()
+const emit = defineEmits<{ choose: [choice: PersonChoice] }>()
 const { open, root, trigger, menu, close, toggle, onKeydown } = useMenu()
 const ids = useId()
+const choices = computed(() => menuChoices(props))
 
-function choose(action: MembershipAction) {
+function choose(choice: PersonChoice) {
   close()
-  emit('choose', action)
+  emit('choose', choice)
 }
 </script>
 
@@ -44,7 +46,7 @@ function choose(action: MembershipAction) {
       class="absolute top-full right-0 z-20 mt-1 w-56 animate-rise rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-lg shadow-slate-900/10"
       @keydown="onKeydown"
     >
-      <MenuItem v-for="action in actions" :key="action" @click="choose(action)">{{ actionLabel[action] }}</MenuItem>
+      <MenuItem v-for="choice in choices" :key="choice" @click="choose(choice)">{{ choiceLabel[choice] }}</MenuItem>
     </div>
   </div>
 </template>

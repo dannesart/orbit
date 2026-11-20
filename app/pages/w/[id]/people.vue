@@ -41,9 +41,10 @@ async function revoke(invitation: ListedInvitation) {
   }
 }
 
-// Changing someone's place here: offered only where the server's `actions` say so (PersonMenu),
-// confirmed by the server before anything changes, then everything is loaded again as it is now
-// (a removal also withdraws that person's pending invitations here).
+// Changing someone's place here: offered only where the server's `actions` (and, for ownership,
+// `transferable`) say so (PersonMenu), confirmed by the server before anything changes, then
+// everything is loaded again as it is now (a removal also withdraws that person's pending
+// invitations here; a transfer, the former owner's pending Steward invitations).
 const members = createMemberActions({
   workspaceId: () => ws.value.id,
   workspaceName: () => ws.value.name,
@@ -58,9 +59,12 @@ const members = createMemberActions({
     return people && invited
   },
 })
-const { busy, removing, notice: memberNotice } = members
+const { busy, removing, transferring, notice: memberNotice } = members
+const hasMenu = (p: { actions: unknown[]; transferable: boolean }) => p.actions.length > 0 || p.transferable
 // Rows keep one width for the role label, whether or not that person has a menu.
-const anyActions = computed(() => people.value.some((p) => p.actions.length > 0))
+const anyActions = computed(() => people.value.some(hasMenu))
+// The person to confirm handing ownership to, as People shows them (name and current role).
+const transferTo = computed(() => people.value.find((p) => p.id === transferring.value?.id) ?? null)
 </script>
 
 <template>
@@ -83,9 +87,10 @@ const anyActions = computed(() => people.value.some((p) => p.actions.length > 0)
           </p>
           <span class="shrink-0 text-sm text-slate-500">{{ standingOf(person) }}</span>
           <PersonMenu
-            v-if="person.actions.length"
+            v-if="hasMenu(person)"
             :name="person.name"
             :actions="person.actions"
+            :transferable="person.transferable"
             :busy="busy === person.id"
             @choose="(action) => members.choose(person, action)"
           />
@@ -144,6 +149,15 @@ const anyActions = computed(() => people.value.some((p) => p.actions.length > 0)
       :busy="!!busy"
       @confirm="members.confirmRemoval()"
       @cancel="members.cancelRemoval()"
+    />
+    <!-- Stays mounted while a transfer is pending: afterwards the former owner may have no menus at all. -->
+    <TransferOwnershipDialog
+      v-if="anyActions || transferring"
+      :person="transferTo"
+      :workspace-name="ws.name"
+      :busy="!!busy"
+      @confirm="members.confirmTransfer()"
+      @cancel="members.cancelTransfer()"
     />
   </main>
 </template>

@@ -4,7 +4,7 @@
 import { fileURLToPath } from 'node:url'
 import { fetch, setup } from '@nuxt/test-utils/e2e'
 import { afterAll, describe, expect, it } from 'vitest'
-import { membershipRequest } from '../app/utils/memberActions'
+import { membershipRequest, ownershipRequest } from '../app/utils/memberActions'
 import { createSession, setName, upsertAccount } from '../server/utils/accounts'
 import { createWorkspace } from '../server/utils/workspaces'
 import { startTestDatabase } from './db'
@@ -321,5 +321,86 @@ describe('changing someone’s place from People', () => {
     expect((await act(owner, ws.id, mia, 'remove')).status).toBe(204)
     expect(await reason(await act(owner, ws.id, mia, 'remove'))).toEqual({ status: 404, reason: 'not_found' }) // already gone
     expect((await db`SELECT owner_id FROM orbit.workspaces WHERE id = ${ws.id}`)[0]!.owner_id).toBe(owner.id) // ownership never moves
+  })
+})
+
+describe('handing ownership on from People', () => {
+  const menusOf = (html: string) => [...html.matchAll(/aria-label="Options for ([^"]+)"/g)].map((m) => m[1])
+  const membershipOf = async (p: Person, wsId: string) =>
+    (await db`SELECT id FROM orbit.memberships WHERE user_id = ${p.id} AND workspace_id = ${wsId}`)[0]?.id as string
+  /** Sends exactly what the page sends (ownershipRequest): a POST with no body. */
+  const transfer = (who: Person, wsId: string, memberId: string) => {
+    const request = ownershipRequest(wsId, memberId)
+    expect(request.body).toBeUndefined()
+    return api(request.path, who, { method: request.method })
+  }
+  const membersAs = async (who: Person, wsId: string) =>
+    (await (await api(`/api/workspaces/${wsId}`, who)).json()).members as { name: string | null; transferable: boolean; actions: string[] }[]
+
+  it('is offered to the owner only, for everyone else (transferable), and nowhere else', async () => {
+    const { ws, owner, steward, member } = await world()
+    const transferableFor = async (who: Person) => Object.fromEntries((await membersAs(who, ws.id)).map((m) => [m.name, m.transferable]))
+    expect(await transferableFor(owner)).toEqual({ Olive: false, Sam: true, Mia: true })
+    expect(await transferableFor(steward)).toEqual({ Olive: false, Sam: false, Mia: false })
+    expect(await transferableFor(member)).toEqual({ Olive: false, Sam: false, Mia: false })
+  })
+
+  it('moves ownership with exactly the page’s request; People then shows the new owner, and each person’s menus follow', async () => {
+    const { ws, owner, member } = await world()
+    await invite(ws.id, owner, 'future-steward@example.com', 'admin')
+    const keep = await invite(ws.id, owner, 'future-member@example.com', 'member')
+
+    const res = await transfer(owner, ws.id, await membershipOf(member, ws.id))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ revokedInvitations: 1 }) // what the page tells the former owner
+
+    // As the former owner now sees People: Mia owns it, they are a Steward, and they manage no one.
+    const asFormer = await page(`/w/${ws.id}/people`, owner)
+    expect(textOf(asFormer.html)).toContain('Olive (you) Steward')
+    expect(textOf(asFormer.html)).toContain('Mia Owner')
+    expect(menusOf(asFormer.html)).toEqual([])
+    // As the new owner sees it: menus for everyone else, the former owner included.
+    const asOwner = await page(`/w/${ws.id}/people`, member)
+    expect(textOf(asOwner.html)).toContain('Mia (you) Owner')
+    expect(menusOf(asOwner.html).sort()).toEqual(['Olive', 'Sam'])
+    expect((await membersAs(member, ws.id)).filter((m) => m.transferable).map((m) => m.name).sort()).toEqual(['Olive', 'Sam'])
+    // The Member invitation is still pending; the Steward invitation is gone from the list.
+    const pending = ((await (await api(`/api/workspaces/${ws.id}/invitations`, member)).json()) as { id: string; status: string }[])
+      .filter((i) => i.status === 'pending').map((i) => i.id)
+    expect(pending).toEqual([keep.id])
+  })
+
+  it('answers a stale page and a recipient who has left with the reasons the page explains', async () => {
+    const { ws, owner, steward, member } = await world()
+    const reason = async (res: Response) => ({ status: res.status, reason: (await res.json()).data?.reason })
+    const mia = await membershipOf(member, ws.id)
+    expect((await transfer(owner, ws.id, await membershipOf(steward, ws.id))).status).toBe(200)
+    expect(await reason(await transfer(owner, ws.id, mia))).toEqual({ status: 403, reason: 'forbidden' }) // a page from before
+    expect((await api(`/api/workspaces/${ws.id}/members/${mia}`, steward, { method: 'DELETE' })).status).toBe(204)
+    expect(await reason(await transfer(steward, ws.id, mia))).toEqual({ status: 404, reason: 'not_found' }) // gone meanwhile
+  })
+
+  it('shows someone without a name as People always has, and can still hand them ownership', async () => {
+    const { ws, owner } = await world()
+    const unnamed = await person(null)
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${unnamed.id}, ${ws.id}, 'member')`
+    const before = await page(`/w/${ws.id}/people`, owner)
+    expect(textOf(before.html)).toContain('No name yet Member')
+    expect(menusOf(before.html)).toContain('this person')
+    expect(before.html).not.toContain(unnamed.email) // never an address instead
+    expect((await transfer(owner, ws.id, await membershipOf(unnamed, ws.id))).status).toBe(200)
+    expect(textOf((await page(`/w/${ws.id}/people`, owner)).html)).toContain('No name yet Owner')
+  })
+
+  it('shows two people with the same name alike, as People always has: only their role can tell them apart', async () => {
+    const { ws, owner } = await world()
+    const [samA, samB] = [await person('Sam'), await person('Sam')]
+    await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${samA.id}, ${ws.id}, 'member'), (${samB.id}, ${ws.id}, 'member')`
+    const html = (await page(`/w/${ws.id}/people`, owner)).html
+    expect(menusOf(html).filter((name) => name === 'Sam')).toHaveLength(3) // the steward Sam, and two Member Sams
+    for (const p of [samA, samB]) expect(html).not.toContain(p.email)
+    // The page names the membership whose menu was opened, so the right Sam receives ownership.
+    expect((await transfer(owner, ws.id, await membershipOf(samB, ws.id))).status).toBe(200)
+    expect((await db`SELECT owner_id FROM orbit.workspaces WHERE id = ${ws.id}`)[0]!.owner_id).toBe(samB.id)
   })
 })
