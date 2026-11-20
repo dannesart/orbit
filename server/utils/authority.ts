@@ -54,6 +54,11 @@ export function mayInvite(actor: Standing, role: Role): boolean {
   return role === 'admin' ? actor.owner : actor.owner || actor.role === 'admin'
 }
 
+/** The roles `actor` may offer by invitation, in order: none for a member. */
+export function offerableRoles(actor: Standing): Role[] {
+  return (['member', 'admin'] as const).filter((role) => mayInvite(actor, role))
+}
+
 /** Whether `actor` may withdraw an invitation offering `role`. */
 export function mayRevoke(actor: Standing, role: Role): boolean {
   return mayInvite(actor, role) // whoever may offer a role may withdraw such an offer

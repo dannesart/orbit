@@ -1,4 +1,4 @@
-import { type MembershipAction, SQL_STEWARDSHIP_OFFERED, type Standing, allowedActions } from './authority'
+import { type MembershipAction, SQL_STEWARDSHIP_OFFERED, type Standing, allowedActions, offerableRoles } from './authority'
 import type { Db, Queryable } from './db'
 
 export type Role = 'admin' | 'member'
@@ -17,7 +17,11 @@ export interface WorkspaceView {
   createdAt: string
 }
 
-export type WorkspaceDetail = WorkspaceView & { members: Member[] }
+export type WorkspaceDetail = WorkspaceView & {
+  members: Member[]
+  /** The roles the asking person may offer by invitation (offerableRoles): none for a member. */
+  invitationRoles: Role[]
+}
 
 export const WORKSPACE_NAME_MAX = 64
 export const DESCRIPTION_MAX = 280
@@ -205,4 +209,17 @@ export async function listMembers(db: Db, workspaceId: string, userId: string): 
     owner: r.owner,
     actions: asking ? allowedActions(asking, { userId: r.userId, role: r.role, owner: r.owner, stewardshipOffered: r.stewardshipOffered }) : [],
   }))
+}
+
+/**
+ * A workspace as one of its members sees it: the workspace, everyone in it (with what the asking
+ * person may do to each), and which roles they may offer by invitation. Null for non-members,
+ * who learn nothing.
+ */
+export async function getWorkspaceDetail(db: Db, userId: string, workspaceId: string): Promise<WorkspaceDetail | null> {
+  const workspace = await getWorkspace(db, userId, workspaceId)
+  if (!workspace) return null
+  const members = await listMembers(db, workspace.id, userId)
+  const me = members.find((m) => m.you)!
+  return { ...workspace, members, invitationRoles: offerableRoles({ userId, role: me.role, owner: me.owner }) }
 }

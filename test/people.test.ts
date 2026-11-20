@@ -12,7 +12,7 @@ describe('how Orbit names someone’s place in a workspace', () => {
     expect(standingOf({ role: 'member', owner: true })).toBe('Owner')
   })
 
-  it('lists the owner first, then stewards, then members, by name, unnamed people last', () => {
+  it('lists everyone by name, unnamed people last, never ranked by responsibility', () => {
     const people = [
       { name: 'Zoë', role: 'member', owner: false },
       { name: null, role: 'member', owner: false },
@@ -21,6 +21,6 @@ describe('how Orbit names someone’s place in a workspace', () => {
       { name: 'Yusuf', role: 'admin', owner: true },
       { name: 'Ari', role: 'admin', owner: false },
     ] as const
-    expect(sortPeople(people).map((p) => p.name)).toEqual(['Yusuf', 'Ari', 'Bea', 'Ada', 'Zoë', null])
+    expect(sortPeople(people).map((p) => p.name)).toEqual(['Ada', 'Ari', 'Bea', 'Yusuf', 'Zoë', null])
   })
 })

@@ -9,7 +9,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // Where someone was going is carried through each step (signInPath, welcomePath; validated
   // by safeDestination) and honoured once nothing more is needed. It only says where to go:
   // the page it leads to is authorized by the server like any other visit.
-  if (!account.value) return to.path === '/sign-in' ? undefined : navigateTo(signInPath(to.fullPath))
+  // An invitation's page is open to everyone: its public preview needs no account, and accepting
+  // it asks the visitor to sign in (keeping the link) from the page itself.
+  if (!account.value) return to.path === '/sign-in' || isInvitationPath(to.path) ? undefined : navigateTo(signInPath(to.fullPath))
   if (to.path === '/sign-in') {
     const next = to.query.next
     return navigateTo(account.value.name ? (safeDestination(next) ?? '/') : welcomePath(next))
