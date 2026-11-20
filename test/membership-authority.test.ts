@@ -46,7 +46,7 @@ async function invite(by: Person, workspaceId: string, email: string, role: Role
   if (!result.ok) throw new Error(`could not invite: ${result.reason}`)
   return result.invitation
 }
-/** Outside orbit_app: for what only time, or a future ownership transfer, could do. */
+/** Outside orbit_app: for what only time could do, or a bare change of ownership outside the transfer's rules. */
 async function asSuperuser<T>(fn: () => Promise<T>): Promise<T> {
   await sql().unsafe('RESET ROLE')
   try { return await fn() } finally { await sql().unsafe('SET ROLE orbit_app') }
@@ -423,11 +423,11 @@ describe('the public preview', () => {
   })
 })
 
-describe('what the database itself refuses (migration 007)', () => {
-  it('won’t let orbit_app change who owns a workspace, or whose or where a membership is', async () => {
+describe('what the database itself refuses (migrations 007 and 008)', () => {
+  it('won’t let orbit_app change who created a workspace, or whose or where a membership is', async () => {
     const { ws, owner, steward, member } = await world()
-    expect(await codeOf(sql()`UPDATE orbit.workspaces SET owner_id = ${steward.id} WHERE id = ${ws.id}`)).toBe('42501')
     expect(await codeOf(sql()`UPDATE orbit.workspaces SET created_by = ${steward.id} WHERE id = ${ws.id}`)).toBe('42501')
+    expect(await codeOf(sql()`UPDATE orbit.workspaces SET id = gen_random_uuid() WHERE id = ${ws.id}`)).toBe('42501')
     expect(await codeOf(sql()`UPDATE orbit.memberships SET user_id = ${steward.id} WHERE user_id = ${member.id} AND workspace_id = ${ws.id}`)).toBe('42501')
     expect(await codeOf(sql()`UPDATE orbit.memberships SET id = gen_random_uuid() WHERE user_id = ${member.id}`)).toBe('42501')
     // What the app legitimately changes still works.
@@ -487,7 +487,7 @@ describe('migration 007 on a database from before it (as deployed with 001–006
     try {
       const before = [...await db.sql`SELECT user_id, workspace_id, role, created_at FROM orbit.memberships ORDER BY user_id`]
       const { migrate } = await import('../server/db/migrate')
-      expect(await migrate(db.sql)).toEqual(['007_invitation_roles_and_membership_authority.sql'])
+      expect(await migrate(db.sql)).toEqual(['007_invitation_roles_and_membership_authority.sql', '008_ownership_transfer.sql'])
       expect((await db.sql`SELECT role FROM orbit.invitations WHERE id = ${ids.invitation!}`)[0]!.role).toBe('member')
       expect([...await db.sql`SELECT user_id, workspace_id, role, created_at FROM orbit.memberships ORDER BY user_id`]).toEqual(before)
       expect((await db.sql`SELECT count(*)::int AS n FROM orbit.memberships WHERE id IS NULL`)[0]!.n).toBe(0)

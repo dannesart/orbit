@@ -77,13 +77,13 @@ describe('members', () => {
   it('lists everyone in the workspace, the asking person first, by name only', async () => {
     const owner = await createUser()
     const ws = await createWorkspace(testDb.sql, owner, 'Crew')
-    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [] }])
+    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [], transferable: false }])
 
     const colleague = await createUser()
     await setName(testDb.sql, colleague, 'Grace')
     await testDb.sql`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${colleague}, ${ws.id}, 'member')`
-    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [] }, { id: expect.any(String), name: 'Grace', you: false, role: 'member', owner: false, actions: ['promote', 'remove'] }])
-    expect(await listMembers(testDb.sql, ws.id, colleague)).toEqual([{ id: expect.any(String), name: 'Grace', you: true, role: 'member', owner: false, actions: [] }, { id: expect.any(String), name: null, you: false, role: 'admin', owner: true, actions: [] }])
+    expect(await listMembers(testDb.sql, ws.id, owner)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [], transferable: false }, { id: expect.any(String), name: 'Grace', you: false, role: 'member', owner: false, actions: ['promote', 'remove'], transferable: true }])
+    expect(await listMembers(testDb.sql, ws.id, colleague)).toEqual([{ id: expect.any(String), name: 'Grace', you: true, role: 'member', owner: false, actions: [], transferable: false }, { id: expect.any(String), name: null, you: false, role: 'admin', owner: true, actions: [], transferable: false }])
   })
 
   it('does not include people from other workspaces', async () => {

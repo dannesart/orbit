@@ -1,8 +1,9 @@
 // Ownership invariants, held by the database itself (migrations 004 and 005), exercised as
 // orbit_app exactly as the deployed server would be; the owner's authority; and the migrations
-// themselves, on databases from before ownership and from between 004 and 005. Since 007,
-// orbit_app can't change owner_id at all (test/membership-authority.test.ts), so changes of
-// ownership here are made as a future, separately privileged transfer would make them.
+// themselves, on databases from before ownership and from between 004 and 005. Changes of
+// ownership here are bare owner_id updates made as superuser, to test what the database holds on
+// its own; the transfer itself (migration 008, server/utils/ownership.ts) is tested in
+// test/ownership-transfer.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { upsertAccount } from '../server/utils/accounts'
 import { createWorkspace, getWorkspace, listMembers, updateWorkspace } from '../server/utils/workspaces'
@@ -21,7 +22,7 @@ const ownerOf = async (workspaceId: string) =>
     SELECT owner_id AS "ownerId", created_by AS "createdBy" FROM orbit.workspaces WHERE id = ${workspaceId}`)[0]!
 /** Postgres error code of a statement expected to fail (23502 not null, 23503 foreign key). */
 const codeOf = (statement: Promise<unknown>) => statement.then(() => 'succeeded', (e) => e.code as string)
-/** Outside orbit_app, for what only a transfer of ownership could do (owner_id isn't orbit_app's to change). */
+/** Outside orbit_app, for bare changes of ownership that bypass the transfer's own rules. */
 async function asSuperuser<T>(fn: () => Promise<T>): Promise<T> {
   await testDb.sql.unsafe('RESET ROLE')
   try { return await fn() } finally { await testDb.sql.unsafe('SET ROLE orbit_app') }
@@ -48,7 +49,7 @@ describe('creating a workspace', () => {
     const created = await Promise.all(people.map((p, i) => createWorkspace(testDb.sql, p, `Rush ${i}`)))
     for (const [i, ws] of created.entries()) {
       expect((await ownerOf(ws.id)).ownerId).toBe(people[i])
-      expect(await listMembers(testDb.sql, ws.id, people[i]!)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [] }])
+      expect(await listMembers(testDb.sql, ws.id, people[i]!)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [], transferable: false }])
     }
   })
 })
@@ -79,7 +80,7 @@ describe('the owner', () => {
     expect(await codeOf(testDb.sql`DELETE FROM orbit.memberships WHERE workspace_id = ${ws.id}`)).toBe('23503') // not even all at once
     expect(await codeOf(remove(member))).toBe('succeeded')
     expect(await codeOf(remove(steward))).toBe('succeeded')
-    expect(await listMembers(testDb.sql, ws.id, creator)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [] }])
+    expect(await listMembers(testDb.sql, ws.id, creator)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [], transferable: false }])
   })
 
   it('is read from owner_id, not inferred from the creator, and can change hands in one step', async () => {
@@ -92,8 +93,8 @@ describe('the owner', () => {
     await asSuperuser(() => testDb.sql`UPDATE orbit.workspaces SET owner_id = ${successor} WHERE id = ${ws.id}`)
     expect(await ownerOf(ws.id)).toEqual({ ownerId: successor, createdBy: creator }) // history unchanged
     expect(await listMembers(testDb.sql, ws.id, creator)).toEqual([
-      { id: expect.any(String), name: null, you: true, role: 'admin', owner: false, actions: [] },
-      { id: expect.any(String), name: null, you: false, role: 'member', owner: true, actions: [] },
+      { id: expect.any(String), name: null, you: true, role: 'admin', owner: false, actions: [], transferable: false },
+      { id: expect.any(String), name: null, you: false, role: 'member', owner: true, actions: [], transferable: false },
     ])
     // The former owner is now an ordinary membership, and the new owner's is protected.
     expect(await codeOf(testDb.sql`DELETE FROM orbit.memberships WHERE user_id = ${successor} AND workspace_id = ${ws.id}`)).toBe('23503')
@@ -183,7 +184,7 @@ describe('the ownership contract (migration 005)', () => {
     const ws = await createWorkspace(testDb.sql, await createUser(), 'Lighthouse')
     expect(await codeOf(asSuperuser(() => testDb.sql`UPDATE orbit.workspaces SET owner_id = NULL WHERE id = ${ws.id}`))).toBe('23502')
     expect(await listMembers(testDb.sql, ws.id, (await ownerOf(ws.id)).ownerId))
-      .toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [] }])
+      .toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [], transferable: false }])
   })
 })
 
@@ -218,7 +219,7 @@ describe('migration 005 on a database from between 004 and 005', () => {
       expect(await nullable(db.sql)).toBe('YES')
 
       const { migrate } = await import('../server/db/migrate')
-      expect(await migrate(db.sql)).toEqual(['005_workspace_owner_required.sql', '006_invitations.sql', '007_invitation_roles_and_membership_authority.sql'])
+      expect(await migrate(db.sql)).toEqual(['005_workspace_owner_required.sql', '006_invitations.sql', '007_invitation_roles_and_membership_authority.sql', '008_ownership_transfer.sql'])
 
       expect([...await db.sql`SELECT name, owner_id, created_by FROM orbit.workspaces ORDER BY name`]).toEqual([
         { name: 'Early', owner_id: ids.ada, created_by: ids.ada }, // Lin is a steward there, not the owner
@@ -301,7 +302,7 @@ describe('migration 004 on a database from before ownership', () => {
 
       const { migrate } = await import('../server/db/migrate')
       // A database from before ownership goes straight to the final contract.
-      expect(await migrate(old.sql)).toEqual(['004_workspace_owner.sql', '005_workspace_owner_required.sql', '006_invitations.sql', '007_invitation_roles_and_membership_authority.sql'])
+      expect(await migrate(old.sql)).toEqual(['004_workspace_owner.sql', '005_workspace_owner_required.sql', '006_invitations.sql', '007_invitation_roles_and_membership_authority.sql', '008_ownership_transfer.sql'])
 
       expect([...await old.sql`SELECT name, owner_id, created_by FROM orbit.workspaces ORDER BY name`]).toEqual([
         { name: 'garden', owner_id: ids.grace, created_by: ids.grace },

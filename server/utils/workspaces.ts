@@ -1,4 +1,4 @@
-import { type MembershipAction, SQL_STEWARDSHIP_OFFERED, type Standing, allowedActions, offerableRoles } from './authority'
+import { type MembershipAction, SQL_STEWARDSHIP_OFFERED, type Standing, allowedActions, mayTransferOwnership, offerableRoles } from './authority'
 import type { Db, Queryable } from './db'
 
 export type Role = 'admin' | 'member'
@@ -91,7 +91,9 @@ export const isOrbitId = (id: string) => UUID.test(id)
 
 /**
  * The acting person's standing in a workspace, locked (FOR SHARE) until the end of the calling
- * transaction: their membership row and the workspace row. Anything that changes their role, or
+ * transaction: their membership row, then the workspace row, in that order (PostgreSQL locks the
+ * rows of this join in that order; an ownership transfer locks the same rows the same way, see
+ * server/utils/ownership.ts). Anything that changes their role, or
  * who owns the workspace, waits until the action that relied on it has committed, and an action
  * that starts after such a change sees it. Null if they aren't a member (outsiders learn nothing).
  */
@@ -181,6 +183,13 @@ export interface Member {
    * for showing choices, not a promise: every action is decided again, under lock, when taken.
    */
   actions: MembershipAction[]
+  /**
+   * Whether the asking person may hand ownership to this member right now (mayTransferOwnership):
+   * true only in the owner's view, and never for themselves. Like `actions`, a snapshot for
+   * showing the choice; the transfer decides again, under lock. Kept out of `actions` so that
+   * browsers which already interpret `actions` never meet a value they don't know.
+   */
+  transferable: boolean
 }
 
 /**
@@ -208,6 +217,7 @@ export async function listMembers(db: Db, workspaceId: string, userId: string): 
     role: r.role,
     owner: r.owner,
     actions: asking ? allowedActions(asking, { userId: r.userId, role: r.role, owner: r.owner, stewardshipOffered: r.stewardshipOffered }) : [],
+    transferable: asking ? mayTransferOwnership(asking, { userId: r.userId, role: r.role, owner: r.owner }) : false,
   }))
 }
 
