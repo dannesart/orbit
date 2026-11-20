@@ -4,6 +4,7 @@
 import { fileURLToPath } from 'node:url'
 import { fetch, setup } from '@nuxt/test-utils/e2e'
 import { afterAll, describe, expect, it } from 'vitest'
+import { membershipRequest } from '../app/utils/memberActions'
 import { createSession, setName, upsertAccount } from '../server/utils/accounts'
 import { createWorkspace } from '../server/utils/workspaces'
 import { startTestDatabase } from './db'
@@ -260,5 +261,65 @@ describe('the whole journey, over HTTP', () => {
     expect(people).toContain('Olive Owner')
     // …and the invitation has left the owner's pending list
     expect(textOf((await page(`/w/${ws.id}/people`, owner)).html)).not.toContain('ines@example.com')
+  })
+})
+
+describe('changing someone’s place from People', () => {
+  const menusOf = (html: string) => [...html.matchAll(/aria-label="Options for ([^"]+)"/g)].map((m) => m[1])
+  /** Sends exactly what the page sends (membershipRequest), as `who`. */
+  const act = async (who: Person, wsId: string, memberId: string, action: 'promote' | 'demote' | 'remove') => {
+    const request = membershipRequest(wsId, memberId, action)
+    return api(request.path, who, { method: request.method, ...(request.body ? { body: JSON.stringify(request.body) } : {}) })
+  }
+  const membershipOf = async (p: Person, wsId: string) =>
+    (await db`SELECT id FROM orbit.memberships WHERE user_id = ${p.id} AND workspace_id = ${wsId}`)[0]?.id as string
+
+  it('offers a menu only where the server offers an action: never for yourself or the owner, never to members', async () => {
+    const { ws, owner, steward, member } = await world()
+    expect(menusOf((await page(`/w/${ws.id}/people`, owner)).html).sort()).toEqual(['Mia', 'Sam'])
+    expect(menusOf((await page(`/w/${ws.id}/people`, steward)).html)).toEqual(['Mia'])
+    expect(menusOf((await page(`/w/${ws.id}/people`, member)).html)).toEqual([])
+    // A member the owner has offered stewardship to: the steward's menu for them disappears
+    await invite(ws.id, owner, member.email, 'admin')
+    expect(menusOf((await page(`/w/${ws.id}/people`, steward)).html)).toEqual([])
+  })
+
+  it('makes someone a Steward or a Member with exactly the page’s requests, and People shows it after', async () => {
+    const { ws, owner, steward, member } = await world()
+    expect((await act(owner, ws.id, await membershipOf(member, ws.id), 'promote')).status).toBe(200)
+    expect((await act(owner, ws.id, await membershipOf(steward, ws.id), 'demote')).status).toBe(200)
+    const text = textOf((await page(`/w/${ws.id}/people`, owner)).html)
+    expect(text).toContain('Mia Steward')
+    expect(text).toContain('Sam Member')
+    expect(text).toContain('Olive (you) Owner') // the owner is untouched
+  })
+
+  it('removes someone, who then no longer appears; their pending invitation here is withdrawn', async () => {
+    const { ws, owner, steward, member } = await world()
+    const { id } = await invite(ws.id, owner, member.email, 'member')
+    const res = await act(steward, ws.id, await membershipOf(member, ws.id), 'remove')
+    expect(res.status).toBe(204)
+    expect(textOf((await page(`/w/${ws.id}/people`, owner)).html)).not.toContain('Mia')
+    expect((await db`SELECT revoked_by FROM orbit.invitations WHERE id = ${id}`)[0]!.revoked_by).toBe(steward.id)
+    expect((await page(`/w/${ws.id}/people`, member)).status).toBe(404) // and they can no longer reach it
+  })
+
+  it('answers stale or conflicting changes with the reasons the page explains, changing nothing', async () => {
+    const { ws, owner, steward, member } = await world()
+    const mia = await membershipOf(member, ws.id)
+    const reason = async (res: Response) => ({ status: res.status, reason: (await res.json()).data?.reason })
+
+    await invite(ws.id, owner, member.email, 'admin') // offered stewardship after the steward's page loaded
+    expect(await reason(await act(steward, ws.id, mia, 'remove'))).toEqual({ status: 409, reason: 'stewardship_offered' })
+
+    await db`UPDATE orbit.memberships SET role = 'admin' WHERE id = ${mia}` // became a steward meanwhile
+    expect(await reason(await act(steward, ws.id, mia, 'remove'))).toEqual({ status: 403, reason: 'forbidden' }) // stewards never remove stewards
+
+    await db`UPDATE orbit.memberships SET role = 'member' WHERE user_id = ${steward.id} AND workspace_id = ${ws.id}` // the steward lost the role
+    expect(await reason(await act(steward, ws.id, await membershipOf(owner, ws.id), 'remove'))).toEqual({ status: 403, reason: 'forbidden' })
+
+    expect((await act(owner, ws.id, mia, 'remove')).status).toBe(204)
+    expect(await reason(await act(owner, ws.id, mia, 'remove'))).toEqual({ status: 404, reason: 'not_found' }) // already gone
+    expect((await db`SELECT owner_id FROM orbit.workspaces WHERE id = ${ws.id}`)[0]!.owner_id).toBe(owner.id) // ownership never moves
   })
 })
