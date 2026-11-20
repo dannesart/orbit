@@ -1,8 +1,9 @@
-// Acceptance, removal, role changes and ownership, as truly concurrent PostgreSQL transactions
+// Acceptance, removal and role changes, as truly concurrent PostgreSQL transactions
 // (npm run test:concurrency; not part of npm test). The operations under test are Orbit's real
 // domain functions, each in its own session as orbit_app. A controlling session ("X") holds
 // specific row locks to force each order, and pg_stat_activity proves who waits for whom, so
-// every scenario is reproducible rather than timing-dependent.
+// every scenario is reproducible rather than timing-dependent. Ownership transfer against all of
+// these: ownership-concurrency.test.ts.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { acceptInvitation, createInvitation } from '../../server/utils/invitations'
 import { removeMember, setMemberRole } from '../../server/utils/memberships'
@@ -13,14 +14,12 @@ let A: Session // accepting
 let R: Session // removing
 let D: Session // changing a role
 let X: Session // controlling: holds row locks to force an order (superuser)
-let T: Session // a change of ownership, as a future transfer would make it (superuser)
 beforeAll(async () => {
   pg = await startPostgres()
   A = await pg.session('accept')
   R = await pg.session('remove')
   D = await pg.session('change role')
   X = await pg.session('control', { superuser: true })
-  T = await pg.session('transfer', { superuser: true })
 })
 afterAll(() => pg?.stop())
 
@@ -299,7 +298,7 @@ describe('authority changing while it is used', () => {
   })
 })
 
-describe('a Steward invitation against a change of ownership (a future transfer, made here as superuser)', () => {
+describe('a Steward invitation against a bare change of owner_id (bypassing the transfer, which would also withdraw it; as superuser)', () => {
   it('ownership changes first: the acceptance waits, then the offer no longer stands', async () => {
     const w = await world()
     const inv = await w.invite(w.G, w.O, 'admin')
@@ -313,23 +312,5 @@ describe('a Steward invitation against a change of ownership (a future transfer,
     expect(await accepting).toEqual({ ok: false, reason: 'no_longer_valid' })
     expect(await w.roleOf(w.G)).toBe('none')
     expect(await w.invitation(inv)).toMatchObject({ status: 'pending' }) // facts kept, not turned into a Member invitation
-  })
-
-  it('acceptance first: the change waits; the offer was valid when it was accepted', async () => {
-    const w = await world()
-    const inv = await w.invite(w.G, w.O, 'admin')
-    await hold('invitations', inv) // pauses the acceptance after it has locked the workspace
-
-    const accepting = acceptInvitation(A.sql, w.G.id, inv)
-    await pg.waitsFor(A, X)
-    await T.sql`BEGIN`
-    const transferring = T.sql`UPDATE orbit.workspaces SET owner_id = ${w.S.id} WHERE id = ${w.ws}`.then(() => 'transferred')
-    await pg.waitsFor(T, A) // the change waits for the acceptance's lock on the workspace
-    await release()
-
-    expect(await accepting).toEqual({ ok: true, workspaceId: w.ws, joined: true, role: 'admin' })
-    expect(await transferring).toBe('transferred')
-    await T.sql`COMMIT`
-    expect([await w.roleOf(w.G), await w.ownerId()]).toEqual(['admin', w.S.id])
   })
 })

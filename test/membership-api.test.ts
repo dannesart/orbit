@@ -187,7 +187,7 @@ describe('the member list: GET /api/workspaces/:id', () => {
 
     const { members } = await (await api(`/api/workspaces/${ws.id}`, alex)).json()
     expect(members.map((m: { id: string }) => m.id).sort()).toEqual([await mid(owner), await mid(steward), await mid(alex)].sort())
-    expect(Object.keys(members[0]).sort()).toEqual(['actions', 'id', 'name', 'owner', 'role', 'you'])
+    expect(Object.keys(members[0]).sort()).toEqual(['actions', 'id', 'name', 'owner', 'role', 'transferable', 'you'])
     const text = JSON.stringify(members)
     for (const secret of [owner.id, steward.id, alex.id, owner.email, alex.email]) expect(text).not.toContain(secret) // no account ids, no addresses
   })
@@ -296,6 +296,100 @@ describe('removing someone: DELETE /api/workspaces/:id/members/:memberId', () =>
   })
 })
 
+describe('transferring ownership: POST /api/workspaces/:id/members/:memberId/ownership', () => {
+  const ownership = (wsId: string, memberId: string) => `${member(wsId, memberId)}/ownership`
+  type Seen = { name: string; owner: boolean; role: string; actions: string[]; transferable: boolean }
+  const membersSeenBy = async (wsId: string, viewer: Person) =>
+    Object.fromEntries(((await (await api(`/api/workspaces/${wsId}`, viewer)).json()).members as Seen[]).map((m) => [m.name, m]))
+
+  it('offers the choice from the server: transferable only in the owner’s view, for everyone else', async () => {
+    const { ws, owner, steward, alex } = await world()
+    const transferableSeenBy = async (viewer: Person) =>
+      Object.fromEntries(Object.entries(await membersSeenBy(ws.id, viewer)).map(([name, m]) => [name, m.transferable]))
+    expect(await transferableSeenBy(owner)).toEqual({ Olive: false, Sam: true, Alex: true })
+    expect(await transferableSeenBy(steward)).toEqual({ Olive: false, Sam: false, Alex: false })
+    expect(await transferableSeenBy(alex)).toEqual({ Olive: false, Sam: false, Alex: false })
+    // The actions vocabulary is unchanged: no new value for browsers that already interpret it.
+    expect((await membersSeenBy(ws.id, owner)).Alex!.actions).toEqual(['promote', 'remove'])
+  })
+
+  it('moves ownership at once: 200 { revokedInvitations }, private, and People shows it', async () => {
+    const { ws, owner, steward, alex, mid } = await world()
+    await invited(ws.id, owner, 'future-steward@example.com', 'admin')
+    const memberInvite = await invited(ws.id, owner, 'future-member@example.com', 'member')
+    const ids = [await mid(owner), await mid(steward), await mid(alex)]
+
+    const res = await send('POST', ownership(ws.id, await mid(alex)), owner)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('private, no-store')
+    expect(await res.json()).toEqual({ revokedInvitations: 1 })
+
+    expect([await ownerOf(ws.id), await roleOf(owner, ws.id), await roleOf(alex, ws.id)]).toEqual([alex.id, 'admin', 'member'])
+    expect([await mid(owner), await mid(steward), await mid(alex)]).toEqual(ids)
+    const seen = await membersSeenBy(ws.id, alex)
+    expect(seen.Alex).toMatchObject({ owner: true, role: 'member', transferable: false })
+    expect(seen.Olive).toMatchObject({ owner: false, role: 'admin', actions: ['demote', 'remove'], transferable: true })
+    expect((await membersSeenBy(ws.id, owner)).Alex).toMatchObject({ owner: true, actions: [], transferable: false })
+    // The Member invitation is still pending and acceptable.
+    const listed = await (await api(`/api/workspaces/${ws.id}/invitations`, alex)).json() as { id: string; status: string; acceptable: boolean }[]
+    expect(listed.find((i) => i.id === memberInvite.id)).toMatchObject({ status: 'pending', acceptable: true })
+    expect(listed.filter((i) => i.status === 'pending')).toHaveLength(1)
+  })
+
+  it('refuses anyone but the owner, the owner naming themselves, and a stale former owner (403)', async () => {
+    const { ws, owner, steward, alex, mid } = await world()
+    const forbidden = { http: 403, reason: 'forbidden' }
+    expect(await failure(await send('POST', ownership(ws.id, await mid(alex)), steward))).toEqual(forbidden)
+    expect(await failure(await send('POST', ownership(ws.id, await mid(steward)), alex))).toEqual(forbidden)
+    expect(await failure(await send('POST', ownership(ws.id, await mid(owner)), owner))).toEqual(forbidden)
+    expect(await ownerOf(ws.id)).toBe(owner.id)
+
+    expect((await send('POST', ownership(ws.id, await mid(steward)), owner)).status).toBe(200)
+    const stale = await send('POST', ownership(ws.id, await mid(alex)), owner) // a page from before the transfer
+    expect(stale.headers.get('cache-control')).toBe('private, no-store')
+    expect(await failure(stale)).toEqual(forbidden)
+    expect(await failure(await send('POST', ownership(ws.id, await mid(steward)), owner))).toEqual(forbidden) // a retry
+    expect(await ownerOf(ws.id)).toBe(steward.id)
+  })
+
+  it('answers 404 for outsiders, unknown workspaces and memberships that aren’t here, revealing nothing', async () => {
+    const { ws, owner, alex, outsider, mid } = await world()
+    const other = await world()
+    const notFound = { http: 404, reason: 'not_found' }
+    const cases: [Person, string][] = [
+      [outsider, ownership(ws.id, await mid(alex))],
+      [owner, ownership(ws.id, await other.mid(other.alex))], // another workspace's member
+      [owner, ownership(other.ws.id, await other.mid(other.alex))], // a workspace they aren't in
+      [owner, ownership(NOBODY, await mid(alex))],
+      [owner, ownership(ws.id, NOBODY)],
+      [owner, ownership(ws.id, 'not-an-id')],
+    ]
+    for (const [who, path] of cases) {
+      const res = await send('POST', path, who)
+      expect(res.headers.get('cache-control'), path).toBe('private, no-store')
+      const text = await res.text()
+      expect({ http: res.status, ...JSON.parse(text).data }, path).toEqual(notFound)
+      for (const secret of ['Alex', alex.email, alex.id, ws.name, other.ws.name]) expect(text).not.toContain(secret)
+    }
+    // A recipient removed in the meantime.
+    const gone = await mid(alex)
+    expect((await send('DELETE', member(ws.id, gone), owner)).status).toBe(204)
+    expect(await failure(await send('POST', ownership(ws.id, gone), owner))).toEqual(notFound)
+    expect([await ownerOf(ws.id), await ownerOf(other.ws.id)]).toEqual([owner.id, other.owner.id])
+  })
+
+  it('takes no body (422), whatever it says', async () => {
+    const { ws, owner, alex, mid } = await world()
+    for (const body of ['{"membershipId":"x"}', '{"role":"owner"}', '[]', '"x"', 'null', '1', '{not json']) {
+      expect(await failure(await send('POST', ownership(ws.id, await mid(alex)), owner, body)), body).toEqual({ http: 422, reason: 'unexpected_body' })
+    }
+    expect(await ownerOf(ws.id)).toBe(owner.id)
+    // Absent, empty or {} are all "no body".
+    expect((await send('POST', ownership(ws.id, await mid(alex)), owner, '{}')).status).toBe(200)
+    expect(await ownerOf(ws.id)).toBe(alex.id)
+  })
+})
+
 describe('signed-out visitors and outsiders', () => {
   it('need to sign in for everything but the preview, and learn nothing private either way', async () => {
     const { ws, owner, alex, outsider, mid } = await world()
@@ -303,6 +397,7 @@ describe('signed-out visitors and outsiders', () => {
     for (const [method, path, body] of [
       ['PATCH', member(ws.id, await mid(alex)), { role: 'admin' }],
       ['DELETE', member(ws.id, await mid(alex)), undefined],
+      ['POST', `${member(ws.id, await mid(alex))}/ownership`, undefined],
       ['POST', `/api/workspaces/${ws.id}/invitations`, { email: 'x@example.com', role: 'member' }],
       ['GET', `/api/workspaces/${ws.id}`, undefined],
     ] as const) {

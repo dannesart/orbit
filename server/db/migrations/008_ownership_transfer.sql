@@ -1,0 +1,28 @@
+-- Ownership transfer: orbit_app may change who owns a workspace. Additive for the application
+-- already deployed, which never writes owner_id.
+--
+-- Migration 007 took this privilege away until transfer had its own path ("Ownership transfer
+-- will need its own path"). That path is now server/utils/ownership.ts, and it uses the same
+-- pattern as every other change of standing (memberships.role since 007): a column grant to
+-- orbit_app, with the authority rule carried inside the statement that writes.
+--
+-- Two different things, deliberately kept apart:
+--   * Database privilege (this migration): orbit_app may UPDATE workspaces.owner_id, and only
+--     that column besides name and description. It says nothing about who may transfer.
+--   * Domain authorization (server/utils/authority.ts, mayTransferOwnership and SQL_MAY.transfer):
+--     only the current owner, and only to another member of the same workspace. The UPDATE that
+--     moves owner_id carries that rule in its own WHERE clause, under a lock on the owner's
+--     membership and the workspace row, so it changes nothing unless the actor owns the
+--     workspace at that moment; no earlier check in the application or a browser is relied on.
+--
+-- Unchanged, and still enforced by the database whatever code writes:
+--   * owner_id NOT NULL (005): a workspace always has an owner.
+--   * workspaces_owner_is_member (004), deferred to commit: the owner is a member of the
+--     workspace. A transfer to anyone outside fails at commit and changes nothing, and the
+--     owner's membership can't be deleted while they own the workspace.
+--   * Steward invitations are accepted only while their inviter is the owner (007), so an offer
+--     made by a former owner can never be accepted, even if it were left open.
+--   * orbit_app still can't change created_by or a workspace's id, or whose or which workspace a
+--     membership is.
+
+GRANT UPDATE (owner_id) ON orbit.workspaces TO orbit_app;

@@ -1,4 +1,5 @@
 import type { ChangeMemberResult, RemoveMemberResult } from './memberships'
+import type { TransferOwnershipResult } from './ownership'
 
 /**
  * How the membership endpoints answer when a domain operation says no: the one mapping from
@@ -6,7 +7,7 @@ import type { ChangeMemberResult, RemoveMemberResult } from './memberships'
  * `data.reason`, the domain's own word, and `data.role` when the target's role changed meanwhile.
  * What is allowed is decided in the domain (authority.ts, memberships.ts); this only reports it.
  */
-export type MembershipFailure = Exclude<ChangeMemberResult | RemoveMemberResult, { ok: true }>
+export type MembershipFailure = Exclude<ChangeMemberResult | RemoveMemberResult | TransferOwnershipResult, { ok: true }>
 
 export function membershipFailure(failure: MembershipFailure) {
   switch (failure.reason) {

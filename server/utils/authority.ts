@@ -5,7 +5,8 @@ import type { Role } from './workspaces'
  *
  *   Owners grant stewardship. Stewards invite membership. Members belong and participate.
  *
- * Ownership is workspaces.owner_id, never a role: nothing here can create, move or remove it.
+ * Ownership is workspaces.owner_id, never a role. Only a transfer moves it (mayTransferOwnership,
+ * server/utils/ownership.ts); nothing creates a second owner or leaves a workspace without one.
  * Roles are 'admin' (Steward in the product) and 'member'.
  *
  * Each rule exists twice, deliberately side by side: as a function, for deciding and explaining
@@ -47,6 +48,15 @@ export function allowedActions(actor: Standing, target: Standing): MembershipAct
 export function blockedByStewardshipOffer(actor: Standing, target: Standing): boolean {
   return !!target.stewardshipOffered && !allowedActions(actor, target).includes('remove')
     && allowedActions(actor, { ...target, stewardshipOffered: false }).includes('remove')
+}
+
+/**
+ * Whether `actor` may hand ownership to `target`: only the owner, and only to someone else who
+ * belongs here (Member or Steward alike). Kept apart from allowedActions on purpose, so the
+ * `actions` vocabulary that browsers already interpret never gains a value they don't know.
+ */
+export function mayTransferOwnership(actor: Standing, target: Standing): boolean {
+  return actor.owner && !target.owner && target.userId !== actor.userId
 }
 
 /** Which roles `actor` may offer by invitation: the owner offers either; a Steward, Member only. */
@@ -96,6 +106,8 @@ export const SQL_MAY = {
   invite: (role: Role) => (role === 'admin' ? IS_OWNER : `(m.role = 'admin' OR ${IS_OWNER})`),
   /** Withdrawing invitation `i`. */
   revoke: `(${IS_OWNER} OR (m.role = 'admin' AND i.role = 'member'))`,
+  /** Handing ownership of `w` to the member `t` (mayTransferOwnership). */
+  transfer: `(${IS_OWNER} AND ${NOT_SELF_OR_OWNER})`,
 } as const
 
 /**
