@@ -314,7 +314,7 @@ describe('reading invitations', () => {
     for (const manager of [owner, steward]) {
       const result = await listWorkspaceInvitations(sql(), manager.id, ws.id)
       expect(result).toEqual({ ok: true, invitations: [
-        { ...pending, invitedBy: 'Steward' },
+        { ...pending, invitedBy: 'Steward', revocable: true }, // a Member invitation: either may withdraw it
         expect.objectContaining({ id: declined.id, status: 'declined', invitedBy: 'Owner', closedAt: expect.any(String) }),
       ] })
     }

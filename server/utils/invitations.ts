@@ -167,8 +167,15 @@ export async function revokeInvitation(db: Db, userId: string, invitationId: str
   })
 }
 
+/**
+ * An invitation in its workspace's list, with whether the asking person may withdraw it now
+ * (pending, and mayRevoke: the owner any, a steward Member invitations only). A snapshot for
+ * showing choices; revoking decides again.
+ */
+export type ListedInvitation = Invitation & { revocable: boolean }
+
 export type ListInvitationsResult =
-  | { ok: true; invitations: Invitation[] }
+  | { ok: true; invitations: ListedInvitation[] }
   | { ok: false; reason: 'not_found' | 'forbidden' }
 
 /**
@@ -181,8 +188,8 @@ export async function listWorkspaceInvitations(db: Db, userId: string, workspace
   if (!workspace) return { ok: false, reason: 'not_found' } // non-members learn nothing
   if (!workspace.canManage) return { ok: false, reason: 'forbidden' }
 
-  const rows = await db<Row[]>`
-    SELECT ${db.unsafe(MANAGED)}
+  const rows = await db<(Row & { revocable: boolean })[]>`
+    SELECT ${db.unsafe(MANAGED)}, (${db.unsafe(PENDING)} AND ${db.unsafe(SQL_MAY.revoke)}) AS revocable
     FROM orbit.invitations i
       JOIN orbit.users inviter ON inviter.id = i.invited_by
       JOIN orbit.workspaces w ON w.id = i.workspace_id
@@ -190,7 +197,7 @@ export async function listWorkspaceInvitations(db: Db, userId: string, workspace
     WHERE w.id = ${workspaceId} AND ${db.unsafe(CAN_MANAGE)}
     ORDER BY i.created_at DESC, i.id
   `
-  return { ok: true, invitations: rows.map(toInvitation) }
+  return { ok: true, invitations: rows.map(({ revocable, ...row }) => ({ ...toInvitation(row), revocable })) }
 }
 
 /**

@@ -20,6 +20,8 @@ export default defineNuxtConfig({
     // An invitation's public preview is reached by a link that is effectively a secret: never
     // indexed, and never passed on in a Referer header.
     '/api/invitations/*/preview': { headers: { 'x-robots-tag': 'noindex', 'referrer-policy': 'no-referrer' } },
+    // The page behind an invitation's link: the same protections for the page itself.
+    '/invitations/**': { headers: { 'cache-control': 'private, no-store', 'x-robots-tag': 'noindex', 'referrer-policy': 'no-referrer' } },
   },
   app: {
     head: {

@@ -276,7 +276,7 @@ describe('what should we call you?', () => {
     await putName(browser, 'Veteran')
     expect(await location(browser, `/w/${workspace.id}`)).toBe(200)
     expect(await (await browser.request(`/api/workspaces/${workspace.id}`)).json())
-      .toEqual({ ...workspace, members: [{ id: expect.any(String), name: 'Veteran', you: true, role: 'admin', owner: true, actions: [] }] })
+      .toEqual({ ...workspace, members: [{ id: expect.any(String), name: 'Veteran', you: true, role: 'admin', owner: true, actions: [] }], invitationRoles: ['member', 'admin'] })
   })
 
   it('only ever changes the signed-in person’s own name', async () => {
@@ -698,16 +698,16 @@ describe('people', () => {
       expect(res.status, viewer.name!).toBe(200)
       expect(res.text).toContain('<title>People · Commons · Orbit</title>')
       expect(res.text).toContain('3 people belong here.')
-      // In order (owner, steward, member), each with their standing, and only the viewer as "you".
+      // By name, never by responsibility, each with their standing beside it, and only the viewer as "you".
       // (Each row starts with its avatar's initial, which is hidden from assistive technology.)
       // (Only the People card's own list: the page also carries the workspace navigation.)
       const start = res.text.indexOf('aria-labelledby="people"')
       const card = res.text.slice(start, res.text.indexOf('</section>', start))
       const rows = [...card.matchAll(/<li(?:\s[^>]*)?>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
       expect(rows).toEqual([
-        `Y Yusuf ${viewer === owner ? '(you) ' : ''}Owner`,
-        `B Bea ${viewer === steward ? '(you) ' : ''}Steward`,
         `A Ada ${viewer === member ? '(you) ' : ''}Member`,
+        `B Bea ${viewer === steward ? '(you) ' : ''}Steward`,
+        `Y Yusuf ${viewer === owner ? '(you) ' : ''}Owner`,
       ])
       // Other people's emails stay private (your own appears only in your account menu).
       for (const other of [owner, steward, member].filter((p) => p !== viewer)) expect(res.text).not.toContain(other.email)
