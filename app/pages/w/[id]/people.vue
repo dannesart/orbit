@@ -5,7 +5,7 @@
 // Loading, "out of reach" and failures are handled by the workspace layout (pages/w/[id].vue).
 import type { ListedInvitation } from '~~/server/utils/invitations'
 
-const { workspace: ws } = useCurrentWorkspace()
+const { workspace: ws, refresh: refreshWorkspace } = useCurrentWorkspace()
 useHead({ title: () => `People · ${ws.value.name} · Orbit` })
 
 const people = computed(() => sortPeople(ws.value.members))
@@ -40,6 +40,19 @@ async function revoke(invitation: ListedInvitation) {
     revoking.value = null
   }
 }
+
+// Changing someone's place here: offered only where the server's `actions` say so (PersonMenu),
+// confirmed by the server before anything changes, then everything is loaded again as it is now
+// (a removal also withdraws that person's pending invitations here).
+const members = createMemberActions({
+  workspaceId: () => ws.value.id,
+  workspaceName: () => ws.value.name,
+  send: (request) => $fetch(request.path, { method: request.method, body: request.body }),
+  refresh: () => Promise.all([refreshWorkspace(), ws.value.canManage ? refresh() : null]),
+})
+const { busy, removing, notice: memberNotice } = members
+// Rows keep one width for the role label, whether or not that person has a menu.
+const anyActions = computed(() => people.value.some((p) => p.actions.length > 0))
 </script>
 
 <template>
@@ -61,8 +74,19 @@ async function revoke(invitation: ListedInvitation) {
             <span v-if="person.you" class="ml-1.5 text-sm text-slate-500">(you)</span>
           </p>
           <span class="shrink-0 text-sm text-slate-500">{{ standingOf(person) }}</span>
+          <PersonMenu
+            v-if="person.actions.length"
+            :name="person.name"
+            :actions="person.actions"
+            :busy="busy === person.id"
+            @choose="(action) => members.choose(person, action)"
+          />
+          <span v-else-if="anyActions" class="size-8 shrink-0" aria-hidden="true" />
         </li>
       </ul>
+      <p v-if="memberNotice" class="mt-3 text-sm text-pretty" :class="memberNotice.problem ? 'text-slate-700' : 'text-slate-500'" role="status">
+        {{ memberNotice.text }}
+      </p>
 
       <p class="mt-6 border-t border-slate-100 pt-5 text-sm/6 text-pretty text-slate-500">
         Everyone here belongs equally. The <span class="font-medium text-slate-700">owner</span> is ultimately responsible for {{ ws.name }},
@@ -104,5 +128,14 @@ async function revoke(invitation: ListedInvitation) {
         </li>
       </ul>
     </section>
+
+    <RemovePersonDialog
+      v-if="anyActions"
+      :person="removing"
+      :workspace-name="ws.name"
+      :busy="!!busy"
+      @confirm="members.confirmRemoval()"
+      @cancel="members.cancelRemoval()"
+    />
   </main>
 </template>

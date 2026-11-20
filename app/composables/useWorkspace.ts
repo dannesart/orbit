@@ -39,7 +39,27 @@ export async function useWorkspace(id: string) {
     return updated
   }
 
-  return { workspace, canManage: computed(() => data.value?.canManage === true), save }
+  /**
+   * Loads the workspace again, as the server sees it now (after a membership change, say). The
+   * current view stays until the new one arrives. If you no longer belong here, or are signed
+   * out, the page says so, as it would on arrival.
+   */
+  async function refresh() {
+    try {
+      data.value = await $fetch<WorkspaceDetail>(`/api/workspaces/${id}`)
+    } catch (e: any) {
+      const status = e?.statusCode ?? e?.response?.status
+      if (status === 401) {
+        account.value = null
+        showError({ statusCode: 401, statusMessage: 'Signed out', fatal: true })
+      } else if (status === 404) {
+        showError({ statusCode: 404, statusMessage: 'Workspace not found', fatal: true })
+      }
+      // Anything else: keep what is shown; the next action or visit will try again.
+    }
+  }
+
+  return { workspace, canManage: computed(() => data.value?.canManage === true), save, refresh }
 }
 
 type WorkspaceContext = Awaited<ReturnType<typeof useWorkspace>>
