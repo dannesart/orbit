@@ -13,10 +13,13 @@ export default defineNuxtConfig({
     supabaseKey: '',
   },
   routeRules: {
-    // Invitations are personal (an address, an offer to one person): never stored by a browser,
-    // proxy or CDN, whatever the answer, errors included.
+    // Invitations and workspaces are personal (addresses, offers, who belongs, membership ids
+    // and what you may do to them): never stored by a browser, proxy or CDN, errors included.
     '/api/invitations/**': { headers: { 'cache-control': 'private, no-store' } },
-    '/api/workspaces/*/invitations/**': { headers: { 'cache-control': 'private, no-store' } },
+    '/api/workspaces/**': { headers: { 'cache-control': 'private, no-store' } },
+    // An invitation's public preview is reached by a link that is effectively a secret: never
+    // indexed, and never passed on in a Referer header.
+    '/api/invitations/*/preview': { headers: { 'x-robots-tag': 'noindex', 'referrer-policy': 'no-referrer' } },
   },
   app: {
     head: {

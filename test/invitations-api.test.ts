@@ -53,7 +53,8 @@ const api = (path: string, who?: Person, init: RequestInit = {}) =>
   })
 const post = (path: string, who?: Person, body?: unknown) =>
   api(path, who, { method: 'POST', ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }) })
-const invite = (wsId: string, who: Person | undefined, email: unknown) => post(`/api/workspaces/${wsId}/invitations`, who, { email })
+const invite = (wsId: string, who: Person | undefined, email: unknown, role: unknown = 'member') =>
+  post(`/api/workspaces/${wsId}/invitations`, who, { email, role })
 /** An invitation made through the API, by someone allowed to. */
 async function invited(wsId: string, by: Person, email: string) {
   const res = await invite(wsId, by, email)
@@ -152,8 +153,8 @@ describe('every invitation endpoint', () => {
 
     // Also a path under the rule that matches no endpoint at all (Nitro's own 404).
     expect((await api('/api/invitations/a/b/c', guest)).headers.get('cache-control')).toBe('private, no-store')
-    // Only routes with a rule are affected: other errors keep Nitro's defaults.
-    expect((await api(`/api/workspaces/${NOBODY}`, guest)).headers.get('cache-control')).toBe('no-cache')
+    // Only routes with a rule get it.
+    expect((await api('/api/me', guest)).headers.get('cache-control')).not.toBe('private, no-store')
   })
 })
 
@@ -183,14 +184,15 @@ describe('creating an invitation: POST /api/workspaces/:id/invitations', () => {
     expect((await api(`/api/workspaces/${ws.id}`, guest)).status).toBe(404)
   })
 
-  it('takes the inviter from the session and the dates from the database, whatever the body says', async () => {
+  it('refuses anything beyond { email, role }: the inviter and the dates are never the client’s to say', async () => {
     const { ws, steward, owner } = await world()
-    const res = await post(`/api/workspaces/${ws.id}/invitations`, steward, {
-      email: 'ignored-fields@example.com', invited_by: owner.id, invitedBy: owner.id, expires_at: '2099-01-01', status: 'accepted',
-    })
-    expect(res.status).toBe(201)
-    const invitation = await res.json()
-    expect(invitation).toMatchObject({ invitedBy: 'Sam', status: 'pending', closedAt: null })
+    for (const [extra, value] of [['invited_by', owner.id], ['invitedBy', owner.id], ['expires_at', '2099-01-01'], ['status', 'accepted'], ['workspaceId', ws.id]] as const) {
+      const res = await post(`/api/workspaces/${ws.id}/invitations`, steward, { email: 'extra@example.com', role: 'member', [extra]: value })
+      expect(await failure(res), extra).toEqual({ http: 422, reason: 'unexpected_property', field: extra })
+    }
+    expect(await db`SELECT 1 FROM orbit.invitations WHERE workspace_id = ${ws.id}`).toHaveLength(0)
+    // The exact shape works, and the inviter and the dates come from the session and the database.
+    const invitation = await invited(ws.id, steward, 'exact@example.com')
     const [row] = await db`SELECT invited_by, expires_at - created_at = interval '14 days' AS fourteen FROM orbit.invitations WHERE id = ${invitation.id}`
     expect(row).toEqual({ invited_by: steward.id, fourteen: true })
   })
@@ -398,7 +400,7 @@ describe('answering: POST /api/invitations/:id/accept and /decline', () => {
 
     const res = await post(`/api/invitations/${invitation.id}/accept`, guest)
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ workspaceId: ws.id, joined: true })
+    expect(await res.json()).toEqual({ workspaceId: ws.id, joined: true, role: 'member' })
     expect(await membership(guest.id, ws.id)).toBe('member')
     expect((await api(`/api/workspaces/${ws.id}`, guest)).status).toBe(200)
 
@@ -406,18 +408,23 @@ describe('answering: POST /api/invitations/:id/accept and /decline', () => {
       .toEqual({ http: 409, reason: 'not_pending', status: 'accepted' })
   })
 
-  it('takes who accepts from the session, never from the request', async () => {
+  it('takes who accepts from the session, and refuses a body that claims anything', async () => {
     const { ws, owner, guest, outsider } = await world()
     const invitation = await invited(ws.id, owner, guest.email)
-    // Someone else holding the link, claiming to be the recipient in every way a body could
+    // Someone else holding the link, claiming to be the recipient in every way a body could: refused outright
     const res = await post(`/api/invitations/${invitation.id}/accept`, outsider, {
       userId: guest.id, accepted_by: guest.id, email: guest.email,
     })
-    expect(await failure(res)).toEqual({ http: 404, reason: 'not_found' })
+    expect(await failure(res)).toEqual({ http: 422, reason: 'unexpected_body' })
+    // Without a body, they're simply not the recipient
+    expect(await failure(await post(`/api/invitations/${invitation.id}/accept`, outsider))).toEqual({ http: 404, reason: 'not_found' })
     expect(await membership(outsider.id, ws.id)).toBeNull()
     expect(await membership(guest.id, ws.id)).toBeNull()
     expect(await failure(await post(`/api/invitations/${invitation.id}/decline`, outsider, { email: guest.email })))
-      .toEqual({ http: 404, reason: 'not_found' })
+      .toEqual({ http: 422, reason: 'unexpected_body' })
+    // Even the recipient can't choose a role by sending one
+    expect(await failure(await post(`/api/invitations/${invitation.id}/accept`, guest, { role: 'admin' }))).toEqual({ http: 422, reason: 'unexpected_body' })
+    expect(await membership(guest.id, ws.id)).toBeNull()
     expect((await api(`/api/invitations/${invitation.id}`, guest)).status).toBe(200) // still theirs to answer
     expect((await (await api(`/api/invitations/${invitation.id}`, guest)).json()).status).toBe('pending')
   })
@@ -426,7 +433,7 @@ describe('answering: POST /api/invitations/:id/accept and /decline', () => {
     const { ws, owner, steward } = await world()
     const invitation = await invited(ws.id, owner, steward.email) // the steward was invited anyway
     const res = await post(`/api/invitations/${invitation.id}/accept`, steward)
-    expect(await res.json()).toEqual({ workspaceId: ws.id, joined: false })
+    expect(await res.json()).toEqual({ workspaceId: ws.id, joined: false, role: 'admin' })
     expect(await membership(steward.id, ws.id)).toBe('admin') // still a steward, never demoted
   })
 

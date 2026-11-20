@@ -48,7 +48,7 @@ describe('creating a workspace', () => {
     const created = await Promise.all(people.map((p, i) => createWorkspace(testDb.sql, p, `Rush ${i}`)))
     for (const [i, ws] of created.entries()) {
       expect((await ownerOf(ws.id)).ownerId).toBe(people[i])
-      expect(await listMembers(testDb.sql, ws.id, people[i]!)).toEqual([{ name: null, you: true, role: 'admin', owner: true }])
+      expect(await listMembers(testDb.sql, ws.id, people[i]!)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [] }])
     }
   })
 })
@@ -79,7 +79,7 @@ describe('the owner', () => {
     expect(await codeOf(testDb.sql`DELETE FROM orbit.memberships WHERE workspace_id = ${ws.id}`)).toBe('23503') // not even all at once
     expect(await codeOf(remove(member))).toBe('succeeded')
     expect(await codeOf(remove(steward))).toBe('succeeded')
-    expect(await listMembers(testDb.sql, ws.id, creator)).toEqual([{ name: null, you: true, role: 'admin', owner: true }])
+    expect(await listMembers(testDb.sql, ws.id, creator)).toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [] }])
   })
 
   it('is read from owner_id, not inferred from the creator, and can change hands in one step', async () => {
@@ -92,8 +92,8 @@ describe('the owner', () => {
     await asSuperuser(() => testDb.sql`UPDATE orbit.workspaces SET owner_id = ${successor} WHERE id = ${ws.id}`)
     expect(await ownerOf(ws.id)).toEqual({ ownerId: successor, createdBy: creator }) // history unchanged
     expect(await listMembers(testDb.sql, ws.id, creator)).toEqual([
-      { name: null, you: true, role: 'admin', owner: false },
-      { name: null, you: false, role: 'member', owner: true },
+      { id: expect.any(String), name: null, you: true, role: 'admin', owner: false, actions: [] },
+      { id: expect.any(String), name: null, you: false, role: 'member', owner: true, actions: [] },
     ])
     // The former owner is now an ordinary membership, and the new owner's is protected.
     expect(await codeOf(testDb.sql`DELETE FROM orbit.memberships WHERE user_id = ${successor} AND workspace_id = ${ws.id}`)).toBe('23503')
@@ -183,7 +183,7 @@ describe('the ownership contract (migration 005)', () => {
     const ws = await createWorkspace(testDb.sql, await createUser(), 'Lighthouse')
     expect(await codeOf(asSuperuser(() => testDb.sql`UPDATE orbit.workspaces SET owner_id = NULL WHERE id = ${ws.id}`))).toBe('23502')
     expect(await listMembers(testDb.sql, ws.id, (await ownerOf(ws.id)).ownerId))
-      .toEqual([{ name: null, you: true, role: 'admin', owner: true }])
+      .toEqual([{ id: expect.any(String), name: null, you: true, role: 'admin', owner: true, actions: [] }])
   })
 })
 

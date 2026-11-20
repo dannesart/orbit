@@ -276,7 +276,7 @@ describe('what should we call you?', () => {
     await putName(browser, 'Veteran')
     expect(await location(browser, `/w/${workspace.id}`)).toBe(200)
     expect(await (await browser.request(`/api/workspaces/${workspace.id}`)).json())
-      .toEqual({ ...workspace, members: [{ name: 'Veteran', you: true, role: 'admin', owner: true }] })
+      .toEqual({ ...workspace, members: [{ id: expect.any(String), name: 'Veteran', you: true, role: 'admin', owner: true, actions: [] }] })
   })
 
   it('only ever changes the signed-in person’s own name', async () => {
@@ -407,11 +407,11 @@ describe('workspace arrival', () => {
     const ownerCookie = `orbit_session=${await createSession(db, owner.id)}`
 
     const alone = await (await api(`/api/workspaces/${ws.id}`, ownerCookie)).json()
-    expect(alone.members).toEqual([{ name: 'Host', you: true, role: 'admin', owner: true }])
+    expect(alone.members).toEqual([{ id: expect.any(String), name: 'Host', you: true, role: 'admin', owner: true, actions: [] }])
 
     await db`INSERT INTO orbit.memberships (user_id, workspace_id, role) VALUES (${guest.id}, ${ws.id}, 'member')`
     const together = await (await api(`/api/workspaces/${ws.id}`, ownerCookie)).json()
-    expect(together.members).toEqual([{ name: 'Host', you: true, role: 'admin', owner: true }, { name: 'Guest', you: false, role: 'member', owner: false }])
+    expect(together.members).toEqual([{ id: expect.any(String), name: 'Host', you: true, role: 'admin', owner: true, actions: [] }, { id: expect.any(String), name: 'Guest', you: false, role: 'member', owner: false, actions: ['promote', 'remove'] }])
     expect(JSON.stringify(together)).not.toContain('@') // no emails
 
     const outsiderCookie = `orbit_session=${await createSession(db, outsider.id)}`
