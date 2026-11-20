@@ -11,6 +11,7 @@ import {
   A1, B1, CONSOLES, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, PINS, RECORD_ID, WORKSPACE,
   describeOutcome, formatPath, mappingHints, outcomeIssues, parseRecordData, runExperiment,
 } from '../app/dev/features/experiment'
+import { playgroundAvailable } from '../app/dev/features/availability'
 
 const catalog = (pin = 'a1', data: unknown = INITIAL_DATA, mappings: Mapping[] = [INITIAL_MAPPING]): Catalog => ({
   definitions: DEFINITIONS,
@@ -136,6 +137,22 @@ describe('What the language and the playground never do', () => {
     const pages = (dir: string): string[] => readdirSync(join(root, dir), { withFileTypes: true })
       .flatMap((e) => (e.isDirectory() ? pages(join(dir, e.name)) : [join(dir, e.name)]))
     for (const page of pages('app/pages')) expect(source(page), page).not.toMatch(/dev\/features|shared\/features/)
-    expect(source('nuxt.config.ts')).toMatch(/if \(!nuxt\.options\.dev\) return\s+nuxt\.hook\('pages:extend'/)
+    // The only way in: registered by nuxt.config.ts, and only when playgroundAvailable says so.
+    expect(source('nuxt.config.ts')).toMatch(
+      /if \(!playgroundAvailable\(\{ dev: nuxt\.options\.dev, context: process\.env\.CONTEXT \}\)\) return\s+nuxt\.hook\('pages:extend'/,
+    )
+  })
+})
+
+describe('Where the playground exists: decided at build time', () => {
+  it('in development, and in Netlify Deploy Previews', () => {
+    expect(playgroundAvailable({ dev: true, context: undefined })).toBe(true)
+    expect(playgroundAvailable({ dev: false, context: 'deploy-preview' })).toBe(true)
+  })
+
+  it('never in production, branch deploys, or any build Netlify didn’t label as a preview', () => {
+    for (const context of ['production', 'branch-deploy', 'dev', undefined, '', 'Deploy-Preview', 'deploy-preview ', 'deploy-preview-31']) {
+      expect(playgroundAvailable({ dev: false, context }), String(context)).toBe(false)
+    }
   })
 })

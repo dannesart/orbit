@@ -1,15 +1,17 @@
 import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
+import { playgroundAvailable } from './app/dev/features/availability'
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-11-01',
   devtools: { enabled: false },
   devServer: { port: 3100 },
   modules: [
-    // The Feature playground (/dev/features) exists only under `nuxt dev`. Production builds never
-    // register its route, so neither the page nor anything it imports is part of what ships.
+    // The Feature playground (/dev/features) exists only under `nuxt dev` and in Netlify Deploy
+    // Previews (playgroundAvailable). Production builds never register its route, so neither the
+    // page nor anything it imports is part of what ships.
     (_options, nuxt) => {
-      if (!nuxt.options.dev) return
+      if (!playgroundAvailable({ dev: nuxt.options.dev, context: process.env.CONTEXT })) return
       nuxt.hook('pages:extend', (pages) => {
         pages.push({ name: 'dev-features', path: '/dev/features', file: fileURLToPath(new URL('./app/dev/features/FeaturePlayground.vue', import.meta.url)) })
       })
