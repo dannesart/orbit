@@ -5,13 +5,13 @@
 import {
   type Data, type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type Kind,
   deepFreeze, defineVersion, sameDefinition,
-} from '../../../shared/features/definitions'
+} from '#shared/features/definitions'
 import {
   type ArgumentType, type Expression, type Mapping, type MappingIssue, type MappingProperty, type Path, checkMapping,
-} from '../../../shared/features/mappings'
+} from '#shared/features/mappings'
 import {
   type Catalog, type FeatureRef, type InvocationResult, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitTransform,
-} from '../../../shared/features/features'
+} from '#shared/features/features'
 
 export const WORKSPACE = 'ws-playground'
 export const ELSEWHERE = 'ws-elsewhere'

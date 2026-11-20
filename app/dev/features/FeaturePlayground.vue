@@ -2,9 +2,9 @@
 // Feature playground (development only; registered by nuxt.config.ts under `nuxt dev` alone):
 // Record A → Orbit.Console → Orbit.Transform → Orbit.Console, run in the browser on in-memory
 // fixtures. Nothing is fetched, saved or logged.
-import { type Data, sameData } from '../../../shared/features/definitions'
-import { type Mapping, type MappingProperty, formatSource, reviseMapping } from '../../../shared/features/mappings'
-import { orbitConsole } from '../../../shared/features/features'
+import { type Data, sameData } from '#shared/features/definitions'
+import { type Mapping, type MappingProperty, formatSource, reviseMapping } from '#shared/features/mappings'
+import { orbitConsole } from '#shared/features/features'
 import {
   A1, B1, CONSOLES, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, PINS, RECORD_ID, WORKSPACE, type Step,
   definitionLabel, mappingHints, parseRecordData, runExperiment, shapeOf,

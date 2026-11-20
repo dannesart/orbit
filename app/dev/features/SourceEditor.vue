@@ -2,8 +2,8 @@
 // Where one value comes from, chosen rather than typed: a property of the input, a literal, or a
 // function wrapped around other sources. Recursive, and it edits the closed expression tree
 // directly (always emitting a new tree), so there is never text to parse.
-import type { Field } from '../../../shared/features/definitions'
-import type { Argument, Expression } from '../../../shared/features/mappings'
+import type { Field } from '#shared/features/definitions'
+import type { Argument, Expression } from '#shared/features/mappings'
 
 const props = defineProps<{ modelValue: Expression; fields: readonly Field[]; label: string }>()
 const emit = defineEmits<{ 'update:modelValue': [Expression] }>()

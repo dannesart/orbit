@@ -124,7 +124,7 @@ describe('What the language and the playground never do', () => {
   it('import nothing but each other, Vue and Nuxt’s own composables: no database, network or storage', () => {
     expect(files.length).toBeGreaterThanOrEqual(6)
     for (const f of files) {
-      for (const [, from] of source(f).matchAll(/from\s+'([^']+)'/g)) expect(from, `${f} imports ${from}`).toMatch(/^\.\.?\//)
+      for (const [, from] of source(f).matchAll(/from\s+'([^']+)'/g)) expect(from, `${f} imports ${from}`).toMatch(/^(\.\.?\/|#shared\/features\/)/)
     }
   })
 
