@@ -1,0 +1,132 @@
+/**
+ * Definitions, Records and Values: the first words of Orbit's language for data.
+ *
+ *   A Definition says what some data is. Each version of it is immutable: changing a Definition
+ *   means making a new version, so anything that once relied on a version can still say exactly
+ *   what it relied on.
+ *   A Record is persistent data with an identity, a workspace, and a pinned Definition version.
+ *   A Value is data together with the Definition version it satisfies. It has no identity and is
+ *   never stored: it is what Features receive and produce.
+ *
+ * In this first experiment a Definition is a flat object of required fields, each a string, a
+ * number or a boolean, and nothing else is allowed (no missing fields, no extra ones). Matching is
+ * by exact identity: the same id and the same version. Two Definitions that happen to look alike
+ * are still different Definitions. Pure and in memory: nothing here reads or writes storage.
+ */
+
+export type FieldType = 'string' | 'number' | 'boolean'
+export type Scalar = string | number | boolean
+export type Data = { readonly [field: string]: Scalar }
+
+export interface DefinitionRef {
+  readonly id: string
+  readonly version: number
+}
+
+export interface Field {
+  readonly name: string
+  readonly type: FieldType
+}
+
+export interface DefinitionVersion extends DefinitionRef {
+  /** For people to read. Never identity: two Definitions may share a name. */
+  readonly name: string
+  /** The workspace it belongs to, or null when Orbit provides it (visible to every workspace). */
+  readonly workspaceId: string | null
+  /** Every field is required; no others are allowed. */
+  readonly fields: readonly Field[]
+}
+
+/** Persistent data in one workspace, pinned to the Definition version it was written for. */
+export interface WorkspaceRecord {
+  readonly id: string
+  readonly workspaceId: string
+  readonly definition: DefinitionRef
+  readonly data: Data
+}
+
+/** Data and the Definition version it satisfies. No identity, never stored. */
+export interface Value {
+  readonly definition: DefinitionRef
+  readonly data: Data
+}
+
+export const refOf = (d: DefinitionRef): DefinitionRef => ({ id: d.id, version: d.version })
+export const sameDefinition = (a: DefinitionRef, b: DefinitionRef) => a.id === b.id && a.version === b.version
+
+/** Whether a workspace may use this Definition: its own, or one Orbit provides. */
+export const visibleIn = (d: { workspaceId: string | null }, workspaceId: string) =>
+  d.workspaceId === null || d.workspaceId === workspaceId
+
+/** Freezes an object and everything inside it, so nobody downstream can change it. */
+export function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const inner of Object.values(value)) deepFreeze(inner)
+  }
+  return value
+}
+
+/** A private, frozen copy: what a Feature receives, so it can't touch the original. */
+export const frozenCopy = <T>(value: T): T => deepFreeze(structuredClone(value))
+
+/** A new, immutable Definition version. */
+export function defineVersion(definition: DefinitionVersion): DefinitionVersion {
+  const names = definition.fields.map((f) => f.name)
+  if (names.some((n) => !n) || new Set(names).size !== names.length) {
+    throw new Error(`Definition ${definition.id}@${definition.version} needs distinct, non-empty field names`)
+  }
+  return frozenCopy(definition)
+}
+
+/** What kind of thing a value is, in the words validation uses. Never the value itself. */
+export type Kind = FieldType | 'null' | 'undefined' | 'array' | 'object' | 'other'
+export function kindOf(value: unknown): Kind {
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'array'
+  if (typeof value === 'number') return Number.isFinite(value) ? 'number' : 'other'
+  switch (typeof value) {
+    case 'string': return 'string'
+    case 'boolean': return 'boolean'
+    case 'undefined': return 'undefined'
+    case 'object': return 'object'
+    default: return 'other'
+  }
+}
+
+/**
+ * A problem with data, described by field and kind only. Issues never carry the data itself, so
+ * they can be shown, kept as evidence or reported without exposing what a Record contains.
+ */
+export type Issue =
+  | { readonly problem: 'not_an_object'; readonly actual: Kind }
+  | { readonly problem: 'missing'; readonly field: string; readonly expected: FieldType }
+  | { readonly problem: 'unexpected'; readonly field: string }
+  | { readonly problem: 'wrong_type'; readonly field: string; readonly expected: FieldType; readonly actual: Kind }
+
+/** Whether `data` satisfies `definition` exactly. Returns every problem found; none means valid. */
+export function validate(definition: DefinitionVersion, data: unknown): Issue[] {
+  const kind = kindOf(data)
+  if (kind !== 'object') return [{ problem: 'not_an_object', actual: kind }]
+  const object = data as Record<string, unknown>
+  const issues: Issue[] = []
+  for (const { name, type } of definition.fields) {
+    if (!Object.hasOwn(object, name)) issues.push({ problem: 'missing', field: name, expected: type })
+    else if (kindOf(object[name]) !== type) issues.push({ problem: 'wrong_type', field: name, expected: type, actual: kindOf(object[name]) })
+  }
+  for (const name of Object.keys(object)) {
+    if (!definition.fields.some((f) => f.name === name)) issues.push({ problem: 'unexpected', field: name })
+  }
+  return issues
+}
+
+/** Whether two pieces of data are the same, field for field (for JSON-like data). */
+export function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  const ka = kindOf(a)
+  if (ka !== kindOf(b) || (ka !== 'object' && ka !== 'array')) return false
+  const ea = Object.keys(a as object)
+  const eb = Object.keys(b as object)
+  return ea.length === eb.length
+    && ea.every((k) => Object.hasOwn(b as object, k) && sameData((a as any)[k], (b as any)[k]))
+}
