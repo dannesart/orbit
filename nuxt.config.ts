@@ -7,13 +7,15 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   devServer: { port: 3100 },
   modules: [
-    // The Feature playground (/dev/features) exists only under `nuxt dev` and in Netlify Deploy
-    // Previews (playgroundAvailable). Production builds never register its route, so neither the
-    // page nor anything it imports is part of what ships.
+    // The Feature playground (/dev/features) and its canvas experiment (/dev/designer) exist only
+    // under `nuxt dev` and in Netlify Deploy Previews (playgroundAvailable). Production builds never
+    // register their routes, so neither the pages nor anything they import (the canvas library
+    // included) is part of what ships.
     (_options, nuxt) => {
       if (!playgroundAvailable({ dev: nuxt.options.dev, context: process.env.CONTEXT })) return
       nuxt.hook('pages:extend', (pages) => {
         pages.push({ name: 'dev-features', path: '/dev/features', file: fileURLToPath(new URL('./app/dev/features/FeaturePlayground.vue', import.meta.url)) })
+        pages.push({ name: 'dev-designer', path: '/dev/designer', file: fileURLToPath(new URL('./app/dev/designer/SpatialDesigner.vue', import.meta.url)) })
       })
     },
   ],
