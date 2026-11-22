@@ -21,6 +21,8 @@ import RunResult from './RunResult.vue'
 import DesignerToolbar from './DesignerToolbar.vue'
 import LeaveDialog from './LeaveDialog.vue'
 import { workAtRisk } from './session'
+import { lastWorkspace, shelfOf } from '../definitions/store'
+import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput } from '../definitions/designer'
 import FocusEditor from './FocusEditor.vue'
 import TransformInspector from './TransformInspector.vue'
 import StepNode, { type StepView } from './StepNode.vue'
@@ -41,7 +43,15 @@ useHead({ title: 'Spatial designer (experiment) · Orbit' })
 const pinKey = ref('a1')
 const recordText = ref(JSON.stringify(INITIAL_DATA, null, 2))
 const consoleId = ref(orbitConsole.id)
-const config = shallowRef<Configuration>(initialConfiguration())
+// Experiment #7: the workspace this Designer works in (when opened from one of its pages in this
+// tab), and the Definition versions it may use besides its samples: those made there, and those
+// Orbit provides. Fixed for this visit; Definitions are made in their own place, not here.
+const workspace = designerWorkspace(safeDestination(useRoute().query.back), lastWorkspace())
+provide(DESIGNER_WORKSPACE, workspace)
+const offered = offeredIn(workspace, workspace ? shelfOf(workspace.id).made : [])
+const runsIn = workspace?.id ?? WORKSPACE
+const requested = requestedOutput(useRoute().query.output, offered)
+const config = shallowRef<Configuration>(initialConfiguration(offered))
 const steps = shallowRef<[Step, Step, Step]>([null, null, null])
 const runs = shallowRef<RunRecord[]>([])
 const ranWith = ref('')
@@ -56,7 +66,8 @@ const snapshot = computed(() => JSON.stringify([pinKey.value, recordText.value, 
 const stale = computed(() => snapshot.value !== ranWith.value)
 
 // --- The draft: edited freely, previewed, and only applied on purpose ---
-const draft = shallowRef<TransformDraft>(draftFrom(config.value))
+// "Use in the Designer" asks for one exact version: it starts as the draft's output, unapplied.
+const draft = shallowRef<TransformDraft>(requested ? { ...draftFrom(config.value), use: 'catalogue', catalogue: requested } : draftFrom(config.value))
 const history = shallowRef<TransformDraft[]>([])
 let lastEdit = 0
 /** Every change to the draft can be undone. Typing in one box counts as one change. */
@@ -97,12 +108,12 @@ function run() {
   // Runs use the applied versions only. Running never makes one (only apply does).
   const applied = config.value
   steps.value = runExperiment(
-    {
+    placeIn({
       definitions: allDefinitions(applied),
       records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: pin.value.ref, data: record.data as Data }],
       mappings: applied.mappings,
-    },
-    { console: CONSOLES.find((c) => c.feature.id === consoleId.value)!.feature, mapping: applied.mapping },
+    }, runsIn),
+    { console: CONSOLES.find((c) => c.feature.id === consoleId.value)!.feature, mapping: applied.mapping, workspaceId: runsIn },
   )
   ranWith.value = snapshot.value
   runNumber.value++
@@ -115,7 +126,7 @@ function startOver() {
   pinKey.value = 'a1'
   recordText.value = JSON.stringify(INITIAL_DATA, null, 2)
   consoleId.value = orbitConsole.id
-  setDraft({ ...draftFrom(initialConfiguration()), local: draft.value.local }, false)
+  setDraft({ ...draftFrom(initialConfiguration(offered)), local: draft.value.local }, false)
 }
 
 run()
@@ -237,7 +248,9 @@ watch(selectedId, (id) => {
 const panelTitle = computed(() => (selectedId.value ? views.value[selectedId.value] : null))
 const runLabel = computed(() => `Run ${runNumber.value}${stale.value ? ' · the setup has changed since' : ''}`)
 const descriptions: Record<StepId, string> = {
-  'record': 'The in-memory Record the chain starts from.',
+  'record': workspace
+    ? `The in-memory Record the chain starts from: sample data, placed in ${workspace.name} for this tab’s runs only.`
+    : 'The in-memory Record the chain starts from.',
   'console-in': 'Shows what arrives, and passes it on unchanged.',
   'transform': 'Builds a new Value, property by property, from the one it receives.',
   'console-out': 'Shows what Transform made.',
@@ -281,6 +294,10 @@ function onBeforeUnload(event: BeforeUnloadEvent) {
   event.returnValue = ''
 }
 onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+// Arriving with a requested version: open the Transform's structure, where that choice shows.
+onMounted(() => {
+  if (requested) nextTick(() => { select('transform'); openFocus('structure', null) })
+})
 onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 const card = 'rounded-2xl bg-white p-4 ring-1 ring-slate-200/80'

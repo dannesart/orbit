@@ -47,26 +47,45 @@ export interface TransformDraft {
   readonly properties: readonly DraftProperty[]
 }
 
+/**
+ * A Definition version the Transform may use besides the playground's samples (Experiment #7): one
+ * made in the workspace the Designer was opened from, or one Orbit provides. `name` is what people
+ * call that Definition now (experimental metadata): never identity, and never part of the version.
+ */
+export interface Offered {
+  readonly definition: DefinitionVersion
+  readonly name: string
+  readonly source: 'workspace' | 'orbit'
+}
+
 /** What's applied, and every version ever applied (all immutable). */
 export interface Configuration {
+  /** What else this session may use, fixed when the Designer opens (Experiment #7). */
+  readonly offered?: readonly Offered[]
   readonly locals: readonly DefinitionVersion[]
   readonly mappings: readonly Mapping[]
   readonly output: DefinitionRef
   readonly mapping: FeatureRef
 }
 
-export const initialConfiguration = (): Configuration => ({
+export const initialConfiguration = (offered: readonly Offered[] = []): Configuration => ({
+  ...(offered.length ? { offered } : {}),
   locals: [],
   mappings: [INITIAL_MAPPING],
   output: refOf(B1),
   mapping: { id: INITIAL_MAPPING.id, version: INITIAL_MAPPING.version },
 })
 
-/** Catalogue Definitions this workspace can use as an output. */
-export const catalogue = () => DEFINITIONS.filter((d) => visibleIn(d, WORKSPACE))
+/**
+ * Catalogue Definitions this workspace can use as an output: the playground's own samples and what
+ * it's offered. Never another workspace's, not even to show that it exists.
+ */
+export const catalogue = (offered: readonly Offered[] = []) =>
+  [...DEFINITIONS.filter((d) => visibleIn(d, WORKSPACE)), ...offered.map((o) => o.definition)]
 
-/** Every Definition version a run may need: the catalogue and this Transform's own versions. */
-export const allDefinitions = (config: Configuration): readonly DefinitionVersion[] => [...DEFINITIONS, ...config.locals]
+/** Every Definition version a run may need: the samples, what's offered and this Transform's own. */
+export const allDefinitions = (config: Configuration): readonly DefinitionVersion[] =>
+  [...DEFINITIONS, ...(config.offered ?? []).map((o) => o.definition), ...config.locals]
 
 export function findDefinition(config: Configuration, ref: DefinitionRef): DefinitionVersion | null {
   return allDefinitions(config).find((d) => sameDefinition(d, ref)) ?? null
@@ -76,6 +95,8 @@ export const findMapping = (config: Configuration, ref: FeatureRef) => config.ma
 
 /** A Definition version in words: a catalogue one by its name, a local one as this Transform's own. */
 export function labelOf(config: Configuration, ref: DefinitionRef): string {
+  const offered = config.offered?.find((o) => sameDefinition(o.definition, ref))
+  if (offered) return `${offered.name} · v${ref.version}`
   if (!isLocal(ref)) return definitionLabel(ref)
   const local = config.locals.find((d) => sameDefinition(d, ref))
   return `${local?.name ?? 'This Transform’s output'} · v${ref.version}`
@@ -99,8 +120,8 @@ const sameStructure = (d: DefinitionVersion, local: LocalDraft) => d.name === lo
 /** What the draft's output is: an existing version, or the next local version Apply would freeze. */
 export function outputOf(config: Configuration, draft: TransformDraft): { definition: DefinitionVersion; label: string; isNew: boolean } {
   if (draft.use === 'catalogue') {
-    const definition = catalogue().find((d) => sameDefinition(d, draft.catalogue)) ?? B1
-    return { definition, label: definitionLabel(definition), isNew: false }
+    const definition = catalogue(config.offered).find((d) => sameDefinition(d, draft.catalogue)) ?? B1
+    return { definition, label: labelOf(config, definition), isNew: false }
   }
   const latest = config.locals.at(-1)
   if (latest && sameStructure(latest, draft.local)) return { definition: latest, label: `${latest.name} · v${latest.version}`, isNew: false }
@@ -169,5 +190,8 @@ export function applyConfiguration(config: Configuration, draft: TransformDraft)
       : deepFreeze({ id: plan.mapping.id, version: 1, workspaceId: WORKSPACE, from: refOf(A1), to: plan.output.ref, properties: frozenCopy(properties) })
     mappings = [...config.mappings, next]
   }
-  return { locals, mappings, output: plan.output.ref, mapping: { id: plan.mapping.id, version: plan.mapping.version } }
+  return {
+    ...(config.offered ? { offered: config.offered } : {}),
+    locals, mappings, output: plan.output.ref, mapping: { id: plan.mapping.id, version: plan.mapping.version },
+  }
 }

@@ -71,11 +71,13 @@ describe('What the canvas experiment never does', () => {
   const files = readdirSync(join(root, 'app/dev/designer')).map((f) => join('app/dev/designer', f))
   const source = (f: string) => readFileSync(join(root, f), 'utf8')
 
-  it('imports only the playground, the Feature language and the canvas library', () => {
+  // Experiment #7 adds one more: the Definitions experiment (app/dev/definitions), which is held
+  // to the same rules (test/definitions-experiment.test.ts).
+  it('imports only the playground, the Definitions experiment, the Feature language and the canvas library', () => {
     expect(files.length).toBeGreaterThanOrEqual(5)
     for (const f of files) {
       for (const [, from] of source(f).matchAll(/(?:from\s+|import\s+)'([^']+)'/g)) {
-        expect(from, `${f} imports ${from}`).toMatch(/^(\.\/|\.\.\/features\/|#shared\/features\/|@xyflow\/vue(\/dist\/style\.css)?$)/)
+        expect(from, `${f} imports ${from}`).toMatch(/^(\.\/|\.\.\/features\/|\.\.\/definitions\/|#shared\/features\/|@xyflow\/vue(\/dist\/style\.css)?$)/)
       }
     }
   })

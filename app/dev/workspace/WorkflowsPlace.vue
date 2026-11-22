@@ -8,11 +8,19 @@
   way back here.
 -->
 <script setup lang="ts">
+import { enterWorkspace, shelfOf } from '../definitions/store'
+
 const { workspace: ws } = useCurrentWorkspace()
 useHead({ title: () => `Workflows · ${ws.value.name} · Orbit` })
 
 const designer = computed(() => `/dev/designer?back=${encodeURIComponent(`/w/${ws.value.id}/workflows`)}`)
 const steps = ['Record A', 'Console', 'Transform', 'Console']
+
+// Experiment #7: this page has loaded the workspace (you belong to it), so the Designer and the
+// Definitions place may work in it, in this tab's memory.
+onMounted(() => enterWorkspace({ id: ws.value.id, name: ws.value.name }))
+const made = ref(0)
+onMounted(() => (made.value = shelfOf(ws.value.id).made.length))
 </script>
 
 <template>
@@ -36,6 +44,18 @@ const steps = ['Record A', 'Console', 'Transform', 'Console']
         </ol>
         <NuxtLink :to="designer" class="btn-primary mt-5 inline-flex w-auto rounded-full px-5 py-2 text-sm">
           Open the designer
+        </NuxtLink>
+      </div>
+
+      <div class="mt-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70">
+        <h2 class="text-sm font-semibold text-slate-900">Definitions</h2>
+        <p class="mt-1 text-sm text-slate-600">
+          The kinds of information a workflow works with, such as a person or an invoice, and what each one contains.
+          Make them in {{ ws.name }}, or use the ones Orbit provides.
+        </p>
+        <p v-if="made" class="mt-2 text-xs text-slate-500">{{ made === 1 ? 'One Definition' : `${made} Definitions` }} made in this tab.</p>
+        <NuxtLink :to="`/w/${ws.id}/definitions`" class="mt-4 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium text-accent-700 ring-1 ring-accent-200 transition hover:bg-accent-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
+          Open Definitions <span aria-hidden="true">›</span>
         </NuxtLink>
       </div>
     </section>

@@ -25,7 +25,13 @@ export default defineNuxtConfig({
         pages.push({ name: 'dev-designer', path: '/dev/designer', file: fileURLToPath(new URL('./app/dev/designer/SpatialDesigner.vue', import.meta.url)) })
         const workspace = pages.find((page) => page.file?.replaceAll('\\', '/').endsWith('/pages/w/[id].vue'))
         if (!workspace) throw new Error('The workspace layout (pages/w/[id].vue) is missing: the Workflows place has nowhere to live')
-        workspace.children = [...(workspace.children ?? []), { name: 'w-id-workflows', path: 'workflows', file: fileURLToPath(new URL('./app/dev/workspace/WorkflowsPlace.vue', import.meta.url)) }]
+        workspace.children = [
+          ...(workspace.children ?? []),
+          { name: 'w-id-workflows', path: 'workflows', file: fileURLToPath(new URL('./app/dev/workspace/WorkflowsPlace.vue', import.meta.url)) },
+          // Experiment #7: the workspace's Definitions, reached from the Workflows place (no new
+          // navigation item), under the same guard.
+          { name: 'w-id-definitions', path: 'definitions', file: fileURLToPath(new URL('./app/dev/definitions/DefinitionsPlace.vue', import.meta.url)) },
+        ]
       })
     },
   ],

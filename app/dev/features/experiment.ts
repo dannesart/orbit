@@ -84,11 +84,13 @@ export type Step = InvocationResult | null
 /**
  * Record A → Console → Transform → Console. Each step is its own invocation; a step is invoked
  * only with the previous step's output, so nothing follows a step that didn't succeed.
+ * Every step runs within one workspace: the playground's own, unless the caller names another.
  */
-export function runExperiment(catalog: Catalog, options: { console: PassThroughFeature; mapping: FeatureRef }): [Step, Step, Step] {
-  const first = invoke(catalog, { workspaceId: WORKSPACE, feature: options.console, input: { record: RECORD_ID } })
-  const second = first.output ? invoke(catalog, { workspaceId: WORKSPACE, feature: orbitTransform, input: first.output, mapping: options.mapping }) : null
-  const third = second?.output ? invoke(catalog, { workspaceId: WORKSPACE, feature: orbitConsole, input: second.output }) : null
+export function runExperiment(catalog: Catalog, options: { console: PassThroughFeature; mapping: FeatureRef; workspaceId?: string }): [Step, Step, Step] {
+  const workspaceId = options.workspaceId ?? WORKSPACE
+  const first = invoke(catalog, { workspaceId, feature: options.console, input: { record: RECORD_ID } })
+  const second = first.output ? invoke(catalog, { workspaceId, feature: orbitTransform, input: first.output, mapping: options.mapping }) : null
+  const third = second?.output ? invoke(catalog, { workspaceId, feature: orbitConsole, input: second.output }) : null
   return [first, second, third]
 }
 

@@ -17,7 +17,7 @@
   builds have exactly the three places above and the same markup as before.
 -->
 <script setup lang="ts">
-import { workflowsPlace } from '../dev/workspace/place'
+import { experimentPlaceOf, workflowsPlace } from '../dev/workspace/place'
 
 const props = defineProps<{ variant: 'rail' | 'pill'; workspaceId: string; canManage: boolean }>()
 const route = useRoute()
@@ -25,7 +25,8 @@ const route = useRoute()
 // Production: the constant is false, so this is always [] and the Workflows place isn't in the build.
 const extra = computed(() => (import.meta.env.ORBIT_PLAYGROUND === true ? [workflowsPlace(props.workspaceId)] : []))
 const places = computed(() => workspacePlaces(props.workspaceId, props.canManage, extra.value))
-const current = computed(() => placeOf(route.path, props.workspaceId, extra.value))
+const current = computed(() => (import.meta.env.ORBIT_PLAYGROUND === true ? experimentPlaceOf(route.path, props.workspaceId) : null)
+  ?? placeOf(route.path, props.workspaceId, extra.value))
 const four = computed(() => places.value.length === 4)
 const index = computed(() => places.value.findIndex((p) => p.key === current.value))
 const icon = (key: Place) => (key === 'settings' && !props.canManage ? 'about' : key)

@@ -5,7 +5,8 @@
 // it a new Mapping), so it lives apart from mapping values and says so.
 import type { DefinitionRef, DefinitionVersion, FieldType } from '#shared/features/definitions'
 import { DEFINITIONS, WORKSPACE, definitionLabel, shapeOf } from '../features/experiment'
-import type { Configuration, TransformDraft } from './config'
+import { type Configuration, type TransformDraft, catalogue, labelOf } from './config'
+import { DESIGNER_WORKSPACE, definitionsPath } from '../definitions/designer'
 import { fromPiece, removeAt, replaceAt } from './parts'
 import type { DraftReview } from './preview'
 import { describeSource } from './summary'
@@ -22,9 +23,16 @@ const update = (next: Partial<TransformDraft>) => emit('update:draft', { ...prop
 
 const keyOf = (ref: DefinitionRef) => `${ref.id}@${ref.version}`
 function setCatalogue(key: string) {
-  const d = DEFINITIONS.find((x) => keyOf(x) === key)
+  const d = catalogue(props.config.offered).find((x) => keyOf(x) === key)
   if (d) update({ catalogue: { id: d.id, version: d.version } })
 }
+// What can be chosen, by where it comes from (Experiment #7). Only what this workspace may use:
+// another workspace's Definitions aren't listed at all, not even disabled.
+const workspace = inject(DESIGNER_WORKSPACE, null)
+const made = computed(() => (props.config.offered ?? []).filter((o) => o.source === 'workspace').map((o) => o.definition))
+const provided = computed(() => (props.config.offered ?? []).filter((o) => o.source === 'orbit').map((o) => o.definition))
+const samples = DEFINITIONS.filter((d) => d.workspaceId === WORKSPACE)
+const chosenSource = computed(() => props.config.offered?.find((o) => keyOf(o.definition) === keyOf(props.draft.catalogue))?.source ?? 'sample')
 const latestLocal = computed(() => props.config.locals.at(-1))
 const fields = computed(() => props.target.definition.fields)
 const properties = computed(() => props.draft.properties)
@@ -85,17 +93,33 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       <div v-if="draft.use === 'catalogue'" class="mt-4">
         <label for="output-definition" class="block text-xs font-medium text-slate-600">Definition and version</label>
         <select id="output-definition" :value="keyOf(draft.catalogue)" :class="[control, 'mt-1 w-full']" @change="setCatalogue(($event.target as HTMLSelectElement).value)">
-          <option v-for="d in DEFINITIONS" :key="keyOf(d)" :value="keyOf(d)" :disabled="d.workspaceId !== null && d.workspaceId !== WORKSPACE">
-            {{ definitionLabel(d) }}{{ d.workspaceId !== null && d.workspaceId !== WORKSPACE ? ' (another workspace’s)' : '' }}
-          </option>
+          <optgroup v-if="workspace && made.length" :label="`Made in ${workspace.name}`">
+            <option v-for="d in made" :key="keyOf(d)" :value="keyOf(d)">{{ labelOf(config, d) }}</option>
+          </optgroup>
+          <optgroup label="Provided by Orbit (samples)">
+            <option v-for="d in provided" :key="keyOf(d)" :value="keyOf(d)">{{ labelOf(config, d) }}</option>
+          </optgroup>
+          <optgroup label="The Designer’s samples">
+            <option v-for="d in samples" :key="keyOf(d)" :value="keyOf(d)">{{ definitionLabel(d) }}</option>
+          </optgroup>
         </select>
+        <p v-if="workspace" class="mt-1.5 text-xs text-slate-500">
+          <template v-if="!made.length">Definitions made in {{ workspace.name }} are listed here.</template>
+          Definitions are made and changed in
+          <NuxtLink :to="chosenSource === 'workspace' ? definitionsPath(workspace.id, draft.catalogue.id, draft.catalogue.version) : definitionsPath(workspace.id)" class="link">{{ workspace.name }}’s Definitions</NuxtLink>.
+        </p>
         <ul class="mt-3 divide-y divide-slate-100 rounded-2xl bg-white ring-1 ring-slate-200">
           <li v-for="f in fields" :key="f.name" class="flex items-center gap-3 px-4 py-2 text-sm">
             <span class="font-mono font-semibold text-slate-900">{{ f.name }}</span>
             <span class="text-xs text-slate-500">{{ typeWords[f.type] }}</span>
           </li>
         </ul>
-        <p class="mt-2 text-xs text-slate-500">{{ target.label }} is shared, so it can’t change here. To shape the output yourself, choose “Its own output”.</p>
+        <p class="mt-2 text-xs text-slate-500">
+          <template v-if="chosenSource === 'workspace'">{{ target.label }} is made in {{ workspace?.name }}’s Definitions, exactly this version. It can’t change here.</template>
+          <template v-else-if="chosenSource === 'orbit'">{{ target.label }} is provided by Orbit. Nobody in a workspace can change it.</template>
+          <template v-else>{{ target.label }} is shared, so it can’t change here.</template>
+          To shape the output yourself, choose “Its own output”.
+        </p>
       </div>
 
       <div v-else class="mt-4">

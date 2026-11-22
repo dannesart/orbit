@@ -61,3 +61,7 @@ It is included only under `npm run dev` and in Netlify Deploy Previews, decided 
 Netlify's read-only `CONTEXT` variable (`deploy-preview`; see `app/dev/features/availability.ts`).
 Production builds, and any build without that exact context, never register the route, so its code
 isn't part of them. No Netlify setting or extra environment variable is needed.
+
+The workspace's Definitions experiment (`/w/:id/definitions`, reached from the preview-only Workflows
+place) follows the same rule. What is made there lives in that browser tab's memory, per workspace,
+until a reload or closing the tab; the designer can use it when opened from that workspace.
