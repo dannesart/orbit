@@ -14,7 +14,6 @@ import {
   replaceValue, representable, toDraft, toPiece,
 } from '../app/dev/designer/parts'
 import { exampleFrom, friendlyIssue, previewOutput, previewSource, reviewDraft, visibleSegments, whitespaceNote } from '../app/dev/designer/preview'
-import { applyDraft, unapplied } from '../app/dev/designer/versions'
 
 const prop = (name: string): Expression => ({ kind: 'property', name })
 const text = (value: string): Expression => ({ kind: 'literal', value })
@@ -76,8 +75,6 @@ describe('The parts view round-trips every tree exactly', () => {
 
   it('leaves what it can’t show exactly to the advanced editor, untouched (the very same object)', () => {
     const odd: Expression[] = [
-      { kind: 'literal', value: 1815 },
-      { kind: 'literal', value: true },
       trim(trim(prop('firstName'))), // two trims: no single checkbox can show it
       joined([prop('firstName')], prop('lastName')), // a separator that isn't text
       { kind: 'call', fn: 'join', args: [{ kind: 'list', items: [prop('a')] }] }, // wrong argument count
@@ -96,8 +93,18 @@ describe('The parts view round-trips every tree exactly', () => {
     // Inside a group, only the odd part is advanced; the rest are parts, and the whole is exact.
     const mixed = joined([prop('firstName'), { kind: 'literal', value: 7 }, trim(trim(prop('lastName')))], ' ')
     const piece = toPiece(mixed)
-    expect(piece.kind === 'combine' && piece.parts.map((p) => p.kind)).toEqual(['field', 'advanced', 'advanced'])
+    expect(piece.kind === 'combine' && piece.parts.map((p) => p.kind)).toEqual(['field', 'literal', 'advanced'])
     same(fromPiece(piece), mixed)
+  })
+
+  it('shows a fixed number or true/false as a value of its own (Experiment #4), exactly', () => {
+    for (const value of [1815, 0, -2.5, true, false]) {
+      const e: Expression = { kind: 'literal', value }
+      expect(toPiece(e)).toEqual({ kind: 'literal', value })
+      same(roundTrip(e), e)
+    }
+    // Spaces can't be removed from a number: that tree stays as it is, in the advanced view.
+    expect(toPiece(trim({ kind: 'literal', value: 7 })).kind).toBe('advanced')
   })
 
   it('round-trips 2,000 generated trees exactly, valid or not', () => {
@@ -174,52 +181,6 @@ describe('Edits change only what was asked, and the tree says exactly what the p
     expect(move(list, 2, 1)).toEqual([1, 2, 3])
     expect(removeAt(list, 1)).toEqual([1, 3])
     expect(insertAt(list, 1, 9)).toEqual([1, 9, 2, 3])
-  })
-})
-
-describe('Versions: only Apply makes one', () => {
-  const versions: readonly Mapping[] = [INITIAL_MAPPING]
-
-  it('makes nothing when the draft is unchanged, not even after a trip through the parts view', () => {
-    const properties = fromDraft(toDraft(INITIAL_MAPPING.properties))
-    expect(unapplied(properties, INITIAL_MAPPING)).toBe(false)
-    expect(applyDraft(versions, properties)).toBe(versions)
-  })
-
-  it('makes exactly one new, frozen version with the same identity and contracts, and leaves the old one alone', () => {
-    const before = JSON.stringify(INITIAL_MAPPING)
-    const changed: MappingProperty[] = [{ name: 'fullName', source: joined([prop('lastName'), trim(prop('firstName'))], ', ') }]
-    const next = applyDraft(versions, changed)
-    expect(next).toHaveLength(2)
-    expect(next[1]).toMatchObject({ id: INITIAL_MAPPING.id, version: 2, workspaceId: INITIAL_MAPPING.workspaceId, from: INITIAL_MAPPING.from, to: INITIAL_MAPPING.to })
-    same(next[1]!.properties, changed)
-    expect(Object.isFrozen(next[1]!.properties[0]!.source)).toBe(true)
-    expect(JSON.stringify(INITIAL_MAPPING)).toBe(before)
-    // Applying the same draft again makes nothing more.
-    expect(applyDraft(next, changed)).toBe(next)
-  })
-
-  it('runs the applied version, as often as you like, without making versions', () => {
-    const next = applyDraft(versions, [{ name: 'fullName', source: prop('lastName') }])
-    const catalog = { definitions: DEFINITIONS, records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: A1, data: INITIAL_DATA }], mappings: next }
-    for (let i = 0; i < 3; i++) {
-      const [, transform] = runExperiment(catalog, { console: orbitConsole, mapping: { id: next[1]!.id, version: 2 } })
-      expect(transform!.evidence.mapping).toEqual({ id: INITIAL_MAPPING.id, version: 2 })
-      expect(transform!.output!.data).toEqual({ fullName: 'Lovelace' })
-    }
-    expect(next).toHaveLength(2)
-  })
-
-  it('in the page: run() never makes a version; only apply() assigns versions', () => {
-    const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
-    const run = page.slice(page.indexOf('function run()'), page.indexOf('function startOver()'))
-    expect(run).not.toMatch(/versions\.value\s*=|applyDraft|reviseMapping/)
-    const assignments = [...page.matchAll(/versions\.value\s*=(?!=)/g)].map((m) => m.index!)
-    expect(assignments).toHaveLength(1)
-    const apply = page.indexOf('function apply(')
-    expect(assignments[0]!).toBeGreaterThan(apply)
-    expect(assignments[0]!).toBeLessThan(page.indexOf('\n}', apply))
-    expect(page).not.toMatch(/reviseMapping/)
   })
 })
 
@@ -333,22 +294,5 @@ describe('Reviewing a draft against Definition B', () => {
     expect(ownIssues((piece as Extract<Piece, { kind: 'combine' }>).parts[0]!, first!, issues)).toEqual([])
     // A trimmed group's parts sit one step further in.
     expect(partPaths({ ...piece, trim: true } as Piece, ['fullName'])[0]).toEqual(['fullName', 'trim', 0, 'join', 0, 0])
-  })
-})
-
-describe('The domain is unchanged: the boundary still decides', () => {
-  it('stops a Mapping applied “anyway” with problems, before Transform runs', () => {
-    const next = applyDraft([INITIAL_MAPPING], [{ name: 'fullName', source: prop('middleName') }])
-    const catalog = { definitions: DEFINITIONS, records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: A1, data: INITIAL_DATA }], mappings: next }
-    const [, transform, after] = runExperiment(catalog, { console: orbitConsole, mapping: { id: INITIAL_MAPPING.id, version: 2 } })
-    expect(transform!.evidence.outcome).toMatchObject({ kind: 'not_attempted', reason: 'invalid_mapping' })
-    expect(after).toBeNull()
-  })
-
-  it('rejects an applied Mapping whose output the target doesn’t accept', () => {
-    const next = applyDraft([INITIAL_MAPPING], [{ name: 'nickname', source: prop('firstName') }])
-    const catalog = { definitions: DEFINITIONS, records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: A1, data: INITIAL_DATA }], mappings: next }
-    const [, transform] = runExperiment(catalog, { console: orbitConsole, mapping: { id: INITIAL_MAPPING.id, version: 2 } })
-    expect(transform!.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output' })
   })
 })

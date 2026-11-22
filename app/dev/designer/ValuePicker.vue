@@ -36,6 +36,7 @@ const option = 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left te
       <button type="button" :class="[option, 'justify-center']" @click="emit('pick', { kind: 'text', value: '', trim: false })">Text…</button>
       <button type="button" :class="[option, 'justify-center']" @click="emit('pick', { kind: 'combine', parts: [], separator: '', trim: false })">A group</button>
     </div>
+    <p v-if="need === 'string'" class="mt-2 text-xs text-slate-500">Whole fields only: Orbit can’t take part of a field (such as its first letter) yet.</p>
     <button type="button" class="link mt-2 text-sm" @click="emit('cancel')">Cancel</button>
   </div>
 </template>

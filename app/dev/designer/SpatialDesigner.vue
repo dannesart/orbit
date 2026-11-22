@@ -9,47 +9,52 @@
 // Execution order comes from graph.ts alone. Positions are only where nodes are drawn.
 import { Background, Controls, Panel, VueFlow, type Node, type Padding, type VueFlowInstance } from '@xyflow/vue'
 import '@xyflow/vue/dist/style.css'
-import type { Data } from '#shared/features/definitions'
-import type { Mapping } from '#shared/features/mappings'
+import type { Data, DefinitionRef } from '#shared/features/definitions'
 import { orbitConsole } from '#shared/features/features'
 import {
-  A1, B1, CONSOLES, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, PINS, RECORD_ID, WORKSPACE, type Step,
+  A1, CONSOLES, DEFINITIONS, INITIAL_DATA, PINS, RECORD_ID, WORKSPACE, type Step,
   definitionLabel, outcomeLabel, parseRecordData, runExperiment, shapeOf,
 } from '../features/experiment'
-import StepResult from '../features/StepResult.vue'
+import RunResult from './RunResult.vue'
 import TransformPanel from './TransformPanel.vue'
 import StepNode, { type StepView } from './StepNode.vue'
 import { EXECUTION_ORDER, type StepId, fixedEdges, initialNodes, resetPositions, stepBadge, stepTitle } from './graph'
 import { summarize } from './summary'
-import { type DraftProperty, fromDraft, toDraft } from './parts'
+import { fromDraft } from './parts'
 import { exampleFrom, previewOutput, reviewDraft } from './preview'
-import { applyDraft, unapplied } from './versions'
+import {
+  type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findMapping,
+  initialConfiguration, labelOf, outputOf, planApply, structureProblems,
+} from './config'
 
 useHead({ title: 'Spatial designer (experiment) · Orbit' })
 
 // --- The experiment's state: as on the list playground (FeaturePlayground.vue), except that the
-// Mapping is edited as a draft and only Apply makes a new version (Experiment #3) ---
+// Transform's configuration (its output Definition and its Mapping) is edited as a draft and only
+// Apply makes versions (Experiments #3 and #4) ---
 const pinKey = ref('a1')
 const recordText = ref(JSON.stringify(INITIAL_DATA, null, 2))
 const consoleId = ref(orbitConsole.id)
-const versions = shallowRef<readonly Mapping[]>([INITIAL_MAPPING])
+const config = shallowRef<Configuration>(initialConfiguration())
 const steps = shallowRef<[Step, Step, Step]>([null, null, null])
+const runs = shallowRef<RunRecord[]>([])
 const ranWith = ref('')
 const runNumber = ref(0)
 
 const pin = computed(() => PINS.find((p) => p.key === pinKey.value)!)
 const parsed = computed(() => parseRecordData(recordText.value))
-const latest = computed(() => versions.value.at(-1)!)
-// What a run depends on. The draft isn't part of it: runs use the applied version.
-const snapshot = computed(() => JSON.stringify([pinKey.value, recordText.value, consoleId.value, latest.value.version]))
+const appliedMapping = computed(() => findMapping(config.value, config.value.mapping)!)
+const label = (ref: DefinitionRef) => labelOf(config.value, ref)
+// What a run depends on. The draft isn't part of it: runs use the applied versions.
+const snapshot = computed(() => JSON.stringify([pinKey.value, recordText.value, consoleId.value, config.value.mapping]))
 const stale = computed(() => snapshot.value !== ranWith.value)
 
-// --- The Mapping draft: edited freely, previewed, and only applied on purpose ---
-const draft = shallowRef<DraftProperty[]>(toDraft(INITIAL_MAPPING.properties))
-const history = shallowRef<DraftProperty[][]>([])
+// --- The draft: edited freely, previewed, and only applied on purpose ---
+const draft = shallowRef<TransformDraft>(draftFrom(config.value))
+const history = shallowRef<TransformDraft[]>([])
 let lastEdit = 0
 /** Every change to the draft can be undone. Typing in one box counts as one change. */
-function setDraft(next: DraftProperty[], coalesce = true) {
+function setDraft(next: TransformDraft, coalesce = true) {
   const now = Date.now()
   if (!coalesce || now - lastEdit > 800 || !history.value.length) history.value = [...history.value, draft.value].slice(-50)
   lastEdit = coalesce ? now : 0
@@ -62,40 +67,49 @@ function undo() {
   lastEdit = 0
   draft.value = previous
 }
-const draftProperties = computed(() => fromDraft(draft.value))
-const draftChanged = computed(() => unapplied(draftProperties.value, latest.value))
+const target = computed(() => outputOf(config.value, draft.value))
+const draftProperties = computed(() => fromDraft(draft.value.properties))
+const structure = computed(() => structureProblems(draft.value))
 const example = computed(() => exampleFrom(recordText.value, A1))
-const review = computed(() => reviewDraft(draftProperties.value, A1, B1))
-const output = computed(() => previewOutput(draftProperties.value, A1, B1, example.value))
-/** The only place a Mapping version is made. Normally only a sound draft; "anyway" is the playground's boundary test. */
+const review = computed(() => reviewDraft(draftProperties.value, A1, target.value.definition, target.value.label))
+const output = computed(() => previewOutput(draftProperties.value, A1, target.value.definition, example.value))
+const plan = computed(() => planApply(config.value, draft.value))
+/**
+ * The only place versions are made. Normally only a sound draft; "anyway" is the playground's
+ * boundary test, and only for Mapping problems: an invalid structure is never a Definition.
+ */
 function apply(anyway: boolean) {
-  if (!draftChanged.value || (!anyway && review.value.problems.length)) return
-  versions.value = applyDraft(versions.value, draftProperties.value)
-  setDraft(toDraft(latest.value.properties), false)
+  if (!plan.value.changes || structure.value.length || (!anyway && review.value.problems.length)) return
+  config.value = applyConfiguration(config.value, draft.value)
+  setDraft({ ...draft.value, properties: draftFrom(config.value).properties }, false)
 }
-const discard = () => setDraft(toDraft(latest.value.properties), false)
+const discard = () => setDraft(draftFrom(config.value), false)
 
 function run() {
   const record = parsed.value
   if ('error' in record) return
-  // Runs use the last applied Mapping version. Running never makes one (only apply does).
+  // Runs use the applied versions only. Running never makes one (only apply does).
+  const applied = config.value
   steps.value = runExperiment(
     {
-      definitions: DEFINITIONS,
+      definitions: allDefinitions(applied),
       records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: pin.value.ref, data: record.data as Data }],
-      mappings: versions.value,
+      mappings: applied.mappings,
     },
-    { console: CONSOLES.find((c) => c.feature.id === consoleId.value)!.feature, mapping: { id: latest.value.id, version: latest.value.version } },
+    { console: CONSOLES.find((c) => c.feature.id === consoleId.value)!.feature, mapping: applied.mapping },
   )
   ranWith.value = snapshot.value
   runNumber.value++
+  const evidence = steps.value[1]?.evidence
+  const used = evidence?.mapping ? findMapping(applied, evidence.mapping) : null
+  runs.value = [...runs.value, { number: runNumber.value, outcome: evidence?.outcome ?? null, mapping: evidence?.mapping ?? null, output: used?.to ?? null }]
 }
 
 function startOver() {
   pinKey.value = 'a1'
   recordText.value = JSON.stringify(INITIAL_DATA, null, 2)
   consoleId.value = orbitConsole.id
-  setDraft(toDraft(INITIAL_MAPPING.properties), false)
+  setDraft({ ...draftFrom(initialConfiguration()), local: draft.value.local }, false)
 }
 
 run()
@@ -145,7 +159,7 @@ const views = computed<Record<StepId, StepView>>(() => {
     return { label: outcomeLabel(step.evidence.outcome), tone: kind === 'succeeded' ? 'ok' : kind === 'failed' ? 'bad' : 'warn' }
   }
   const variant = CONSOLES.find((c) => c.feature.id === consoleId.value)!
-  const mapping = summarize(latest.value.properties)
+  const mapping = summarize(appliedMapping.value.properties)
   return {
     'record': {
       badge: stepBadge('record'), kind: 'Record · in memory', title: stepTitle('record'),
@@ -158,9 +172,9 @@ const views = computed<Record<StepId, StepView>>(() => {
       note: variant.feature.id === orbitConsole.id ? null : 'Misbehaving on purpose', outcome: outcome('console-in'), stale: stale.value,
     },
     'transform': {
-      badge: stepBadge('transform'), kind: `Feature · Mapping v${latest.value.version}`, title: stepTitle('transform'),
-      lines: [`${definitionLabel(A1)} → ${definitionLabel(B1)}`, ...(mapping.lines.length ? mapping.lines : ['Makes nothing yet'])], more: mapping.more,
-      note: draftChanged.value ? `Unapplied changes. Runs use v${latest.value.version}` : null, outcome: outcome('transform'), stale: stale.value,
+      badge: stepBadge('transform'), kind: `Feature · Mapping v${config.value.mapping.version}`, title: stepTitle('transform'),
+      lines: [`${definitionLabel(A1)} → ${label(config.value.output)}`, ...(mapping.lines.length ? mapping.lines : ['Makes nothing yet'])], more: mapping.more,
+      note: plan.value.changes ? 'Unapplied changes. Runs use the applied versions' : null, outcome: outcome('transform'), stale: stale.value,
     },
     'console-out': {
       badge: stepBadge('console-out'), kind: 'Feature', title: stepTitle('console-out'),
@@ -194,7 +208,7 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
       <button type="button" class="btn-primary w-auto px-5" :disabled="'error' in parsed" @click="run">Run</button>
       <p class="text-sm text-slate-500" aria-live="polite">
         {{ 'error' in parsed ? 'Fix Record A’s JSON to run.' : stale ? 'Changed since run ' + runNumber + '.' : 'Up to date · run ' + runNumber + '.' }}
-        <span v-if="draftChanged" class="font-medium text-amber-800">Transform has unapplied changes.</span>
+        <span v-if="plan.changes" class="font-medium text-amber-800">Transform has unapplied changes.</span>
       </p>
       <button type="button" class="link text-sm" @click="startOver">Start over</button>
       <NuxtLink to="/dev/features" class="link text-sm">List view</NuxtLink>
@@ -266,17 +280,19 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
         <TransformPanel
           v-if="selectedId === 'transform'"
           :draft="draft"
+          :config="config"
+          :target="target"
+          :plan="plan"
+          :structure="structure"
           :review="review"
           :output="output"
           :example="example"
           :input="A1"
-          :target="B1"
-          :latest="latest"
-          :changed="draftChanged"
           :can-undo="history.length > 0"
           :step="stepOf('transform')"
           :stale="stale"
           :run-number="runNumber"
+          :runs="runs"
           @update:draft="setDraft"
           @apply="apply"
           @discard="discard"
@@ -326,7 +342,7 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
             <p v-if="selectedId === 'record'" class="mt-3 text-sm text-slate-600">
               Record A isn’t a Feature, so it never runs. Step 1 read it; open step 1 to see what it observed.
             </p>
-            <StepResult v-else :step="stepOf(selectedId)" :stale="stale" pass-through />
+            <RunResult v-else :step="stepOf(selectedId)" :stale="stale" pass-through :label="label" />
           </section>
         </div>
       </aside>

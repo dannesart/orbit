@@ -74,7 +74,7 @@ export interface DraftReview {
 }
 
 /** The draft's properties checked against the input Definition and the target Definition. */
-export function reviewDraft(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion): DraftReview {
+export function reviewDraft(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, targetLabel = definitionLabel(target)): DraftReview {
   const checked = properties.map((p) => checkMapping({ properties: [p] }, input))
   const issues = checked.map((c) => c.issues)
   const firstIndex = (name: string) => properties.findIndex((p) => p.name === name)
@@ -83,12 +83,12 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   const fields = target.fields.map((field): FieldReview => {
     const index = firstIndex(field.name)
     if (index < 0) {
-      problems.push(`${field.name} isn’t set yet. ${definitionLabel(target)} needs it.`)
+      problems.push(`${field.name} isn’t set yet. ${targetLabel} needs it.`)
       return { name: field.name, expected: field.type, index, state: 'not_set', problems: [] }
     }
     const own: string[] = []
     const type = checked[index]!.types[0]
-    if (type && type !== field.type) own.push(`${definitionLabel(target)} needs ${typeWords[field.type]} here, but this makes ${typeWords[type]}.`)
+    if (type && type !== field.type) own.push(`${targetLabel} needs ${typeWords[field.type]} here, but this makes ${typeWords[type]}.`)
     problems.push(...own.map((p) => `${field.name}: ${p}`), ...issues[index]!.map((i) => `${field.name}: ${friendlyIssue(i)}`))
     return { name: field.name, expected: field.type, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }
   })
@@ -100,7 +100,7 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
       ? 'It has no name.'
       : target.fields.some((f) => f.name === p.name)
         ? `Another value already makes ${p.name}.`
-        : `${definitionLabel(target)} has no field “${p.name}”, so the Transform’s output would be rejected.`
+        : `${targetLabel} has no field “${p.name}”, so the Transform’s output would be rejected.`
     extras.push({ index, reason })
     problems.push(`${p.name || 'An unnamed value'}: ${reason}`)
   })

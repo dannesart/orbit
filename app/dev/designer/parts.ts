@@ -10,6 +10,7 @@ import type { Expression, MappingIssue, MappingProperty, Path } from '#shared/fe
  * One value, as the parts editor shows it.
  *   field     a property of the incoming value
  *   text      literal text (a space is text too)
+ *   literal   a fixed number, or true or false
  *   combine   values joined in order, with an optional separator between them (join)
  *   advanced  any other tree, kept exactly as it is
  * `trim` is "Remove spaces from both ends" (the trim function) applied to the value.
@@ -17,6 +18,7 @@ import type { Expression, MappingIssue, MappingProperty, Path } from '#shared/fe
 export type Piece =
   | { readonly kind: 'field'; readonly name: string; readonly trim: boolean }
   | { readonly kind: 'text'; readonly value: string; readonly trim: boolean }
+  | { readonly kind: 'literal'; readonly value: number | boolean }
   | { readonly kind: 'combine'; readonly parts: readonly Piece[]; readonly separator: string; readonly trim: boolean }
   | { readonly kind: 'advanced'; readonly expression: Expression }
 
@@ -41,11 +43,14 @@ export function toPiece(e: Expression): Piece {
   if (e?.kind === 'literal' && hasKeys(e, ['kind', 'value']) && typeof e.value === 'string') {
     return { kind: 'text', value: e.value, trim: false }
   }
+  if (e?.kind === 'literal' && hasKeys(e, ['kind', 'value']) && (typeof e.value === 'number' || typeof e.value === 'boolean')) {
+    return { kind: 'literal', value: e.value }
+  }
   if (e?.kind === 'call' && hasKeys(e, ['kind', 'fn', 'args']) && Array.isArray(e.args)) {
     if (e.fn === 'trim' && e.args.length === 1 && e.args[0]!.kind !== 'list') {
       const inner = toPiece(e.args[0] as Expression)
       // trim(trim(x)) has no single checkbox to show it, so it is left to the advanced editor.
-      if (inner.kind !== 'advanced' && !inner.trim) return { ...inner, trim: true }
+      if ((inner.kind === 'field' || inner.kind === 'text' || inner.kind === 'combine') && !inner.trim) return { ...inner, trim: true }
       return advanced(e)
     }
     if (e.fn === 'join' && e.args.length === 2) {
@@ -66,6 +71,7 @@ export function fromPiece(piece: Piece): Expression {
   let e: Expression
   switch (piece.kind) {
     case 'advanced': return piece.expression
+    case 'literal': return { kind: 'literal', value: piece.value }
     case 'field': e = { kind: 'property', name: piece.name }; break
     case 'text': e = { kind: 'literal', value: piece.value }; break
     case 'combine':
@@ -102,8 +108,8 @@ export const combineWith = (first: Piece, second: Piece): Piece => ({ kind: 'com
 
 /** Choosing a different value for a part keeps its "Remove spaces" setting. */
 export function replaceValue(previous: Piece, next: Piece): Piece {
-  const trim = previous.kind !== 'advanced' && previous.trim
-  return next.kind === 'advanced' ? next : { ...next, trim }
+  const trim = 'trim' in previous && previous.trim
+  return 'trim' in next ? { ...next, trim } : next
 }
 
 // --- Where problems belong ---

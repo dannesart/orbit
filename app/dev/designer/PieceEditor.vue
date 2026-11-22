@@ -35,7 +35,7 @@ const focus = (selector: string) => nextTick(() => root.value?.querySelector<HTM
 
 // What this value makes from the example, and, when spaces are removed, what it was before.
 const result = computed(() => previewSource(fromPiece(props.piece), props.input, props.example))
-const before = computed(() => (props.piece.kind !== 'advanced' && props.piece.trim ? previewSource(fromPiece({ ...props.piece, trim: false }), props.input, props.example) : null))
+const before = computed(() => ('trim' in props.piece && props.piece.trim ? previewSource(fromPiece({ ...props.piece, trim: false }), props.input, props.example) : null))
 const own = computed(() => ownIssues(props.piece, props.path, props.issues).map(friendlyIssue))
 const inputLabel = computed(() => definitionLabel(props.input))
 
@@ -46,7 +46,7 @@ function change(next: Piece) {
   update(replaceValue(props.piece, next))
   focus(':scope > div > [data-main]')
 }
-const setTrim = (trim: boolean) => props.piece.kind !== 'advanced' && update({ ...props.piece, trim })
+const setTrim = (trim: boolean) => 'trim' in props.piece && update({ ...props.piece, trim })
 
 // Text: whitespace is invisible in a text box, so a space is shown as a token until edited.
 const editingText = ref(false)
@@ -133,6 +133,16 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
         <button type="button" class="link text-xs" :aria-expanded="changing" @click="changing = !changing">Change</button>
       </div>
       <p v-if="piece.value === ''" class="mt-1 text-xs text-amber-700">Empty, so it adds nothing yet.</p>
+      <p v-else-if="top" class="mt-1 text-xs text-slate-500">Fixed text: the same for every input.</p>
+    </template>
+
+    <!-- A fixed number, or true or false (inside a group of text, the problem below says why it can't be) -->
+    <template v-else-if="piece.kind === 'literal'">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span class="text-xs text-slate-500">Fixed value</span>
+        <ShownText :value="piece.value" />
+        <button type="button" data-main class="link text-xs" :aria-expanded="changing" :aria-label="`${label}: the fixed value ${piece.value}. Change`" @click="changing = !changing">Change</button>
+      </div>
     </template>
 
     <!-- Values in order (and a group inside a group) -->
@@ -227,7 +237,7 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
     </template>
 
     <!-- What it makes from the example -->
-    <div v-if="'value' in result && piece.kind !== 'text'" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+    <div v-if="'value' in result && piece.kind !== 'text' && piece.kind !== 'literal'" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
       <span>{{ piece.kind === 'combine' ? (top ? 'Makes' : 'This group makes') : 'Example' }}</span>
       <template v-if="before && 'value' in before && before.value !== result.value">
         <ShownText :value="before.value" struck />
@@ -237,7 +247,7 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
       <ShownText :value="result.value" />
     </div>
 
-    <label v-if="piece.kind !== 'advanced' && (piece.kind !== 'text' || piece.trim)" class="mt-1.5 flex w-fit items-center gap-2 text-sm text-slate-700">
+    <label v-if="'trim' in piece && (piece.kind !== 'text' || piece.trim)" class="mt-1.5 flex w-fit items-center gap-2 text-sm text-slate-700">
       <input type="checkbox" class="size-4 rounded border-slate-300 accent-accent-600" :checked="piece.trim" @change="setTrim(($event.target as HTMLInputElement).checked)">
       Remove spaces from both ends{{ piece.kind === 'combine' ? (top ? ' of the result' : ' of this group') : '' }}
     </label>
