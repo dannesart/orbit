@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The Designer's floating toolbar: Orbit's glass, like the workspace navigation. The workflow's
 // identity and its state, Run (the one prominent action), and the rest behind "More".
-const props = defineProps<{ status: string; attention: string | null; canRun: boolean }>()
+const props = defineProps<{ back: string | null; status: string; attention: string | null; canRun: boolean }>()
 const emit = defineEmits<{ run: []; startOver: [] }>()
 
 const open = ref(false)
@@ -26,7 +26,12 @@ const item = 'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text
 <template>
   <header class="pointer-events-none absolute inset-x-0 top-0 z-30 flex p-3 sm:p-4">
     <div class="pointer-events-auto flex max-w-full min-w-0 animate-pill-in items-center gap-1 rounded-full border border-white/80 bg-white/75 p-1.5 shadow-lg shadow-slate-900/[0.06] ring-1 ring-slate-900/5 backdrop-blur-md">
-      <NuxtLink to="/" class="grid size-10 shrink-0 place-items-center rounded-full transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" aria-label="Back to Orbit">
+      <NuxtLink
+        :to="props.back ?? '/'"
+        class="flex h-10 shrink-0 items-center gap-1 rounded-full px-2.5 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+        :aria-label="props.back ? 'Back to the workspace. The designer keeps nothing' : 'Back to Orbit'"
+      >
+        <span v-if="props.back" aria-hidden="true" class="text-base leading-none text-slate-500">‹</span>
         <OrbitSymbol class="size-5" />
       </NuxtLink>
       <div class="min-w-0 px-2">

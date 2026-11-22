@@ -19,6 +19,8 @@ import {
 } from '../features/experiment'
 import RunResult from './RunResult.vue'
 import DesignerToolbar from './DesignerToolbar.vue'
+import LeaveDialog from './LeaveDialog.vue'
+import { workAtRisk } from './session'
 import FocusEditor from './FocusEditor.vue'
 import TransformInspector from './TransformInspector.vue'
 import StepNode, { type StepView } from './StepNode.vue'
@@ -242,6 +244,44 @@ const descriptions: Record<StepId, string> = {
 }
 const toolbarStatus = computed(() => ('error' in parsed.value ? 'Fix Record A’s data to run' : stale.value ? `Changed since run ${runNumber.value}` : `Up to date · run ${runNumber.value}`))
 const showHint = ref(true)
+// Where "back" goes: the place you came from (the workspace's Workflows place), when it's a path
+// within Orbit (safeDestination; it grants nothing, the page is authorized as usual), else Orbit.
+const back = computed(() => safeDestination(useRoute().query.back))
+
+// --- Leaving ---
+// Everything here lives in memory only, applied versions included. Leaving with work in it asks
+// first (Stay in Designer / Leave and discard); an untouched playground just leaves. One guard
+// covers every way out inside Orbit (the back action, List view, the browser's back button); a
+// reload or closing the tab gets the browser's own question, only when there's work to lose.
+const START = { pinKey: 'a1', recordText: JSON.stringify(INITIAL_DATA, null, 2), consoleId: orbitConsole.id } as const
+const atRisk = computed(() => workAtRisk(
+  { pinKey: pinKey.value, recordText: recordText.value, consoleId: consoleId.value, config: config.value, unapplied: plan.value.changes },
+  START,
+))
+const leaving = ref<string | null>(null)
+let discardConfirmed = false
+onBeforeRouteLeave((to) => {
+  if (discardConfirmed || !atRisk.value.length) return true
+  leaving.value = to.fullPath
+  return false
+})
+function stay() {
+  leaving.value = null
+  nextTick(() => document.querySelector<HTMLElement>('header a')?.focus())
+}
+function leave() {
+  const to = leaving.value
+  discardConfirmed = true
+  leaving.value = null
+  if (to) navigateTo(to)
+}
+function onBeforeUnload(event: BeforeUnloadEvent) {
+  if (discardConfirmed || !atRisk.value.length) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 const card = 'rounded-2xl bg-white p-4 ring-1 ring-slate-200/80'
 const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100'
@@ -256,6 +296,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
     </div>
 
     <DesignerToolbar
+      :back="back"
       :status="toolbarStatus"
       :attention="plan.changes ? 'Transform has unapplied changes' : null"
       :can-run="!('error' in parsed)"
@@ -427,6 +468,8 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         @close="closeFocus"
       />
     </section>
+
+    <LeaveDialog :losing="leaving ? atRisk : null" @stay="stay" @leave="leave" />
   </div>
 </template>
 

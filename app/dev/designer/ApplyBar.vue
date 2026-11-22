@@ -11,7 +11,8 @@ const emit = defineEmits<{ apply: [anyway: boolean]; discard: []; undo: [] }>()
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
 const words = computed(() => {
   const { output, mapping, changes } = props.plan
-  if (!changes) return `Applied: ${label(props.config.output)} · Mapping v${props.config.mapping.version}.`
+  // Applied means "what runs use now", in this session; the designer saves nothing.
+  if (!changes) return `Applied in this session: ${label(props.config.output)} · Mapping v${props.config.mapping.version}.`
   const made: string[] = []
   if (output.isNew) made.push(`${props.draft.local.name || 'the output'} v${output.ref.version}`)
   if (mapping.isNew) made.push(`${output.isNew ? 'its' : 'a new'} Mapping v${mapping.version}`)
