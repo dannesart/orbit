@@ -32,14 +32,14 @@ const tones = {
     class="rounded-2xl border bg-white p-4 text-left shadow-sm transition"
     :class="[
       view.title === 'Transform' ? 'w-72' : 'w-60',
-      selected ? 'border-accent-500 shadow-md ring-4 ring-accent-100' : 'border-slate-200 hover:border-slate-300 hover:shadow-md',
+      selected ? 'border-accent-400 shadow-lg shadow-accent-500/10 ring-4 ring-accent-100' : 'border-slate-200/80 shadow-slate-900/[0.04] hover:border-slate-300 hover:shadow-md',
     ]"
   >
     <Handle v-if="!first" type="target" :position="Position.Left" :is-connectable="false" />
     <div class="flex items-center gap-2">
       <span
         class="flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-semibold"
-        :class="selected ? 'bg-accent-600 text-white' : 'bg-slate-900 text-white'"
+        :class="selected ? 'bg-accent-600 text-white' : 'bg-slate-800 text-white'"
       >{{ view.badge }}</span>
       <span class="text-xs font-medium text-slate-500">{{ view.kind }}</span>
     </div>
