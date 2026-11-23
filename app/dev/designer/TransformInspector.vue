@@ -1,16 +1,17 @@
 <script setup lang="ts">
 // The Transform in the inspector: enough to understand it and make simple changes. What it reads
 // and makes, how each output property gets its value (simple ones chosen right here), the preview,
-// the last run, and Apply. Composing values and changing the structure happen in the focused
-// editor, which this opens.
-import type { DefinitionRef, DefinitionVersion } from '#shared/features/definitions'
-import { type Step, definitionLabel, outcomeLabel } from '../features/experiment'
+// the latest run, and Apply. Composing values and changing the structure happen in the focused
+// editor, opened with the pencil beside the title (SpatialDesigner.vue).
+import type { DefinitionVersion } from '#shared/features/definitions'
+import { type Step, definitionLabel } from '../features/experiment'
 import ApplyBar from './ApplyBar.vue'
 import PreviewObject from './PreviewObject.vue'
 import QuickMappings from './QuickMappings.vue'
 import RunHistory from './RunHistory.vue'
-import { type Configuration, type Plan, type RunRecord, type TransformDraft, labelOf } from './config'
+import type { Configuration, Plan, RunRecord, TransformDraft } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
+import { runState } from './summary'
 
 const props = defineProps<{
   draft: TransformDraft
@@ -37,29 +38,25 @@ const emit = defineEmits<{
 }>()
 
 const details = ref(false)
-const label = (ref: DefinitionRef) => labelOf(props.config, ref)
 const problems = computed(() => [...props.structure, ...props.review.problems])
 const mapped = computed(() => props.review.fields.filter((f) => f.state === 'set').length)
-const lastRun = computed(() => props.runs.at(-1))
-const tone = computed(() => {
-  const kind = props.step?.evidence.outcome.kind
-  return kind === 'succeeded' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : kind === 'failed' ? 'bg-red-50 text-red-700 ring-red-200' : kind ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-slate-100 text-slate-600 ring-slate-200'
-})
+const state = computed(() => runState(props.step))
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-      <!-- The last run, in one line -->
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200/70">
-        <span class="rounded-full px-2 py-0.5 text-xs font-semibold ring-1" :class="tone">{{ step ? outcomeLabel(step.evidence.outcome) : 'Not invoked' }}</span>
-        <span class="min-w-0 text-xs text-slate-500">
-          Run {{ runNumber }}<template v-if="lastRun?.output"> · {{ label(lastRun.output) }}</template><template v-if="lastRun?.mapping"> · Mapping v{{ lastRun.mapping.version }}</template><template v-if="stale"> · changed since</template>
-        </span>
-        <button type="button" class="link ml-auto text-xs" :aria-expanded="details" @click="details = !details">{{ details ? 'Back' : 'Evidence' }}</button>
-      </div>
+      <!-- Latest run: what actually executed, in one row. Its exact versions are in the evidence. -->
+      <section aria-labelledby="latest-run-heading" class="flex items-center gap-2 text-sm">
+        <h3 id="latest-run-heading" class="text-xs font-medium text-slate-500">Latest run</h3>
+        <p class="flex min-w-0 items-center gap-1.5 text-slate-800">
+          <span aria-hidden="true" class="w-3.5 text-center text-xs font-semibold" :class="state.tone">{{ state.icon }}</span>
+          <span class="truncate"><span class="font-medium">{{ state.label }}</span> · Run {{ runNumber }}<span v-if="stale" class="text-slate-500"> · before your changes</span></span>
+        </p>
+        <button type="button" class="link ml-auto shrink-0 text-xs" :aria-expanded="details" aria-controls="transform-evidence" @click="details = !details">{{ details ? 'Back' : 'Evidence' }}</button>
+      </section>
 
-      <RunHistory v-if="details" class="mt-4" :step="step" :stale="stale" :run-number="runNumber" :runs="runs" :config="config" />
+      <RunHistory v-if="details" id="transform-evidence" class="mt-4" :step="step" :stale="stale" :run-number="runNumber" :runs="runs" :config="config" />
       <template v-else>
         <!-- Contracts -->
         <section aria-label="What it reads and makes" class="mt-4 flex flex-wrap items-center gap-2 text-sm">
@@ -88,15 +85,6 @@ const tone = computed(() => {
             {{ review.extras.length === 1 ? 'One mapping has' : `${review.extras.length} mappings have` }} no property to fill.
             <button type="button" class="link text-xs" @click="emit('focus', 'structure', null)">Review</button>
           </p>
-          <button
-            type="button"
-            data-open-editor
-            class="mt-3 flex w-full items-center justify-between gap-2 rounded-2xl bg-white px-4 py-2.5 text-left text-sm font-medium text-slate-800 ring-1 ring-slate-200 transition hover:bg-accent-50 hover:text-accent-800 hover:ring-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
-            @click="emit('focus', 'mapping', null)"
-          >
-            <span>Open the editor<span class="block text-xs font-normal text-slate-500">Compose values, or change what the output contains</span></span>
-            <span aria-hidden="true" class="text-accent-600">↗</span>
-          </button>
         </section>
 
         <PreviewObject class="mt-5" :draft="draft" :target="target" :review="review" :output="output" :example="example" :problems="problems.length" />

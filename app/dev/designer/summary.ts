@@ -3,6 +3,7 @@
 // expression tree the Transform runs, so the summary can't drift from what actually happens.
 // Literals are configuration, not Record data, so quoting them is fine.
 import type { Argument, Expression, MappingProperty } from '#shared/features/mappings'
+import { type Step, outcomeLabel } from '../features/experiment'
 
 /** A literal's words: whitespace is invisible, so it is named rather than quoted. */
 function literalWords(value: string | number | boolean): string {
@@ -46,4 +47,17 @@ export const describeProperty = (property: MappingProperty) => `${property.name 
 /** At most `limit` lines for a node, and how many more there are. */
 export function summarize(properties: readonly MappingProperty[], limit = 3): { lines: string[]; more: number } {
   return { lines: properties.slice(0, limit).map(describeProperty), more: Math.max(0, properties.length - limit) }
+}
+
+/**
+ * The latest run's state for one compact row: every outcome the evidence can hold, and "Not
+ * invoked" when the run stopped before this step. Taken from the evidence only, never the draft.
+ */
+export function runState(step: Step): { icon: string; tone: string; label: string } {
+  const outcome = step?.evidence.outcome
+  if (!outcome) return { icon: '○', tone: 'text-slate-400', label: 'Not invoked' }
+  const label = outcomeLabel(outcome)
+  if (outcome.kind === 'succeeded') return { icon: '✓', tone: 'text-emerald-600', label }
+  if (outcome.kind === 'failed') return { icon: '✕', tone: 'text-red-600', label }
+  return { icon: '!', tone: 'text-amber-600', label }
 }

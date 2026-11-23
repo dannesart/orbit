@@ -10,7 +10,7 @@ import PreviewObject from './PreviewObject.vue'
 import PropertyEditor from './PropertyEditor.vue'
 import StructureEditor from './StructureEditor.vue'
 import type { Configuration, Plan, TransformDraft } from './config'
-import type { DraftReview, Example, OutputPreview } from './preview'
+import { type DraftReview, type Example, type OutputPreview, mappingWork } from './preview'
 
 const props = defineProps<{
   draft: TransformDraft
@@ -40,6 +40,14 @@ const problems = computed(() => [...props.structure, ...props.review.problems])
 const selected = computed(() => props.review.fields.find((f) => f.name === props.property) ?? props.review.fields.find((f) => f.state !== 'set') ?? props.review.fields[0] ?? null)
 const heading = ref<HTMLElement>()
 onMounted(() => heading.value?.focus())
+// Structure's next step, offered (never taken for you): Mapping, at the first property that
+// still needs a value. Only when the structure is sound and there's mapping work to do.
+const work = computed(() => mappingWork(props.review, props.structure))
+function continueToMapping() {
+  emit('update:property', work.value[0]!)
+  emit('update:mode', 'mapping')
+  nextTick(() => heading.value?.focus())
+}
 const typeWords = { string: 'text', number: 'number', boolean: 'yes or no' } as const
 const status = {
   not_set: { icon: '○', label: 'Not mapped', tone: 'text-amber-600' },
@@ -115,7 +123,13 @@ const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visib
 
       <!-- Structure: the contract -->
       <div v-else class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <StructureEditor :draft="draft" :config="config" :target="target" :structure="structure" :review="review" @update:draft="emit('update:draft', $event)" />
+        <div class="min-w-0">
+          <StructureEditor :draft="draft" :config="config" :target="target" :structure="structure" :review="review" @update:draft="emit('update:draft', $event)" />
+          <div v-if="work.length" class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <button type="button" data-continue-mapping class="rounded-full bg-white px-4 py-1.5 text-sm font-medium text-accent-700 ring-1 ring-accent-200 transition hover:bg-accent-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" @click="continueToMapping">Continue to Mapping <span aria-hidden="true">→</span></button>
+            <span class="text-xs text-slate-500">{{ work.length === 1 ? `${work[0]} needs a value` : `${work.length} properties need a value` }}</span>
+          </div>
+        </div>
         <PreviewObject class="lg:sticky lg:top-0 lg:self-start" :draft="draft" :target="target" :review="review" :output="output" :example="example" :problems="problems.length" />
       </div>
     </div>

@@ -29,8 +29,8 @@ const rows = computed(() => {
 <template>
   <div>
     <div class="flex items-baseline gap-2">
-      <p class="mr-auto text-xs font-semibold tracking-wide text-accent-700 uppercase">Preview · not executed</p>
-      <p class="text-xs text-slate-500">From Record A’s data</p>
+      <p class="mr-auto text-xs font-semibold tracking-wide text-accent-700 uppercase">Current preview · not executed</p>
+      <p class="text-xs text-slate-500">This draft, with Record A’s data</p>
     </div>
     <p v-if="'problem' in example" class="mt-1.5 text-sm text-amber-800">{{ example.problem }} <span v-if="example.details.length" class="block text-xs">{{ example.details.join(' ') }}</span></p>
     <div v-else class="mt-1.5 rounded-2xl bg-slate-50 px-3 py-2 font-mono text-xs ring-1 ring-slate-200/80" aria-live="polite">

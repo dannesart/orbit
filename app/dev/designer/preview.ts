@@ -114,6 +114,13 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   return { fields, extras, issues, problems, missing, errors: problems.filter((p) => !unset.has(p)) }
 }
 
+/**
+ * The properties Mapping still has work for (no value yet, or one with a problem), once the
+ * structure is sound: what "Continue to Mapping" offers. Empty when there's nothing to do there.
+ */
+export const mappingWork = (review: DraftReview, structure: readonly string[]): string[] =>
+  structure.length ? [] : review.fields.filter((f) => f.name && f.state !== 'set').map((f) => f.name)
+
 export interface OutputPreview {
   /** Each property's value from the example, or why it has none. */
   readonly values: readonly ValuePreview[]
