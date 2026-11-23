@@ -13,7 +13,7 @@ const emit = defineEmits<{ pick: [Piece]; cancel: [] }>()
 const root = ref<HTMLElement>()
 onMounted(() => root.value?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus())
 
-const typeWords: Record<FieldType, string> = { string: 'text', number: 'number', boolean: 'true or false' }
+const typeWords: Record<FieldType, string> = { string: 'text', number: 'number', boolean: 'yes or no' }
 const exampleOf = (name: string) => ('data' in props.example ? props.example.data[name] : undefined)
 const option = 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ring-1 ring-slate-200 transition hover:bg-accent-50 hover:ring-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
 </script>

@@ -227,7 +227,7 @@ describe('The boundary still decides, whatever the editor allowed', () => {
     const draft = personSummary(initialConfiguration())
     const wrongType = { ...draft, properties: draft.properties.map((p) => (p.name === 'active' ? { ...p, piece: { kind: 'text', value: 'yes', trim: false } as Piece } : p)) }
     const target = outputOf(initialConfiguration(), wrongType).definition
-    expect(reviewDraft(fromDraft(wrongType.properties), A1, target, 'Person summary · v1').problems).toEqual(['active: Person summary · v1 needs true or false here, but this makes text.'])
+    expect(reviewDraft(fromDraft(wrongType.properties), A1, target, 'Person summary · v1').problems).toEqual(['active: Person summary · v1 needs yes or no here, but this makes text.'])
     expect(run(applyConfiguration(initialConfiguration(), wrongType))[1]!.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output' })
     const extra = { ...draft, properties: [...draft.properties, { name: 'nickname', piece: piece(prop('firstName')) }] }
     const [, transform, after] = run(applyConfiguration(initialConfiguration(), extra))
@@ -251,6 +251,7 @@ describe('In the page: only Apply makes versions, and runs record their own', ()
   })
 
   it('Discard returns to the applied configuration', () => {
-    expect(page).toMatch(/const discard = \(\) => setDraft\(draftFrom\(config\.value\), false\)/)
+    expect(page).toMatch(/function discard\(\) \{\s*const to = draftFrom\(config\.value\)/)
+    expect(page).toMatch(/act: \(\) => setDraft\(to, false\)/)
   })
 })

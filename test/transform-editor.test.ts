@@ -221,7 +221,7 @@ describe('The preview: the Transform’s own evaluation, without a run', () => {
     const v2 = exampleFrom(JSON.stringify({ ...INITIAL_DATA, email: 'ada@example.com' }), A1)
     expect(v2).toMatchObject({ details: ['email isn’t part of this Definition.'] })
     const missing = exampleFrom(JSON.stringify({ firstName: 'Ada' }), A1)
-    expect(missing).toMatchObject({ details: ['lastName is missing (it should be a string).'] })
+    expect(missing).toMatchObject({ details: ['lastName is missing (it should be text).'] })
     const ok = exampleFrom(JSON.stringify(INITIAL_DATA), A1)
     expect('data' in ok && Object.isFrozen(ok.data)).toBe(true)
     expect(previewSource(prop('firstName'), A1, v2)).toEqual({ noExample: true })
@@ -233,7 +233,7 @@ describe('The preview: the Transform’s own evaluation, without a run', () => {
     expect(previewSource(trim({ kind: 'literal', value: 7 }), A1, example)).toEqual({ problems: ['Spaces can only be removed from text, not from a number.'] })
     // A property the target doesn't have: every value can be made, but the target wouldn't accept the object.
     const wrong = previewOutput([{ name: 'fullname', source: prop('firstName') }], A1, B1, example)
-    expect(wrong.fits!.issues).toEqual(['fullName is missing (it should be a string).', 'fullname isn’t part of this Definition.'])
+    expect(wrong.fits!.issues).toEqual(['fullName is missing (it should be text).', 'fullname isn’t part of this Definition.'])
   })
 
   it('never imports anything that invokes a Feature or records evidence', () => {

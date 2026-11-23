@@ -56,4 +56,4 @@ export function asideReason(property: DraftProperty, input: DefinitionVersion, t
   return `${property.name} already has a value.`
 }
 
-const words: Record<string, string> = { string: 'text', number: 'a number', boolean: 'true or false', 'string[]': 'a list', invalid: 'something invalid' }
+const words: Record<string, string> = { string: 'text', number: 'a number', boolean: 'yes or no', 'string[]': 'a list', invalid: 'something invalid' }

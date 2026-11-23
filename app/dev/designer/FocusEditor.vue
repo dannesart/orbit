@@ -30,7 +30,7 @@ const emit = defineEmits<{
   'update:draft': [TransformDraft]
   'update:mode': ['mapping' | 'structure']
   'update:property': [string]
-  apply: [anyway: boolean]
+  apply: []
   discard: []
   undo: []
   close: []
@@ -40,7 +40,7 @@ const problems = computed(() => [...props.structure, ...props.review.problems])
 const selected = computed(() => props.review.fields.find((f) => f.name === props.property) ?? props.review.fields.find((f) => f.state !== 'set') ?? props.review.fields[0] ?? null)
 const heading = ref<HTMLElement>()
 onMounted(() => heading.value?.focus())
-const typeWords = { string: 'text', number: 'number', boolean: 'true or false' } as const
+const typeWords = { string: 'text', number: 'number', boolean: 'yes or no' } as const
 const status = {
   not_set: { icon: '○', label: 'Not mapped', tone: 'text-amber-600' },
   problem: { icon: '!', label: 'Needs attention', tone: 'text-red-600' },
@@ -121,7 +121,7 @@ const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visib
     </div>
 
     <div class="border-t border-slate-100 px-5 pt-3 pb-4 sm:px-6">
-      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :mapping-problems-only="!structure.length && review.problems.length > 0" :can-undo="canUndo" @apply="emit('apply', $event)" @discard="emit('discard')" @undo="emit('undo')" />
+      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
     </div>
   </div>
 </template>

@@ -245,7 +245,7 @@ describe('Journey A: made in Definitions, used as an exact version in the Transf
     const start = initialConfiguration(offered)
     const target = outputOf(start, { ...transformDraftFrom(start), use: 'catalogue', catalogue: { id: v1.id, version: 2 } }).definition
     expect(reviewDraft([fullName, subscribed], A1, target).problems.length).toBeGreaterThan(0)
-    // Applied anyway (the playground allows it for Mapping problems): the boundary refuses the output.
+    // Applied regardless (applyConfiguration allows it; the Designer's Apply doesn't): the boundary refuses the output.
     const config = use(start, { id: v1.id, version: 2 }, [fullName, subscribed])
     const [, transform, out] = run(config, 'ws-acme')
     expect(transform!.evidence.outcome).toEqual({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'missing', field: 'email', expected: 'string' }] })

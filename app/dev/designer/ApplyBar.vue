@@ -5,8 +5,8 @@
 import type { DefinitionRef } from '#shared/features/definitions'
 import { type Configuration, type Plan, type TransformDraft, labelOf } from './config'
 
-const props = defineProps<{ plan: Plan; config: Configuration; draft: TransformDraft; errors: readonly string[]; missing: readonly string[]; mappingProblemsOnly: boolean; canUndo: boolean }>()
-const emit = defineEmits<{ apply: [anyway: boolean]; discard: []; undo: [] }>()
+const props = defineProps<{ plan: Plan; config: Configuration; draft: TransformDraft; errors: readonly string[]; missing: readonly string[]; canUndo: boolean }>()
+const emit = defineEmits<{ apply: []; discard: []; undo: [] }>()
 
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
 // Incomplete isn't wrong: a property nothing makes yet is the next thing to do, not an error.
@@ -33,12 +33,10 @@ const words = computed(() => {
       <p class="mr-auto basis-full text-xs sm:basis-auto sm:max-w-[60%]" :class="plan.changes ? 'font-medium text-amber-800' : 'text-slate-500'" aria-live="polite">{{ words }}</p>
       <button type="button" class="link px-1 text-sm" :disabled="!canUndo" @click="emit('undo')">Undo</button>
       <button type="button" class="rounded-full px-3.5 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-40 disabled:hover:bg-transparent" :disabled="!plan.changes" @click="emit('discard')">Discard</button>
-      <button type="button" class="btn-primary w-auto rounded-full px-5 py-1.5 text-sm disabled:cursor-default disabled:opacity-40" :disabled="!plan.changes || blocked" @click="emit('apply', false)">Apply</button>
+      <button type="button" class="btn-primary w-auto rounded-full px-5 py-1.5 text-sm disabled:cursor-default disabled:opacity-40" :disabled="!plan.changes || blocked" @click="emit('apply')">Apply</button>
     </div>
     <p v-if="plan.changes && blocked" class="mt-2 text-xs text-slate-600">
       <span v-if="errors.length" class="text-red-700">{{ errors.length === 1 ? 'One thing' : `${errors.length} things` }} to fix before applying: {{ errors[0] }}<template v-if="missing.length"> {{ missing.length === 1 ? 'One property still needs' : `${missing.length} properties still need` }} a value.</template></span>
-      <span v-else>{{ next }} Apply is available once every property has one.</span>
-      <button v-if="mappingProblemsOnly" type="button" class="link ml-1 text-xs" @click="emit('apply', true)">Apply anyway (playground only: to see the boundary stop it)</button>
-    </p>
+      <span v-else>{{ next }} Apply is available once every property has one.</span>    </p>
   </div>
 </template>

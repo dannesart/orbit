@@ -20,7 +20,7 @@ export function exampleFrom(recordText: string, input: DefinitionVersion): Examp
 
 // --- Problems, in the parts editor's words ---
 
-const typeWords: Record<string, string> = { string: 'text', number: 'a number', boolean: 'true or false', 'string[]': 'a list', invalid: 'something invalid' }
+const typeWords: Record<string, string> = { string: 'text', number: 'a number', boolean: 'yes or no', 'string[]': 'a list', invalid: 'something invalid' }
 
 /** A Mapping problem in plain words. Where it is comes from where it's shown, not from a path. */
 export function friendlyIssue(issue: MappingIssue): string {

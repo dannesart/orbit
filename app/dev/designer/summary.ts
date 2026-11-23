@@ -6,6 +6,7 @@ import type { Argument, Expression, MappingProperty } from '#shared/features/map
 
 /** A literal's words: whitespace is invisible, so it is named rather than quoted. */
 function literalWords(value: string | number | boolean): string {
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
   if (typeof value !== 'string') return String(value)
   if (value === '') return 'nothing'
   if (value === ' ') return 'a space'

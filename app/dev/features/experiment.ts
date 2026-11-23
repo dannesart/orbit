@@ -113,7 +113,7 @@ export const definitionLabel = (ref: DefinitionRef) => {
 export const shapeOf = (d: DefinitionVersion) => `{ ${d.fields.map((f) => `${f.name}: ${f.type}`).join(', ')} }`
 
 const kindWords: Record<Kind | ArgumentType | 'invalid', string> = {
-  string: 'a string', number: 'a number', boolean: 'a boolean', 'string[]': 'a list of strings', null: 'null',
+  string: 'text', number: 'a number', boolean: 'yes or no', 'string[]': 'a list of text', null: 'null',
   undefined: 'missing', array: 'an array', object: 'an object', other: 'something else', invalid: 'something invalid',
 }
 

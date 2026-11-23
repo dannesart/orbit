@@ -20,7 +20,7 @@ import {
 import RunResult from './RunResult.vue'
 import DesignerToolbar from './DesignerToolbar.vue'
 import LeaveDialog from './LeaveDialog.vue'
-import { workAtRisk } from './session'
+import { draftLoses, workAtRisk } from './session'
 import { lastWorkspace, shelfOf } from '../definitions/store'
 import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput } from '../definitions/designer'
 import FocusEditor from './FocusEditor.vue'
@@ -98,15 +98,36 @@ const review = computed(() => reviewDraft(draftProperties.value, A1, target.valu
 const output = computed(() => previewOutput(draftProperties.value, A1, target.value.definition, example.value))
 const plan = computed(() => planApply(config.value, draft.value))
 /**
- * The only place versions are made. Normally only a sound draft; "anyway" is the playground's
- * boundary test, and only for Mapping problems: an invalid structure is never a Definition.
+ * The only place versions are made, and only from a sound draft: complete, with no errors. (What
+ * the boundary does with a Mapping it would refuse is the list view's to show: /dev/features.)
  */
-function apply(anyway: boolean) {
-  if (!plan.value.changes || structure.value.length || (!anyway && review.value.problems.length)) return
+function apply() {
+  if (!plan.value.changes || structure.value.length || review.value.problems.length) return
   config.value = applyConfiguration(config.value, draft.value)
   setDraft({ ...draft.value, properties: draftFrom(config.value).properties }, false)
 }
-const discard = () => setDraft(draftFrom(config.value), false)
+
+// Discard and Start over reset the draft on purpose. When that would lose work someone wrote
+// (session.ts, draftLoses), they ask first, with the same dialog as leaving; otherwise they just
+// happen. Either way the draft's reset can be undone.
+interface Reset { readonly title: string; readonly intro: string; readonly confirm: string; readonly losing: readonly string[]; readonly act: () => void }
+const resetting = shallowRef<Reset | null>(null)
+function resetAfterAsking(reset: Reset) {
+  if (reset.losing.length) resetting.value = reset
+  else reset.act()
+}
+function confirmReset() {
+  const act = resetting.value?.act
+  resetting.value = null
+  act?.()
+}
+function discard() {
+  const to = draftFrom(config.value)
+  resetAfterAsking({
+    title: 'Discard your changes?', intro: 'The Transform goes back to what’s applied. Discarding forgets:', confirm: 'Discard',
+    losing: draftLoses(draft.value, to), act: () => setDraft(to, false),
+  })
+}
 
 function run() {
   const record = parsed.value
@@ -129,10 +150,18 @@ function run() {
 }
 
 function startOver() {
-  pinKey.value = 'a1'
-  recordText.value = JSON.stringify(INITIAL_DATA, null, 2)
-  consoleId.value = orbitConsole.id
-  setDraft({ ...draftFrom(initialConfiguration(offered)), local: draft.value.local }, false)
+  const to = { ...draftFrom(initialConfiguration(offered)), local: draft.value.local }
+  const record = recordText.value !== JSON.stringify(INITIAL_DATA, null, 2) || pinKey.value !== 'a1' ? ['Your edits to Record A'] : []
+  resetAfterAsking({
+    title: 'Start over?', intro: 'Record A, the Console and the Transform’s draft go back to how they started. Applied versions stay. Starting over forgets:', confirm: 'Start over',
+    losing: [...record, ...draftLoses(draft.value, to)],
+    act: () => {
+      pinKey.value = 'a1'
+      recordText.value = JSON.stringify(INITIAL_DATA, null, 2)
+      consoleId.value = orbitConsole.id
+      setDraft(to, false)
+    },
+  })
 }
 
 run()
@@ -493,6 +522,15 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
     </section>
 
     <LeaveDialog :losing="leaving ? atRisk : null" @stay="stay" @leave="leave" />
+    <LeaveDialog
+      :losing="resetting?.losing ?? null"
+      :title="resetting?.title"
+      :intro="resetting?.intro"
+      :confirm="resetting?.confirm"
+      stay="Keep editing"
+      @stay="resetting = null"
+      @leave="confirmReset"
+    />
   </div>
 </template>
 

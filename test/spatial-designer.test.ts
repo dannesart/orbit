@@ -25,7 +25,7 @@ describe('A Transform in plain words, without opening its editor', () => {
     expect(describeSource(text(''))).toBe('nothing')
     expect(describeSource(text('Dr.'))).toBe('“Dr.”')
     expect(describeSource({ kind: 'literal', value: 1815 })).toBe('1815')
-    expect(describeSource({ kind: 'literal', value: false })).toBe('false')
+    expect(describeSource({ kind: 'literal', value: false })).toBe('no')
   })
 
   it('keeps the grouping of nested calls readable', () => {

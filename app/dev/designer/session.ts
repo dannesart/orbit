@@ -2,9 +2,29 @@
 // versions included (Apply makes immutable versions for this session's runs, not saved ones), so
 // leaving loses whatever differs from how the playground started. Running, moving nodes and
 // opening panels aren't work: an untouched playground can be left without a question.
-import { sameDefinition } from '#shared/features/definitions'
+import { sameData, sameDefinition } from '#shared/features/definitions'
 import { INITIAL_MAPPING } from '../features/experiment'
-import { type Configuration, initialConfiguration, labelOf } from './config'
+import { type Configuration, type TransformDraft, initialConfiguration, labelOf } from './config'
+import { type DraftProperty, fromPiece } from './parts'
+
+const sameProperty = (a: DraftProperty, b: DraftProperty) => a.name === b.name && sameData(fromPiece(a.piece), fromPiece(b.piece))
+const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`)
+
+/**
+ * What resetting the draft to `to` (Discard, Start over) would lose that someone wrote: mappings
+ * not in `to`, mappings set aside when switching Definitions, and changes to the Transform's own
+ * output. Which Definition is selected isn't work. Empty when nothing would be lost.
+ */
+export function draftLoses(draft: TransformDraft, to: TransformDraft): string[] {
+  const kept = (p: DraftProperty) => to.properties.some((q) => sameProperty(p, q))
+  const written = draft.properties.filter((p) => !kept(p)).length
+  const aside = (draft.aside ?? []).filter((p) => !kept(p)).length
+  const at: string[] = []
+  if (written) at.push(`${count(written, 'mapping', 'mappings')} you haven’t applied`)
+  if (aside) at.push(`${count(aside, 'mapping', 'mappings')} set aside when you switched Definitions`)
+  if (draft.local.name !== to.local.name || !sameData(draft.local.fields, to.local.fields)) at.push('Changes to the Transform’s own output')
+  return at
+}
 
 export interface Setup {
   readonly pinKey: string

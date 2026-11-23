@@ -136,12 +136,13 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
       <p v-else-if="top" class="mt-1 text-xs text-slate-500">Fixed text: the same for every input.</p>
     </template>
 
-    <!-- A fixed number, or true or false (inside a group of text, the problem below says why it can't be) -->
+    <!-- A fixed number, or yes or no (inside a group of text, the problem below says why it can't be) -->
     <template v-else-if="piece.kind === 'literal'">
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span class="text-xs text-slate-500">Fixed value</span>
-        <ShownText :value="piece.value" />
-        <button type="button" data-main class="link text-xs" :aria-expanded="changing" :aria-label="`${label}: the fixed value ${piece.value}. Change`" @click="changing = !changing">Change</button>
+        <span v-if="typeof piece.value === 'boolean'" class="text-sm text-slate-800">{{ piece.value ? 'Yes' : 'No' }}</span>
+        <ShownText v-else :value="piece.value" />
+        <button type="button" data-main class="link text-xs" :aria-expanded="changing" :aria-label="`${label}: the fixed value ${typeof piece.value === 'boolean' ? (piece.value ? 'yes' : 'no') : piece.value}. Change`" @click="changing = !changing">Change</button>
       </div>
     </template>
 

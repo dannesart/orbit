@@ -79,7 +79,7 @@ const mappingOf = (name: string) => {
   const p = properties.value.find((x) => x.name === name)
   return p ? describeSource(fromPiece(p.piece)) : null
 }
-const typeWords: Record<FieldType, string> = { string: 'text', number: 'number', boolean: 'true or false' }
+const typeWords: Record<FieldType, string> = { string: 'text', number: 'number', boolean: 'yes or no' }
 const card = 'flex w-full cursor-pointer items-start gap-2.5 rounded-2xl p-3 text-left ring-1 transition'
 const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100'
 </script>
@@ -152,7 +152,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
                 <select :value="f.type" :class="control" :aria-label="`Type of ${f.name || 'this property'}`" @change="retype(i, ($event.target as HTMLSelectElement).value as FieldType)">
                   <option value="string">text</option>
                   <option value="number">number</option>
-                  <option value="boolean">true or false</option>
+                  <option value="boolean">yes or no</option>
                 </select>
               </label>
               <button type="button" class="link pb-2 text-sm" :aria-label="`Remove the property ${f.name || '(no name)'} and its mapping`" @click="removeField(i)">Remove</button>

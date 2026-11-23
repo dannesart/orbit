@@ -57,10 +57,10 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
           :class="[control, 'w-32 font-mono']"
           @input="emit('update:piece', { kind: 'literal', value: ($event.target as HTMLInputElement).valueAsNumber })"
         >
-        <div v-else class="flex gap-2" role="radiogroup" :aria-label="`${label}: true or false`">
+        <div v-else class="flex gap-2" role="radiogroup" :aria-label="`${label}: yes or no`">
           <label v-for="v in [true, false]" :key="String(v)" class="flex items-center gap-1.5 text-sm text-slate-800">
             <input type="radio" class="accent-accent-600" :name="`${label}-bool`" :checked="piece.value === v" @change="emit('update:piece', { kind: 'literal', value: v })">
-            {{ v }}
+            {{ v ? 'Yes' : 'No' }}
           </label>
         </div>
         <span class="text-xs text-slate-500">The same for every input.</span>

@@ -60,14 +60,14 @@ describe('Record A → Orbit.Console → Orbit.Transform → Orbit.Console', () 
     const steps = run(catalog('a1', { firstName: 'Ada' }))
     expect(outcomes(steps)).toEqual(['not_attempted', 'not invoked', 'not invoked'])
     expect(steps[0]!.observations).toEqual([])
-    expect(outcomeIssues(steps[0]!.evidence.outcome)).toEqual(['lastName is missing (it should be a string).'])
+    expect(outcomeIssues(steps[0]!.evidence.outcome)).toEqual(['lastName is missing (it should be text).'])
   })
 
   it('never hands invalid output to the next Feature', () => {
     const bad = reviseMapping(INITIAL_MAPPING, [{ name: 'fullName', source: { kind: 'literal', value: 1815 } }])
     const steps = run(catalog('a1', INITIAL_DATA, [INITIAL_MAPPING, bad]), 0, bad)
     expect(outcomes(steps)).toEqual(['succeeded', 'failed', 'not invoked'])
-    expect(outcomeIssues(steps[1]!.evidence.outcome)).toEqual(['fullName should be a string, not a number.'])
+    expect(outcomeIssues(steps[1]!.evidence.outcome)).toEqual(['fullName should be text, not a number.'])
   })
 
   it('holds against a Console that misbehaves: changing the value fails, handing on something else is stopped', () => {

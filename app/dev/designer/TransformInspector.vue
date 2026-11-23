@@ -30,7 +30,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   'update:draft': [TransformDraft]
-  apply: [anyway: boolean]
+  apply: []
   discard: []
   undo: []
   focus: [mode: 'mapping' | 'structure', property: string | null]
@@ -104,7 +104,7 @@ const tone = computed(() => {
     </div>
 
     <div class="border-t border-slate-100 px-5 pt-3 pb-4">
-      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :mapping-problems-only="!structure.length && review.problems.length > 0" :can-undo="canUndo" @apply="emit('apply', $event)" @discard="emit('discard')" @undo="emit('undo')" />
+      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
     </div>
   </div>
 </template>

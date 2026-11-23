@@ -35,7 +35,7 @@ const example = (index: number) => {
 }
 /** The first thing wrong with a property, in words: its own problem, or one inside its value. */
 const problemOf = (index: number, own: readonly string[]) => own[0] ?? (index >= 0 && props.review.issues[index]?.[0] ? friendlyIssue(props.review.issues[index]![0]!) : '')
-const typeWords: Record<FieldType, string> = { string: 'text', number: 'number', boolean: 'true or false' }
+const typeWords: Record<FieldType, string> = { string: 'text', number: 'number', boolean: 'yes or no' }
 const status = {
   not_set: { icon: '○', label: 'Not mapped', tone: 'text-amber-600' },
   problem: { icon: '!', label: 'Needs attention', tone: 'text-red-600' },
@@ -100,12 +100,12 @@ const control = 'min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-1
             <select
               v-else-if="f.expected === 'boolean' && pieceAt(f.index)?.kind === 'literal'"
               :value="String((pieceAt(f.index) as { value: boolean }).value)"
-              :aria-label="`${f.name}: true or false`"
+              :aria-label="`${f.name}: yes or no`"
               :class="control"
               @change="set(f.name, f.index, pieceOf({ kind: 'fixed', value: ($event.target as HTMLSelectElement).value === 'true' }))"
             >
-              <option value="true">true</option>
-              <option value="false">false</option>
+              <option value="true">Yes</option>
+              <option value="false">No</option>
             </select>
           </template>
           <ShownText v-if="example(f.index) !== null && quickOf(pieceAt(f.index)).kind === 'field'" class="ml-auto" :value="example(f.index)!" />

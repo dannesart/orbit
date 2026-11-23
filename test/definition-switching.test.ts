@@ -1,6 +1,8 @@
 // Switching the Transform's output Definition (Related to #38, #41): the draft is reconciled
 // against the chosen Definition, mappings that don't fit are set aside (never applied, never
 // lost), nothing is made up, and versions and evidence already made stay exactly as they were.
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { type Data, type DefinitionVersion, type Field, defineVersion, refOf } from '../shared/features/definitions'
 import type { Expression } from '../shared/features/mappings'
@@ -13,6 +15,8 @@ import {
 import { type Piece, fromDraft, toPiece } from '../app/dev/designer/parts'
 import { reviewDraft } from '../app/dev/designer/preview'
 import { asideReason, reconcile } from '../app/dev/designer/switching'
+import { draftLoses } from '../app/dev/designer/session'
+import { describeSource } from '../app/dev/designer/summary'
 
 const prop = (name: string): Expression => ({ kind: 'property', name })
 const piece = (e: Expression): Piece => toPiece(e)
@@ -145,5 +149,48 @@ describe('Incomplete is not wrong', () => {
     const wrong = reviewDraft([{ name: 'fullName', source: { kind: 'literal', value: 7 } }], A1, CONTACT, 'Contact · v1')
     expect(wrong.missing).toEqual(['email', 'subscribed'])
     expect(wrong.errors).toEqual(['fullName: Contact · v1 needs text here, but this makes a number.'])
+  })
+})
+
+describe('Resetting the draft says what it would lose, and only then asks', () => {
+  const config = initialConfiguration(offered)
+  const start = draftFrom(config)
+
+  it('loses nothing when only the chosen Definition changed', () => {
+    expect(draftLoses(choose(config, start, CONTACT), draftFrom(config))).toEqual([])
+    expect(draftLoses(start, draftFrom(config))).toEqual([])
+  })
+
+  it('names unapplied mappings, set-aside mappings and changes to the own output', () => {
+    let draft = choose(config, start, CONTACT)
+    draft = { ...draft, properties: [...draft.properties, { name: 'email', piece: piece(prop('lastName')) }] }
+    expect(draftLoses(draft, draftFrom(config))).toEqual(['1 mapping you haven’t applied'])
+    // Switched on to Badge: the applied fullName mapping and the new email mapping wait aside.
+    const badge = choose(config, draft, BADGE)
+    expect(draftLoses(badge, draftFrom(config))).toEqual(['1 mapping set aside when you switched Definitions'])
+    const local: TransformDraft = { ...start, use: 'local', local: { ...start.local, name: 'Badge text' } }
+    expect(draftLoses(local, draftFrom(config))).toEqual(['Changes to the Transform’s own output'])
+  })
+})
+
+describe('The calm editor', () => {
+  const designer = join(__dirname, '../app/dev/designer')
+  const read = (file: string) => readFileSync(join(designer, file), 'utf8')
+
+  it('has no way to apply a draft that is incomplete or wrong', () => {
+    expect(read('ApplyBar.vue')).not.toMatch(/anyway/i)
+    expect(read('SpatialDesigner.vue')).toMatch(/function apply\(\) \{\s*if \(!plan\.value\.changes \|\| structure\.value\.length \|\| review\.value\.problems\.length\) return/)
+  })
+
+  it('calls a yes-or-no property the same everywhere people see it', () => {
+    const surfaces = [designer, join(__dirname, '../app/dev/definitions')]
+    for (const dir of surfaces) {
+      for (const file of readdirSync(dir).filter((f) => /\.(vue|ts)$/.test(f) && f !== 'parts.ts')) {
+        expect(readFileSync(join(dir, file), 'utf8'), file).not.toMatch(/true or false|a boolean/i)
+      }
+    }
+    expect(describeSource({ kind: 'literal', value: true })).toBe('yes')
+    expect(reviewDraft([{ name: 'subscribed', source: { kind: 'literal', value: 'yes' } }], A1, define('def-flag', 'Flag', [{ name: 'subscribed', type: 'boolean' }]), 'Flag · v1').errors)
+      .toEqual(['subscribed: Flag · v1 needs yes or no here, but this makes text.'])
   })
 })
