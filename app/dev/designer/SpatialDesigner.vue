@@ -30,6 +30,7 @@ import { EXECUTION_ORDER, type StepId, fixedEdges, initialNodes, resetPositions,
 import { summarize } from './summary'
 import { fromDraft } from './parts'
 import { exampleFrom, previewOutput, reviewDraft } from './preview'
+import { reconcile } from './switching'
 import {
   type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findMapping,
   initialConfiguration, labelOf, outputOf, planApply, structureProblems,
@@ -67,7 +68,12 @@ const stale = computed(() => snapshot.value !== ranWith.value)
 
 // --- The draft: edited freely, previewed, and only applied on purpose ---
 // "Use in the Designer" asks for one exact version: it starts as the draft's output, unapplied.
-const draft = shallowRef<TransformDraft>(requested ? { ...draftFrom(config.value), use: 'catalogue', catalogue: requested } : draftFrom(config.value))
+const draft = shallowRef<TransformDraft>(requested ? requestedDraft(requested) : draftFrom(config.value))
+/** The requested version as the draft's output, with only the mappings that fit it (switching.ts). */
+function requestedDraft(output: DefinitionRef): TransformDraft {
+  const next: TransformDraft = { ...draftFrom(config.value), use: 'catalogue', catalogue: output }
+  return reconcile(next, A1, outputOf(config.value, next).definition)
+}
 const history = shallowRef<TransformDraft[]>([])
 let lastEdit = 0
 /** Every change to the draft can be undone. Typing in one box counts as one change. */

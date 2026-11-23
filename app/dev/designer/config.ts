@@ -45,6 +45,11 @@ export interface TransformDraft {
   readonly catalogue: DefinitionRef
   readonly local: LocalDraft
   readonly properties: readonly DraftProperty[]
+  /**
+   * Mappings set aside when another output Definition was chosen (switching.ts): kept exactly, to
+   * come back when a Definition they fit is chosen again. Never previewed, validated or applied.
+   */
+  readonly aside?: readonly DraftProperty[]
 }
 
 /**

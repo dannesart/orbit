@@ -4,8 +4,9 @@
 // removed here. Changing it changes a contract (Apply freezes a new Definition version and gives
 // it a new Mapping), so it lives apart from mapping values and says so.
 import type { DefinitionRef, DefinitionVersion, FieldType } from '#shared/features/definitions'
-import { DEFINITIONS, WORKSPACE, definitionLabel, shapeOf } from '../features/experiment'
-import { type Configuration, type TransformDraft, catalogue, labelOf } from './config'
+import { A1, DEFINITIONS, WORKSPACE, definitionLabel, shapeOf } from '../features/experiment'
+import { type Configuration, type TransformDraft, catalogue, labelOf, outputOf } from './config'
+import { asideReason, reconcile } from './switching'
 import { DESIGNER_WORKSPACE, definitionsPath } from '../definitions/designer'
 import { fromPiece, removeAt, replaceAt } from './parts'
 import type { DraftReview } from './preview'
@@ -22,10 +23,18 @@ const emit = defineEmits<{ 'update:draft': [TransformDraft] }>()
 const update = (next: Partial<TransformDraft>) => emit('update:draft', { ...props.draft, ...next })
 
 const keyOf = (ref: DefinitionRef) => `${ref.id}@${ref.version}`
+/** Choosing another output: its properties at once, with mappings that fit it and nothing else. */
+function switchTo(next: Partial<TransformDraft>) {
+  const draft = { ...props.draft, ...next }
+  emit('update:draft', reconcile(draft, A1, outputOf(props.config, draft).definition))
+}
 function setCatalogue(key: string) {
   const d = catalogue(props.config.offered).find((x) => keyOf(x) === key)
-  if (d) update({ catalogue: { id: d.id, version: d.version } })
+  if (d) switchTo({ catalogue: { id: d.id, version: d.version } })
 }
+const aside = computed(() => (props.draft.aside ?? []).map((p) => ({
+  name: p.name || 'Unnamed', source: describeSource(fromPiece(p.piece)), reason: asideReason(p, A1, props.target.definition, props.target.label),
+})))
 // What can be chosen, by where it comes from (Experiment #7). Only what this workspace may use:
 // another workspace's Definitions aren't listed at all, not even disabled.
 const workspace = inject(DESIGNER_WORKSPACE, null)
@@ -81,11 +90,11 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       <h3 id="create-heading" class="text-sm font-semibold text-slate-900">What should this Transform create?</h3>
       <div class="mt-2 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-labelledby="create-heading">
         <label :class="[card, draft.use === 'catalogue' ? 'bg-accent-50/70 ring-accent-300' : 'bg-white ring-slate-200 hover:bg-slate-50']">
-          <input type="radio" name="output-use" class="mt-0.5 accent-accent-600" :checked="draft.use === 'catalogue'" @change="update({ use: 'catalogue' })">
+          <input type="radio" name="output-use" class="mt-0.5 accent-accent-600" :checked="draft.use === 'catalogue'" @change="switchTo({ use: 'catalogue' })">
           <span><span class="block text-sm font-medium text-slate-900">An existing Definition</span><span class="block text-xs text-slate-500">Shared, used exactly as it is</span></span>
         </label>
         <label :class="[card, draft.use === 'local' ? 'bg-accent-50/70 ring-accent-300' : 'bg-white ring-slate-200 hover:bg-slate-50']">
-          <input type="radio" name="output-use" class="mt-0.5 accent-accent-600" :checked="draft.use === 'local'" @change="update({ use: 'local' })">
+          <input type="radio" name="output-use" class="mt-0.5 accent-accent-600" :checked="draft.use === 'local'" @change="switchTo({ use: 'local' })">
           <span><span class="block text-sm font-medium text-slate-900">Its own output</span><span class="block text-xs text-slate-500">Shaped here, only for this Transform</span></span>
         </label>
       </div>
@@ -183,6 +192,20 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         </li>
       </ul>
     </section>
+    <details v-if="aside.length" class="mt-4 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200/80">
+      <summary class="cursor-pointer text-sm text-slate-700">
+        {{ aside.length === 1 ? 'One earlier mapping is' : `${aside.length} earlier mappings are` }} set aside
+      </summary>
+      <p class="mt-1 text-xs text-slate-500">
+        They don’t fit {{ target.label }}, so they aren’t part of this draft and won’t be applied. They’re kept as they are and come back if you choose a Definition they fit again.
+      </p>
+      <ul class="mt-2 flex flex-col gap-2">
+        <li v-for="(x, i) in aside" :key="i" class="text-sm text-slate-700">
+          <span class="font-mono font-semibold">{{ x.name }}</span> ← {{ x.source }}
+          <span class="block text-xs text-slate-500">{{ x.reason }}</span>
+        </li>
+      </ul>
+    </details>
     <p class="mt-4 font-mono text-xs text-slate-400">{{ shapeOf(target.definition) }}</p>
   </div>
 </template>

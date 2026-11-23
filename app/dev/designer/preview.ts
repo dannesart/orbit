@@ -71,6 +71,10 @@ export interface DraftReview {
   readonly issues: readonly (readonly MappingIssue[])[]
   /** Everything that keeps the draft from being a sound Mapping for the target, in words. */
   readonly problems: readonly string[]
+  /** The target's properties nothing makes yet: incomplete, not wrong. */
+  readonly missing: readonly string[]
+  /** The problems that are actual errors: everything except what's still missing. */
+  readonly errors: readonly string[]
 }
 
 /** The draft's properties checked against the input Definition and the target Definition. */
@@ -105,7 +109,9 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
     problems.push(`${p.name || 'An unnamed value'}: ${reason}`)
   })
 
-  return { fields, extras, issues, problems }
+  const missing = fields.filter((f) => f.state === 'not_set').map((f) => f.name)
+  const unset = new Set(missing.map((name) => `${name} isn’t set yet. ${targetLabel} needs it.`))
+  return { fields, extras, issues, problems, missing, errors: problems.filter((p) => !unset.has(p)) }
 }
 
 export interface OutputPreview {

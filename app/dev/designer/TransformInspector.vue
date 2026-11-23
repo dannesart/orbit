@@ -104,7 +104,7 @@ const tone = computed(() => {
     </div>
 
     <div class="border-t border-slate-100 px-5 pt-3 pb-4">
-      <ApplyBar :plan="plan" :config="config" :draft="draft" :problems="problems" :mapping-problems-only="!structure.length && review.problems.length > 0" :can-undo="canUndo" @apply="emit('apply', $event)" @discard="emit('discard')" @undo="emit('undo')" />
+      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :mapping-problems-only="!structure.length && review.problems.length > 0" :can-undo="canUndo" @apply="emit('apply', $event)" @discard="emit('discard')" @undo="emit('undo')" />
     </div>
   </div>
 </template>
