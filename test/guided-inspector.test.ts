@@ -38,10 +38,18 @@ describe('Structure → Mapping', () => {
 })
 
 describe('The inspector: orientation, not a second editor', () => {
-  it('opens the same editor from a compact pencil by the title, named Edit Transform', () => {
+  it('offers Edit output in Output properties, opening the full editor, with focus returning there', () => {
+    const inspector = source('TransformInspector.vue')
+    const section = inspector.slice(inspector.indexOf('<section aria-labelledby="quick-heading"'), inspector.indexOf('</section>', inspector.indexOf('quick-heading')))
+    // In the section's heading row, with visible text (its accessible name) and a pencil.
+    expect(section).toMatch(/Output properties<\/h3>[\s\S]*?<button[^>]*data-open-editor[^>]*@click="emit\('focus', 'structure', null\)"\s*>\s*<svg aria-hidden="true"[\s\S]*?<\/svg>\s*Edit output\s*<\/button>[\s\S]*?<QuickMappings/)
+    // Exactly one editor action: nothing left in the inspector's header beside Close.
     const page = source('SpatialDesigner.vue')
-    expect(page).toMatch(/v-if="selectedId === 'transform'"\s*type="button"\s*data-open-editor\s*aria-label="Edit Transform"\s*title="Edit Transform"[\s\S]*?@click="openFocus\('mapping', null\)"/)
-    expect(source('TransformInspector.vue')).not.toMatch(/Open the editor|data-open-editor/)
+    expect(page).not.toMatch(/Edit Transform/)
+    expect((page + inspector).match(/data-open-editor(?!\])/g)).toHaveLength(1)
+    expect(page).toMatch(/function closeFocus\(\) \{\s*focus\.value = null\s*nextTick\(\(\) => inspector\.value\?\.querySelector<HTMLElement>\('\[data-open-editor\]'\)\?\.focus\(\)\)/)
+    // A property's own mapping is still edited right there, or composed in Mapping at that property.
+    expect(section).toMatch(/<QuickMappings [^>]*@update:draft="emit\('update:draft', \$event\)" @edit="emit\('focus', 'mapping', \$event\)" \/>/)
   })
 
   it('shows the latest run in one row, every outcome, with its evidence a click away', () => {
@@ -63,7 +71,9 @@ describe('The inspector: orientation, not a second editor', () => {
   })
 
   it('never presents the current preview as a run', () => {
-    expect(source('PreviewObject.vue')).toMatch(/>Current preview · not executed</)
-    expect(source('TransformInspector.vue')).not.toMatch(/Preview ·/)
+    const preview = source('PreviewObject.vue')
+    expect(preview).toMatch(/<h3 class="text-sm font-semibold text-slate-900">Preview<\/h3>\s*<p class="text-xs text-slate-500">Not executed · this draft, with Record A’s data<\/p>/)
+    expect(preview).not.toMatch(/uppercase|Latest run/)
+    expect(source('TransformInspector.vue')).not.toMatch(/>Preview</)
   })
 })

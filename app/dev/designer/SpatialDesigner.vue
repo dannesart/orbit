@@ -422,18 +422,6 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           <h2 class="text-base font-semibold text-slate-900">{{ panelTitle.title }}</h2>
           <p class="mt-0.5 text-xs text-slate-500">{{ descriptions[selectedId] }}</p>
         </div>
-        <!-- The Transform's editor, beside its title: compact, and where focus returns on closing it -->
-        <button
-          v-if="selectedId === 'transform'"
-          type="button"
-          data-open-editor
-          aria-label="Edit Transform"
-          title="Edit Transform"
-          class="grid size-10 shrink-0 place-items-center rounded-full text-accent-600 transition hover:bg-accent-50 hover:text-accent-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
-          @click="openFocus('mapping', null)"
-        >
-          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="size-[18px]"><path d="M13.6 3.4a1.9 1.9 0 0 1 2.7 2.7L7 15.4l-3.5.9.9-3.5 9.2-9.4Z" /><path d="m12.2 4.8 2.9 2.9" /></svg>
-        </button>
         <button type="button" class="grid size-10 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" :aria-label="`Close the ${panelTitle.title} inspector`" @click="closeInspector">✕</button>
       </div>
 

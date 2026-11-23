@@ -2,7 +2,7 @@
 // The Transform in the inspector: enough to understand it and make simple changes. What it reads
 // and makes, how each output property gets its value (simple ones chosen right here), the preview,
 // the latest run, and Apply. Composing values and changing the structure happen in the focused
-// editor, opened with the pencil beside the title (SpatialDesigner.vue).
+// editor, opened with “Edit output” in Output properties (or a property’s Compose).
 import type { DefinitionVersion } from '#shared/features/definitions'
 import { type Step, definitionLabel } from '../features/experiment'
 import ApplyBar from './ApplyBar.vue'
@@ -76,9 +76,21 @@ const state = computed(() => runState(props.step))
 
         <!-- Output properties: simple mappings right here -->
         <section aria-labelledby="quick-heading" class="mt-5">
-          <div class="mb-2 flex items-baseline gap-2">
-            <h3 id="quick-heading" class="mr-auto text-sm font-semibold text-slate-900">Output properties</h3>
+          <div class="mb-2 flex items-center gap-2">
+            <h3 id="quick-heading" class="text-sm font-semibold text-slate-900">Output properties</h3>
             <span class="text-xs text-slate-500">{{ mapped }} of {{ review.fields.length }} mapped</span>
+            <!-- The full editor, for the output as a whole (a property's own mapping: Compose, below).
+                 Focus returns here when the editor closes. -->
+            <button
+              type="button"
+              data-open-editor
+              title="Change what the output contains and how its values are made"
+              class="ml-auto flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-accent-700 ring-1 ring-accent-200 transition hover:bg-accent-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+              @click="emit('focus', 'structure', null)"
+            >
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="size-3.5"><path d="M13.6 3.4a1.9 1.9 0 0 1 2.7 2.7L7 15.4l-3.5.9.9-3.5 9.2-9.4Z" /><path d="m12.2 4.8 2.9 2.9" /></svg>
+              Edit output
+            </button>
           </div>
           <QuickMappings :draft="draft" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" @edit="emit('focus', 'mapping', $event)" />
           <p v-if="review.extras.length" class="mt-2 text-xs text-amber-800">
