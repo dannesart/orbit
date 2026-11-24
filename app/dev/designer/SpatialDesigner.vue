@@ -244,13 +244,19 @@ const views = computed<Record<StepId, StepView>>(() => {
 // the selected step is fitted above the sheet.
 const focus = ref<{ mode: 'mapping' | 'structure'; property: string | null } | null>(null)
 const inspector = ref<HTMLElement>()
+/** The property row the editor was opened from (null: the Output pencil); focus returns there. */
+let origin: string | null = null
 function openFocus(mode: 'mapping' | 'structure', property: string | null) {
+  origin = property
   focus.value = { mode, property }
   nextTick(() => reveal('transform'))
 }
 function closeFocus() {
   focus.value = null
-  nextTick(() => inspector.value?.querySelector<HTMLElement>('[data-open-editor]')?.focus())
+  nextTick(() => {
+    const row = origin === null ? null : inspector.value?.querySelector<HTMLElement>(`[data-property-row="${CSS.escape(origin)}"]`)
+    ;(row ?? inspector.value?.querySelector<HTMLElement>('[data-open-editor]'))?.focus()
+  })
 }
 function closeInspector() {
   const id = selectedId.value
@@ -443,7 +449,6 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :stale="stale"
         :run-number="runNumber"
         :runs="runs"
-        @update:draft="setDraft"
         @apply="apply"
         @discard="discard"
         @undo="undo"

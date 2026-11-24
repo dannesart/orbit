@@ -1,14 +1,18 @@
-// Guided flow and compact inspector (Related to #41): Structure offers "Continue to Mapping" only
-// when there is mapping work, both tabs stay free, the inspector shows the latest run in one row
-// with its evidence a click away, the editor opens from a pencil by the title, and the current
-// preview is never mistaken for a run.
+// Guided flow and the minimal inspector (Related to #41): Structure offers "Continue to Mapping"
+// only when there is mapping work, both tabs stay free, the latest run sits behind one status
+// button, every output property is one row that opens Mapping at it (nothing is edited in the
+// inspector), and the current preview is never mistaken for a run.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { type Data, deepFreeze } from '../shared/features/definitions'
+import { type Data, deepFreeze, defineVersion } from '../shared/features/definitions'
 import { orbitConsole } from '../shared/features/features'
+import type { Expression } from '../shared/features/mappings'
 import { A1, B1, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
+import { type TransformDraft, draftFrom, initialConfiguration } from '../app/dev/designer/config'
+import { fromDraft, toPiece } from '../app/dev/designer/parts'
 import { mappingWork, reviewDraft } from '../app/dev/designer/preview'
+import { propertyRows } from '../app/dev/designer/rows'
 import { runState } from '../app/dev/designer/summary'
 
 const designer = join(import.meta.dirname, '../app/dev/designer')
@@ -91,16 +95,78 @@ describe('The minimal inspector: a tool, not a report', () => {
     expect(section).toMatch(/>Output<\/h3>\s*<span[^>]*>\{\{ mapped \}\}\/\{\{ review\.fields\.length \}\}<\/span>/)
     expect(section).toMatch(/<button\s*type="button"\s*data-open-editor\s*aria-label="Edit output"\s*title="Edit output"[\s\S]*?@click="emit\('focus', 'structure', null\)"\s*>\s*<DesignerIcon name="pencil"/)
     expect((source('SpatialDesigner.vue') + inspector).match(/data-open-editor(?!\])/g)).toHaveLength(1)
-    expect(source('SpatialDesigner.vue')).toMatch(/function closeFocus\(\) \{\s*focus\.value = null\s*nextTick\(\(\) => inspector\.value\?\.querySelector<HTMLElement>\('\[data-open-editor\]'\)\?\.focus\(\)\)/)
   })
 
-  it('keeps property rows: a composed row opens Mapping at it, a simple one keeps its inline controls and a chevron', () => {
-    const rows = source('QuickMappings.vue')
-    expect(rows).toMatch(/v-if="f\.name && quickOf\(pieceAt\(f\.index\)\)\.kind === 'composed'"\s*type="button"\s*data-compose-row[\s\S]*?:aria-label="`\$\{f\.name\}, \$\{typeWords\[f\.expected\]\}, \$\{status\[f\.state\]\.label\}: \$\{describeSource\(fromPiece\(pieceAt\(f\.index\)!\)\)\}\. Edit in Mapping`"\s*@click="emit\('edit', f\.name\)"/)
-    expect(rows).toMatch(/:aria-label="`Compose \$\{f\.name\} in Mapping`"[\s\S]*?@click="emit\('edit', f\.name\)"\s*>\s*<DesignerIcon name="chevron"/)
-    expect(rows).toMatch(/:aria-label="`\$\{f\.name\}: where its value comes from`"/)
-    expect(rows).not.toMatch(/>\s*Compose\s*</)
-    expect(inspector).toMatch(/<QuickMappings [^>]*@update:draft="emit\('update:draft', \$event\)" @edit="emit\('focus', 'mapping', \$event\)" \/>/)
+  it('lists every property the same way: one row opening the editor, with nothing to edit inline', () => {
+    const rows = source('PropertyRows.vue')
+    // One kind of row whatever makes the value: no inline controls, and no per-property value
+    // (the Preview shows the values).
+    expect(rows.match(/<button/g)).toHaveLength(1)
+    expect(rows).toMatch(/<button\s*type="button"\s*:data-property-row="r\.name"[\s\S]*?:aria-label="r\.label"\s*@click="emit\('open', r\.opens\)"\s*>/)
+    expect(rows).toMatch(/\{\{ r\.name \|\| '\(no name\)' \}\}<\/span>\s*<span[^>]*>\{\{ r\.type \}\}<\/span>[\s\S]*?\{\{ r\.summary \}\}[\s\S]*?\{\{ r\.problem \}\}[\s\S]*?<DesignerIcon name="chevron"/)
+    expect(rows).not.toMatch(/<select|<input|ShownText|update:draft/)
+    expect(inspector).toMatch(/<PropertyRows :draft="draft" :review="review" @open="emit\('focus', \$event\.mode, \$event\.property\)" \/>/)
+    expect(inspector).not.toMatch(/'update:draft'/)
+    expect(source('SpatialDesigner.vue').match(/<TransformInspector[\s\S]*?\/>/)![0]).not.toMatch(/@update:draft/)
+  })
+
+  it('describes a field, fixed values, a composition, a missing value and errors truthfully; each opens its own property', () => {
+    const target = defineVersion({ id: 'def-card', version: 1, name: 'Card', workspaceId: WORKSPACE, fields: [
+      { name: 'first', type: 'string' }, { name: 'code', type: 'string' }, { name: 'active', type: 'boolean' }, { name: 'count', type: 'number' },
+      { name: 'fullName', type: 'string' }, { name: 'email', type: 'string' }, { name: 'middle', type: 'string' }, { name: 'size', type: 'number' },
+    ] })
+    const field = (name: string): Expression => ({ kind: 'property', name })
+    const fullName: Expression = { kind: 'call', fn: 'join', args: [{ kind: 'list', items: [field('firstName'), { kind: 'literal', value: ' ' }, field('lastName')] }, { kind: 'literal', value: '' }] }
+    const sources: [string, Expression][] = [
+      ['first', field('firstName')],
+      ['code', { kind: 'literal', value: 'AL' }],
+      ['active', { kind: 'literal', value: true }],
+      ['count', { kind: 'literal', value: 3 }],
+      ['fullName', fullName],
+      ['middle', field('middleName')],
+      ['size', field('firstName')],
+    ]
+    const draft: TransformDraft = { ...draftFrom(initialConfiguration()), properties: sources.map(([name, e]) => ({ name, piece: toPiece(e) })) }
+    const rows = propertyRows(draft, reviewDraft(fromDraft(draft.properties), A1, target, 'Card'))
+    const by = (name: string) => rows.find((r) => r.name === name)!
+
+    expect(rows.map((r) => [r.name, r.type, r.state, r.summary])).toEqual([
+      ['first', 'text', 'set', 'firstName'],
+      ['code', 'text', 'set', '“AL”'],
+      ['active', 'yes or no', 'set', 'yes'],
+      ['count', 'number', 'set', '3'],
+      ['fullName', 'text', 'set', 'firstName + a space + lastName'],
+      ['email', 'text', 'not_set', 'Not mapped'],
+      ['middle', 'text', 'problem', 'middleName'],
+      ['size', 'number', 'problem', 'firstName'],
+    ])
+    // Every kind opens Mapping at exactly its own property.
+    for (const r of rows) expect(r.opens).toEqual({ mode: 'mapping', property: r.name })
+    // A missing value and an actual error stay identifiable: in view, and in the row's name.
+    expect(by('email')).toMatchObject({ problem: '', label: 'email, text, Not mapped. Edit in Mapping' })
+    expect(by('middle').problem).toMatch(/middleName/)
+    expect(by('size').problem).toBe('Card needs a number here, but this makes text.')
+    expect(by('size').label).toBe('size, number, Needs attention: firstName. Card needs a number here, but this makes text. Edit in Mapping')
+    expect(by('fullName').label).toBe('fullName, text, Mapped: firstName + a space + lastName. Edit in Mapping')
+    for (const r of rows.filter((x) => x.state !== 'problem')) expect(r.problem).toBe('')
+    // A property without a name yet (an output being drafted) can only be named, in Structure.
+    const unnamed = { ...target, fields: [{ name: '', type: 'string' as const }] }
+    const [row] = propertyRows(draft, reviewDraft([], A1, unnamed, 'Unnamed'))
+    expect(row!.opens).toEqual({ mode: 'structure', property: null })
+    expect(row!.label).toBe('(no name), text, Not mapped. Name it in Structure')
+  })
+
+  it('returns focus to the row the editor was opened from, or else to Edit output', () => {
+    const page = source('SpatialDesigner.vue')
+    expect(page).toMatch(/function openFocus\(mode: 'mapping' \| 'structure', property: string \| null\) \{\s*origin = property/)
+    expect(page).toMatch(/const row = origin === null \? null : inspector\.value\?\.querySelector<HTMLElement>\(`\[data-property-row="\$\{CSS\.escape\(origin\)\}"\]`\)\s*;\(row \?\? inspector\.value\?\.querySelector<HTMLElement>\('\[data-open-editor\]'\)\)\?\.focus\(\)/)
+  })
+
+  it('keeps choosing a field and typing a fixed value in the full Mapping editor', () => {
+    const editors = ['ScalarEditor.vue', 'PieceEditor.vue', 'ValuePicker.vue'].map(source).join('\n')
+    expect(editors).toMatch(/<select/)
+    expect(editors).toMatch(/<input/)
+    expect(editors).toMatch(/role="radiogroup" :aria-label="`\$\{label\}: yes or no`"/)
   })
 
   it('heads the preview “Preview · Not executed”, says the rest on demand, and keeps a real mismatch in view', () => {

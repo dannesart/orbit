@@ -1,15 +1,15 @@
 <script setup lang="ts">
 // The Transform in the inspector: a tool, not a report. Its header (number, title, applied Mapping
 // version, the latest run's status, Close), what it reads and makes, its output's properties
-// (simple values chosen right here), the preview, and Apply. More appears on demand: the run's
-// details and evidence from the status button, the full editor from the Output pencil (or a
-// composed property's row, at that property).
+// (each row opens Mapping at that property; nothing is edited here), the preview, and Apply. More
+// appears on demand: the run's details and evidence from the status button, the full editor at
+// Structure from the Output pencil.
 import type { DefinitionRef, DefinitionVersion } from '#shared/features/definitions'
 import { type Step, definitionLabel } from '../features/experiment'
 import ApplyBar from './ApplyBar.vue'
 import DesignerIcon from './DesignerIcon.vue'
 import PreviewObject from './PreviewObject.vue'
-import QuickMappings from './QuickMappings.vue'
+import PropertyRows from './PropertyRows.vue'
 import RunHistory from './RunHistory.vue'
 import RunStatus from './RunStatus.vue'
 import { type Configuration, type Plan, type RunRecord, type TransformDraft, labelOf } from './config'
@@ -33,7 +33,6 @@ const props = defineProps<{
   runs: readonly RunRecord[]
 }>()
 const emit = defineEmits<{
-  'update:draft': [TransformDraft]
   apply: []
   discard: []
   undo: []
@@ -97,7 +96,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
               <DesignerIcon name="pencil" class="size-4" />
             </button>
           </div>
-          <QuickMappings :draft="draft" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" @edit="emit('focus', 'mapping', $event)" />
+          <PropertyRows :draft="draft" :review="review" @open="emit('focus', $event.mode, $event.property)" />
           <p v-if="review.extras.length" class="mt-2 text-xs text-amber-800">
             {{ review.extras.length === 1 ? 'One mapping has' : `${review.extras.length} mappings have` }} no property to fill.
             <button type="button" class="link text-xs" @click="emit('focus', 'structure', null)">Review</button>
