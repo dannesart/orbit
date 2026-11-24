@@ -5,17 +5,22 @@
 // inspector for understanding and simple changes, and a focused editor with room to create.
 //
 // Development and Deploy Previews only (registered by nuxt.config.ts, like /dev/features). It runs
-// the same in-memory experiment as the list playground: same fixtures, same runExperiment, same
+// the same in-memory experiment as the list playground: same fixtures, same boundary (invoke), same
 // editors. Nothing is fetched, saved or logged, and the layout isn't kept either.
 //
-// Execution order comes from graph.ts alone. Positions are only where nodes are drawn.
-import { Background, ControlButton, Controls, Panel, VueFlow, type Node, type Padding, type VueFlowInstance } from '@xyflow/vue'
+// Experiment #8: the arrows mean something. Connections (flow.ts) decide which steps run and in
+// what order; they're made, moved and removed on the canvas, and checked against the Features'
+// own contracts. Positions are only where nodes are drawn.
+import {
+  Background, type Connection as FlowConnection, type ConnectEndEvent, ControlButton, Controls, type EdgeReconnectEndEvent,
+  type EdgeChangeset, type EdgeReconnectEvent, Panel, VueFlow, type Node, type Padding, type VueFlowInstance,
+} from '@xyflow/vue'
 import '@xyflow/vue/dist/style.css'
 import type { Data, DefinitionRef } from '#shared/features/definitions'
 import { orbitConsole } from '#shared/features/features'
 import {
   A1, CONSOLES, DEFINITIONS, INITIAL_DATA, PINS, RECORD_ID, WORKSPACE, type Step,
-  definitionLabel, outcomeLabel, parseRecordData, runExperiment, shapeOf,
+  definitionLabel, outcomeLabel, parseRecordData, shapeOf,
 } from '../features/experiment'
 import RunResult from './RunResult.vue'
 import DesignerToolbar from './DesignerToolbar.vue'
@@ -26,7 +31,11 @@ import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOut
 import FocusEditor from './FocusEditor.vue'
 import TransformInspector from './TransformInspector.vue'
 import StepNode, { type StepView } from './StepNode.vue'
-import { EXECUTION_ORDER, type StepId, fixedEdges, initialNodes, resetPositions, stepBadge, stepTitle } from './graph'
+import { drawEdges, initialNodes, nodeLabel, resetPositions } from './graph'
+import {
+  type Connection, type Contracts, type FlowRun, INITIAL_CONNECTIONS, type StepId, checkConnection, connectionKey,
+  connectionProblems, flowOutcome, pathOf, runFlow, stepBadge, stepTitle,
+} from './flow'
 import { summarize } from './summary'
 import { fromDraft } from './parts'
 import { exampleFrom, previewOutput, reviewDraft } from './preview'
@@ -53,7 +62,9 @@ const offered = offeredIn(workspace, workspace ? shelfOf(workspace.id).made : []
 const runsIn = workspace?.id ?? WORKSPACE
 const requested = requestedOutput(useRoute().query.output, offered)
 const config = shallowRef<Configuration>(initialConfiguration(offered))
-const steps = shallowRef<[Step, Step, Step]>([null, null, null])
+/** The design's connections: which step hands on to which. Only Record A's path runs. */
+const connections = shallowRef<readonly Connection[]>(INITIAL_CONNECTIONS)
+const shown = shallowRef<FlowRun>({ path: [], steps: {} })
 const runs = shallowRef<RunRecord[]>([])
 const ranWith = ref('')
 const runNumber = ref(0)
@@ -62,8 +73,17 @@ const pin = computed(() => PINS.find((p) => p.key === pinKey.value)!)
 const parsed = computed(() => parseRecordData(recordText.value))
 const appliedMapping = computed(() => findMapping(config.value, config.value.mapping)!)
 const label = (ref: DefinitionRef) => labelOf(config.value, ref)
+/** The contracts connections are judged by: Record A's pinned Definition and the applied Mapping's. */
+const contracts = computed<Contracts>(() => ({
+  record: pin.value.ref,
+  transform: { reads: appliedMapping.value.from, makes: appliedMapping.value.to },
+  definitions: allDefinitions(config.value),
+  label,
+}))
+const path = computed(() => pathOf(connections.value))
+const problems = computed(() => connectionProblems(connections.value, contracts.value))
 // What a run depends on. The draft isn't part of it: runs use the applied versions.
-const snapshot = computed(() => JSON.stringify([pinKey.value, recordText.value, consoleId.value, config.value.mapping]))
+const snapshot = computed(() => JSON.stringify([pinKey.value, recordText.value, consoleId.value, config.value.mapping, connections.value.map(connectionKey)]))
 const stale = computed(() => snapshot.value !== ranWith.value)
 
 // --- The draft: edited freely, previewed, and only applied on purpose ---
@@ -129,36 +149,42 @@ function discard() {
   })
 }
 
+/** A run needs something to run: Record A has to hand on to a step. */
+const canRun = computed(() => !('error' in parsed.value) && path.value.length > 1)
 function run() {
   const record = parsed.value
-  if ('error' in record) return
-  // Runs use the applied versions only. Running never makes one (only apply does).
+  if ('error' in record || !canRun.value) return
+  // Runs use the applied versions only. Running never makes one (only apply does). What runs is
+  // Record A's path through the connections, and nothing else on the canvas.
   const applied = config.value
-  steps.value = runExperiment(
+  shown.value = runFlow(
     placeIn({
       definitions: allDefinitions(applied),
       records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: pin.value.ref, data: record.data as Data }],
       mappings: applied.mappings,
     }, runsIn),
+    connections.value,
     { console: CONSOLES.find((c) => c.feature.id === consoleId.value)!.feature, mapping: applied.mapping, workspaceId: runsIn },
   )
   ranWith.value = snapshot.value
   runNumber.value++
-  const evidence = steps.value[1]?.evidence
+  const evidence = shown.value.steps.transform?.evidence
   const used = evidence?.mapping ? findMapping(applied, evidence.mapping) : null
-  runs.value = [...runs.value, { number: runNumber.value, outcome: evidence?.outcome ?? null, mapping: evidence?.mapping ?? null, output: used?.to ?? null }]
+  runs.value = [...runs.value, Object.freeze({ number: runNumber.value, outcome: evidence?.outcome ?? null, mapping: evidence?.mapping ?? null, output: used?.to ?? null, path: shown.value.path })]
 }
 
+const connectionsChanged = computed(() => connections.value.map(connectionKey).join() !== INITIAL_CONNECTIONS.map(connectionKey).join())
 function startOver() {
   const to = { ...draftFrom(initialConfiguration(offered)), local: draft.value.local }
   const record = recordText.value !== JSON.stringify(INITIAL_DATA, null, 2) || pinKey.value !== 'a1' ? ['Your edits to Record A'] : []
   resetAfterAsking({
-    title: 'Start over?', intro: 'Record A, the Console and the Transform’s draft go back to how they started. Applied versions stay. Starting over forgets:', confirm: 'Start over',
-    losing: [...record, ...draftLoses(draft.value, to)],
+    title: 'Start over?', intro: 'Record A, the Console, the connections and the Transform’s draft go back to how they started. Applied versions stay. Starting over forgets:', confirm: 'Start over',
+    losing: [...record, ...(connectionsChanged.value ? ['Your connections'] : []), ...draftLoses(draft.value, to)],
     act: () => {
       pinKey.value = 'a1'
       recordText.value = JSON.stringify(INITIAL_DATA, null, 2)
       consoleId.value = orbitConsole.id
+      connections.value = INITIAL_CONNECTIONS
       setDraft(to, false)
     },
   })
@@ -167,9 +193,116 @@ function startOver() {
 run()
 
 // --- The canvas ---
-const nodes = ref<Node[]>(initialNodes())
+const nodes = ref<Node[]>(initialNodes(path.value))
 const flow = shallowRef<VueFlowInstance>()
-const edges = computed(() => fixedEdges([steps.value[0] !== null, steps.value[1] !== null, steps.value[2] !== null]))
+/** The arrow that's selected (to remove with Delete), kept here: the arrows are drawn from the connections. */
+const selectedEdge = ref<string | null>(null)
+const edges = computed(() => drawEdges(connections.value, shown.value, problems.value).map((e) => ({ ...e, selected: e.id === selectedEdge.value })))
+// A node's name says its place on the path, which follows the connections.
+watch(path, (p) => (nodes.value = nodes.value.map((n) => ({ ...n, ariaLabel: nodeLabel(n.id as StepId, p) }))))
+
+// Connecting, moving a connection's end, and disconnecting. Each is checked (flow.ts) before it
+// changes anything; a refusal says why, briefly, where the hint sits. Nothing else changes: no
+// contract, Mapping or configuration is touched by connecting or disconnecting.
+const refusal = ref<string | null>(null)
+let refusalTimer: ReturnType<typeof setTimeout> | undefined
+function refuse(reason: string) {
+  refusal.value = reason
+  clearTimeout(refusalTimer)
+  refusalTimer = setTimeout(() => (refusal.value = null), 6000)
+}
+onBeforeUnmount(() => clearTimeout(refusalTimer))
+const connecting = ref(false)
+/** The connection whose end is being moved, if any: it doesn't count against its own new place. */
+let moving: Connection | undefined
+const asConnection = (c: { source: string; target: string }): Connection => ({ source: c.source as StepId, target: c.target as StepId })
+const verdict = (c: Connection) => checkConnection(connections.value, c, contracts.value, moving)
+/**
+ * For the canvas library, which also asks about the arrows it's given: an existing connection is
+ * always drawn (one that stopped fitting is drawn as a problem, never hidden); a new one must fit.
+ */
+const isValidConnection = (c: { source: string; target: string }) =>
+  connections.value.some((x) => connectionKey(x) === connectionKey(asConnection(c))) || verdict(asConnection(c)).ok
+
+function connect(c: FlowConnection) {
+  const candidate = asConnection(c)
+  if (connections.value.some((x) => connectionKey(x) === connectionKey(candidate))) return
+  const result = verdict(candidate)
+  if (result.ok) connections.value = [...connections.value, candidate]
+  else refuse(result.reason)
+}
+/** The step under where a gesture ended, if any (a drop anywhere on a step counts, not only on its dot). */
+function stepAt(event: MouseEvent | TouchEvent): StepId | undefined {
+  const point = 'changedTouches' in event ? event.changedTouches[0] : event
+  if (!point) return undefined
+  return document.elementFromPoint(point.clientX, point.clientY)?.closest<HTMLElement>('.vue-flow__node')?.dataset.id as StepId | undefined
+}
+/** A connection dropped on a step: made if it fits (when it wasn't already), or refused with why. */
+function connectEnd({ event, connectionState }: ConnectEndEvent) {
+  connecting.value = false
+  if (connectionState.isValid || !connectionState.fromNode || !event) return
+  const from = connectionState.fromNode.id as StepId
+  const to = (connectionState.toNode?.id as StepId | undefined) ?? stepAt(event)
+  if (!to || to === from) return
+  const candidate = connectionState.fromHandle?.type === 'target' ? { source: to, target: from } : { source: from, target: to }
+  const result = verdict(candidate)
+  if (result.ok) connections.value = [...connections.value, candidate]
+  else refuse(result.reason)
+}
+function reconnectStart(edge: { source: string; target: string }) {
+  moving = asConnection(edge)
+  connecting.value = true
+}
+function reconnect({ edge, connection }: EdgeReconnectEvent) {
+  const old = asConnection(edge)
+  const next = asConnection(connection)
+  const result = verdict(next)
+  if (!result.ok) return refuse(result.reason)
+  connections.value = connections.value.map((c) => (connectionKey(c) === connectionKey(old) ? next : c))
+}
+/** Dropped away from any step: the connection is removed. Dropped on one that can't take it: kept, and why. */
+function reconnectEnd({ event, edge, connectionState }: EdgeReconnectEndEvent) {
+  const old = moving
+  moving = undefined
+  connecting.value = false
+  if (connectionState.isValid || !old) return
+  const to = (connectionState.toNode?.id as StepId | undefined) ?? (event ? stepAt(event) : undefined)
+  if (!to) return disconnect([edge])
+  if (to === old.source || to === old.target) return
+  const keepSource = connectionState.fromHandle?.type === 'source'
+  const next = keepSource ? { source: old.source, target: to } : { source: to, target: old.target }
+  const result = checkConnection(connections.value, next, contracts.value, old)
+  if (result.ok) connections.value = connections.value.map((c) => (connectionKey(c) === connectionKey(old) ? next : c))
+  else refuse(result.reason)
+}
+function disconnect(removed: readonly { id: string }[]) {
+  const ids = new Set(removed.map((e) => e.id))
+  connections.value = connections.value.filter((c) => !ids.has(connectionKey(c)))
+  if (selectedEdge.value && ids.has(selectedEdge.value)) selectedEdge.value = null
+}
+/** From the keyboard: Tab to an arrow, then Delete (or Backspace) removes it. */
+function deleteFocusedArrow(event: KeyboardEvent) {
+  if (event.key !== 'Delete' && event.key !== 'Backspace') return
+  const arrow = (event.target as Element | null)?.closest?.('.vue-flow__edge')
+  const id = arrow?.getAttribute('data-id')
+  if (!id) return
+  event.preventDefault()
+  disconnect([{ id }])
+  // Focus stays where you were: on the step the arrow came from.
+  const source = id.split('->')[0]
+  nextTick(() => document.querySelector<HTMLElement>(`.vue-flow__node[data-id="${source}"]`)?.focus())
+}
+onMounted(() => document.addEventListener('keydown', deleteFocusedArrow))
+onBeforeUnmount(() => document.removeEventListener('keydown', deleteFocusedArrow))
+/** Selecting an arrow, and removing it (Delete or Backspace once it's selected). */
+function edgesChange(changeset: EdgeChangeset) {
+  const changes = changeset.toArray()
+  for (const c of changes) {
+    if (c.type === 'select') selectedEdge.value = c.selected ? c.id : selectedEdge.value === c.id ? null : selectedEdge.value
+  }
+  const removed = changes.filter((c) => c.type === 'remove')
+  if (removed.length) disconnect(removed)
+}
 
 const selectedId = computed(() => nodes.value.find((n) => n.selected)?.id as StepId | undefined)
 const select = (id: StepId | undefined) => (nodes.value = nodes.value.map((n) => ({ ...n, selected: n.id === id })))
@@ -202,8 +335,13 @@ const recordFields = computed(() => {
   return Object.keys(data).join(', ') || 'No fields'
 })
 
-/** The step of runExperiment's result that belongs to a node (Record A has none). */
-const stepOf = (id: StepId): Step => (id === 'record' ? null : steps.value[EXECUTION_ORDER.indexOf(id) - 1]!)
+/** The shown run's result for a node: null for Record A, and for a step that run didn't invoke. */
+const stepOf = (id: StepId): Step => (id === 'record' ? null : shown.value.steps[id] ?? null)
+/** What a step receives that its contract can't accept, from the connection into it. */
+const problemInto = (id: StepId) => {
+  const into = connections.value.find((c) => c.target === id)
+  return (into && problems.value.get(connectionKey(into))) ?? null
+}
 
 const views = computed<Record<StepId, StepView>>(() => {
   const outcome = (id: StepId): StepView['outcome'] => {
@@ -214,25 +352,26 @@ const views = computed<Record<StepId, StepView>>(() => {
   }
   const variant = CONSOLES.find((c) => c.feature.id === consoleId.value)!
   const mapping = summarize(appliedMapping.value.properties)
+  const p = path.value
   return {
     'record': {
-      badge: stepBadge('record'), kind: 'Record · in memory', title: stepTitle('record'),
+      badge: stepBadge('record', p), kind: 'Record · in memory', title: stepTitle('record'),
       lines: [definitionLabel(pin.value.ref), recordFields.value],
-      more: 0, note: pinKey.value === 'a1' ? null : 'Pinned to a different Definition', outcome: null, stale: false,
+      more: 0, note: pinKey.value === 'a1' ? null : 'Pinned to a different Definition', problem: null, outcome: null, stale: false,
     },
     'console-in': {
-      badge: stepBadge('console-in'), kind: 'Feature', title: stepTitle('console-in'),
+      badge: stepBadge('console-in', p), kind: 'Feature', title: stepTitle('console-in'),
       lines: ['Shows what arrives and passes it on, unchanged'], more: 0,
-      note: variant.feature.id === orbitConsole.id ? null : 'Misbehaving on purpose', outcome: outcome('console-in'), stale: stale.value,
+      note: variant.feature.id === orbitConsole.id ? null : 'Misbehaving on purpose', problem: problemInto('console-in'), outcome: outcome('console-in'), stale: stale.value,
     },
     'transform': {
-      badge: stepBadge('transform'), kind: `Feature · Mapping v${config.value.mapping.version}`, title: stepTitle('transform'),
-      lines: [`${definitionLabel(A1)} → ${label(config.value.output)}`, ...(mapping.lines.length ? mapping.lines : ['Makes nothing yet'])], more: mapping.more,
-      note: plan.value.changes ? 'Unapplied changes. Runs use the applied versions' : null, outcome: outcome('transform'), stale: stale.value,
+      badge: stepBadge('transform', p), kind: `Feature · Mapping v${config.value.mapping.version}`, title: stepTitle('transform'),
+      lines: [`${label(appliedMapping.value.from)} → ${label(config.value.output)}`, ...(mapping.lines.length ? mapping.lines : ['Makes nothing yet'])], more: mapping.more,
+      note: plan.value.changes ? 'Unapplied changes. Runs use the applied versions' : null, problem: problemInto('transform'), outcome: outcome('transform'), stale: stale.value,
     },
     'console-out': {
-      badge: stepBadge('console-out'), kind: 'Feature', title: stepTitle('console-out'),
-      lines: ['Shows what Transform made'], more: 0, note: null, outcome: outcome('console-out'), stale: stale.value,
+      badge: stepBadge('console-out', p), kind: 'Feature', title: stepTitle('console-out'),
+      lines: ['Shows what arrives and passes it on, unchanged'], more: 0, note: null, problem: problemInto('console-out'), outcome: outcome('console-out'), stale: stale.value,
     },
   }
 })
@@ -290,13 +429,24 @@ const panelTitle = computed(() => (selectedId.value ? views.value[selectedId.val
 const runLabel = computed(() => `Run ${runNumber.value}${stale.value ? ' · the setup has changed since' : ''}`)
 const descriptions: Record<StepId, string> = {
   'record': workspace
-    ? `The in-memory Record the chain starts from: sample data, placed in ${workspace.name} for this tab’s runs only.`
-    : 'The in-memory Record the chain starts from.',
+    ? `The in-memory Record the flow starts from: sample data, placed in ${workspace.name} for this tab’s runs only.`
+    : 'The in-memory Record the flow starts from.',
   'console-in': 'Shows what arrives, and passes it on unchanged.',
   'transform': 'Builds a new Value, property by property, from the one it receives.',
-  'console-out': 'Shows what Transform made.',
+  'console-out': 'Shows what arrives, and passes it on unchanged.',
 }
-const toolbarStatus = computed(() => ('error' in parsed.value ? 'Fix Record A’s data to run' : stale.value ? `Changed since run ${runNumber.value}` : `Up to date · run ${runNumber.value}`))
+/** The shown run as a whole, never better than it went: it stopped where a step didn't succeed. */
+const runWords = computed(() => {
+  const outcome = flowOutcome(shown.value)
+  if (outcome.kind === 'stopped') return `Run ${runNumber.value} stopped at ${stepTitle(outcome.at)}`
+  if (outcome.kind === 'nothing') return `Nothing ran in run ${runNumber.value}`
+  return `Up to date · run ${runNumber.value}`
+})
+const toolbarStatus = computed(() => {
+  if ('error' in parsed.value) return 'Fix Record A’s data to run'
+  if (path.value.length < 2) return 'Connect Record A to a step to run'
+  return stale.value ? `Changed since run ${runNumber.value}` : runWords.value
+})
 const showHint = ref(true)
 // Where "back" goes: the place you came from (the workspace's Workflows place), when it's a path
 // within Orbit (safeDestination; it grants nothing, the page is authorized as usual), else Orbit.
@@ -308,10 +458,10 @@ const back = computed(() => safeDestination(useRoute().query.back))
 // covers every way out inside Orbit (the back action, List view, the browser's back button); a
 // reload or closing the tab gets the browser's own question, only when there's work to lose.
 const START = { pinKey: 'a1', recordText: JSON.stringify(INITIAL_DATA, null, 2), consoleId: orbitConsole.id } as const
-const atRisk = computed(() => workAtRisk(
-  { pinKey: pinKey.value, recordText: recordText.value, consoleId: consoleId.value, config: config.value, unapplied: plan.value.changes },
-  START,
-))
+const atRisk = computed(() => [
+  ...workAtRisk({ pinKey: pinKey.value, recordText: recordText.value, consoleId: consoleId.value, config: config.value, unapplied: plan.value.changes }, START),
+  ...(connectionsChanged.value ? ['Your connections'] : []),
+])
 const leaving = ref<string | null>(null)
 let discardConfirmed = false
 onBeforeRouteLeave((to) => {
@@ -346,7 +496,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
 </script>
 
 <template>
-  <div class="designer relative h-dvh overflow-hidden bg-slate-50">
+  <div class="designer relative h-dvh overflow-hidden bg-slate-50" :class="{ 'designer--connecting': connecting }">
     <!-- Orbit's distant orbits, far behind the canvas; they never move. -->
     <div class="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
       <div class="size-[56rem] rounded-full border border-accent-100/60" />
@@ -357,7 +507,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       :back="back"
       :status="toolbarStatus"
       :attention="plan.changes ? 'Transform has unapplied changes' : null"
-      :can-run="!('error' in parsed)"
+      :can-run="canRun"
       @run="run"
       @start-over="startOver"
     />
@@ -367,10 +517,9 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         <VueFlow
           v-model:nodes="nodes"
           :edges="edges"
-          :nodes-connectable="false"
-          :edges-reconnectable="false"
-          :edges-focusable="false"
-          :delete-key-code="null"
+          :is-valid-connection="isValidConnection"
+          :connection-radius="28"
+          :delete-key-code="['Backspace', 'Delete']"
           :selection-key-code="null"
           :multi-selection-key-code="null"
           :node-drag-threshold="6"
@@ -379,17 +528,19 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           :max-zoom="1.75"
           fit-view
           :fit-view-options="FIT"
-          aria-label="The chain, as a canvas"
+          aria-label="The flow, as a canvas"
           @init="flow = $event"
           @nodes-initialized="small() && fit()"
+          @connect-start="connecting = true"
+          @connect="connect"
+          @connect-end="connectEnd"
+          @reconnect-start="reconnectStart($event.edge)"
+          @reconnect="reconnect"
+          @reconnect-end="reconnectEnd"
+          @edges-change="edgesChange"
         >
           <template #node-step="node">
-            <StepNode
-              :view="views[node.id as StepId]"
-              :selected="node.selected"
-              :first="node.id === EXECUTION_ORDER[0]"
-              :last="node.id === EXECUTION_ORDER.at(-1)"
-            />
+            <StepNode :view="views[node.id as StepId]" :selected="node.selected" :start="node.id === 'record'" />
           </template>
           <Background :gap="22" :size="1.2" pattern-color="#cbd5e1" />
           <Controls :show-interactive="false" position="bottom-left" :class="{ 'max-lg:hidden': selectedId }">
@@ -397,10 +548,17 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
               <span aria-hidden="true" class="text-sm leading-none">↺</span>
             </ControlButton>
           </Controls>
-          <Panel v-if="showHint" position="bottom-center" :class="{ 'max-lg:hidden': selectedId, 'lg:hidden': focus }">
-            <p class="flex items-center gap-2 rounded-full border border-white/80 bg-white/75 py-1.5 pr-1.5 pl-4 text-xs text-slate-600 shadow-lg shadow-slate-900/[0.06] ring-1 ring-slate-900/5 backdrop-blur-md">
-              The arrows and numbers are the order. Moving a step only changes the picture.
-              <button type="button" class="grid size-7 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="Hide this hint" @click="showHint = false">✕</button>
+          <!-- Why a connection wasn't made, briefly, where the hint sits; then it goes. -->
+          <Panel position="bottom-center" :class="{ 'lg:hidden': focus }">
+            <p role="status" aria-live="polite">
+              <span v-if="refusal" class="flex items-center gap-2 rounded-full border border-red-200 bg-white/90 py-1.5 pr-1.5 pl-4 text-xs text-red-700 shadow-lg shadow-slate-900/[0.06] backdrop-blur-md">
+                {{ refusal }}
+                <button type="button" class="grid size-7 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="Dismiss" @click="refusal = null">✕</button>
+              </span>
+            </p>
+            <p v-if="showHint && !refusal" class="flex items-center gap-2 rounded-full border border-white/80 bg-white/75 py-1.5 pr-1.5 pl-4 text-xs text-slate-600 shadow-lg shadow-slate-900/[0.06] ring-1 ring-slate-900/5 backdrop-blur-md" :class="{ 'max-lg:hidden': selectedId }">
+              The arrows are the order. Drag from a dot to connect; drag an arrow’s end away to disconnect.
+              <button type="button" class="grid size-7 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="Hide this hint" @click="showHint = false">✕</button>
             </p>
           </Panel>
         </VueFlow>
@@ -491,7 +649,8 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
             <p class="text-xs text-slate-500">{{ runLabel }}</p>
           </div>
           <p v-if="selectedId === 'record'" class="mt-2 text-sm text-slate-600">
-            Record A isn’t a Feature, so it never runs. Step 1 read it; select step 1 to see what it observed.
+            Record A isn’t a Feature, so it never runs.
+            {{ shown.path.length > 1 ? `Step 1, ${stepTitle(shown.path[1]!)}, read it.` : 'Nothing read it: it wasn’t connected to a step.' }}
           </p>
           <RunResult v-else :step="stepOf(selectedId)" :stale="stale" pass-through :label="label" />
         </section>
@@ -543,12 +702,28 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
 </template>
 
 <style>
-/* The canvas library's defaults, toned to Orbit. Handles are anchors for the fixed arrows only. */
-.designer .vue-flow__handle { opacity: 0; pointer-events: none; }
+/* The canvas library's defaults, toned to Orbit. Connection dots: small, shown when relevant
+   (hovering or selecting a step, or while connecting), pink to act on, red where it can't connect. */
+.designer .vue-flow__handle {
+  width: 10px; height: 10px; border: 2px solid var(--color-accent-500); background: white;
+  opacity: 0; transition: opacity 120ms, transform 120ms;
+}
+.designer .vue-flow__node:hover .vue-flow__handle,
+.designer .vue-flow__node.selected .vue-flow__handle,
+.designer .vue-flow__node:focus-visible .vue-flow__handle,
+.designer.designer--connecting .vue-flow__handle { opacity: 1; }
+.designer .vue-flow__handle:hover, .designer .vue-flow__handle.connectingto.valid { background: var(--color-accent-500); transform: translate(-50%, -50%) scale(1.3); }
+.designer .vue-flow__handle.connectingto:not(.valid) { border-color: var(--color-red-500); }
+.designer .vue-flow__connection-path { stroke: var(--color-accent-400); stroke-width: 2; stroke-dasharray: 6 6; }
 .designer .vue-flow__node-step { border: 0; background: transparent; padding: 0; }
 .designer .designer-edge .vue-flow__edge-path { stroke: var(--color-slate-400); stroke-width: 2; }
 .designer .designer-edge--unused .vue-flow__edge-path { stroke: var(--color-slate-300); stroke-dasharray: 6 6; }
-.designer .vue-flow__node.selected .vue-flow__edge-path { stroke: var(--color-accent-400); }
+.designer .designer-edge--problem .vue-flow__edge-path { stroke: var(--color-red-400); }
+.designer .vue-flow__edge.selected .vue-flow__edge-path,
+.designer .vue-flow__edge:focus-visible .vue-flow__edge-path { stroke: var(--color-accent-500); }
+@media (pointer: coarse) {
+  .designer .vue-flow__handle { width: 16px; height: 16px; }
+}
 /* Zoom controls: the same floating glass as Orbit's navigation. */
 .designer .vue-flow__controls {
   overflow: hidden; border-radius: 1.25rem; border: 1px solid rgb(255 255 255 / 0.8); padding: 0.25rem;

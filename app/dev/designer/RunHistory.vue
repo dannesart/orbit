@@ -5,6 +5,7 @@ import type { DefinitionRef } from '#shared/features/definitions'
 import { type Step, outcomeLabel, shapeOf } from '../features/experiment'
 import RunResult from './RunResult.vue'
 import { type Configuration, type RunRecord, labelOf } from './config'
+import { pathWords } from './flow'
 import { describeProperty } from './summary'
 
 const props = defineProps<{ step: Step; stale: boolean; runNumber: number; runs: readonly RunRecord[]; config: Configuration }>()
@@ -16,6 +17,7 @@ const mappingIds = computed(() => [...new Set(props.config.mappings.map((m) => m
   <div>
     <section aria-labelledby="transform-run-heading">
       <h3 id="transform-run-heading" class="text-sm font-semibold text-slate-900">What happened in run {{ runNumber }}</h3>
+      <p v-if="runs.length" class="text-xs text-slate-500">{{ pathWords(runs.at(-1)!.path) }}</p>
       <RunResult :step="step" :stale="stale" :label="label" />
     </section>
     <section v-if="runs.length > 1" aria-labelledby="runs-heading" class="mt-6">
@@ -24,6 +26,7 @@ const mappingIds = computed(() => [...new Set(props.config.mappings.map((m) => m
       <ol class="mt-2 flex flex-col gap-1 text-sm text-slate-700">
         <li v-for="r in [...runs].reverse().slice(1)" :key="r.number">
           Run {{ r.number }} · {{ r.outcome ? outcomeLabel(r.outcome) : 'Transform not invoked' }}<template v-if="r.output"> · {{ label(r.output) }}</template><template v-if="r.mapping"> · Mapping v{{ r.mapping.version }}</template>
+          <span class="block text-xs text-slate-500">{{ pathWords(r.path) }}</span>
         </li>
       </ol>
     </section>

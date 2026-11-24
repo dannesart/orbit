@@ -1,12 +1,14 @@
 // Experiment #2, the canvas (/dev/designer), apart from the canvas library itself: plain words
-// for a Transform, a graph whose order and connections no drag can change, and the same limits
-// as the list playground (no fetching, storing, logging or evaluating; preview builds only).
+// for a Transform, a picture whose positions never change what runs (Experiment #8: connections
+// do, test/meaningful-connections.test.ts), and the same limits as the list playground (no
+// fetching, storing, logging or evaluating; preview builds only).
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Expression, MappingProperty } from '../shared/features/mappings'
 import { INITIAL_MAPPING } from '../app/dev/features/experiment'
-import { EXECUTION_ORDER, INITIAL_POSITIONS, fixedEdges, initialNodes, resetPositions, stepBadge } from '../app/dev/designer/graph'
+import { INITIAL_POSITIONS, drawEdges, initialNodes, resetPositions } from '../app/dev/designer/graph'
+import { INITIAL_CONNECTIONS, STEPS, pathOf, stepBadge } from '../app/dev/designer/flow'
 import { describeProperty, describeSource, summarize } from '../app/dev/designer/summary'
 
 const prop = (name: string): Expression => ({ kind: 'property', name })
@@ -43,26 +45,38 @@ describe('A Transform in plain words, without opening its editor', () => {
 })
 
 describe('The canvas’s graph: positions are only a picture', () => {
-  it('numbers the steps by execution order, wherever they are drawn', () => {
-    expect(EXECUTION_ORDER.map(stepBadge)).toEqual(['Start', '1', '2', '3'])
+  const path = pathOf(INITIAL_CONNECTIONS)
+  it('numbers the steps by the connections, wherever they are drawn', () => {
+    expect(STEPS.map((id) => stepBadge(id, path))).toEqual(['Start', '1', '2', '3'])
     // Drag every node somewhere else, even into reverse order: nothing about the order changes.
-    const moved = initialNodes().map((n, i) => ({ ...n, position: { x: -400 * i, y: 90 * i } }))
-    expect(moved.map((n) => n.id)).toEqual([...EXECUTION_ORDER])
-    expect(fixedEdges([true, true, true]).map((e) => `${e.source}->${e.target}`)).toEqual([
-      'record->console-in', 'console-in->transform', 'transform->console-out',
-    ])
-    expect(resetPositions(moved).map((n) => n.position)).toEqual(EXECUTION_ORDER.map((id) => INITIAL_POSITIONS[id]))
+    const moved = initialNodes(path).map((n, i) => ({ ...n, position: { x: -400 * i, y: 90 * i } }))
+    expect(moved.map((n) => n.id)).toEqual([...STEPS])
+    expect(pathOf(INITIAL_CONNECTIONS)).toEqual(['record', 'console-in', 'transform', 'console-out'])
+    expect(resetPositions(moved).map((n) => n.position)).toEqual(STEPS.map((id) => INITIAL_POSITIONS[id]))
   })
 
-  it('lets nodes be dragged and selected, but never deleted or connected', () => {
-    for (const node of initialNodes()) expect(node).toMatchObject({ deletable: false, connectable: false })
-    for (const edge of fixedEdges([true, true, true])) expect(edge).toMatchObject({ deletable: false, selectable: false, reconnectable: false, focusable: false })
+  it('lets nodes be dragged, selected and connected, never deleted; connections can be removed and moved', () => {
+    for (const node of initialNodes(path)) expect(node).toMatchObject({ deletable: false })
+    expect(initialNodes(path).map((n) => n.ariaLabel)).toEqual(['Record A, where the flow starts', 'Step 1, Console', 'Step 2, Transform', 'Step 3, Console'])
+    expect(initialNodes(['record']).map((n) => n.ariaLabel)[2]).toBe('Transform, not connected to the flow')
+    // Reachable with Tab (as SVG spells it), and named for what it does.
+    for (const edge of drawEdges(INITIAL_CONNECTIONS, { path, steps: {} }, new Map())) {
+      expect(edge).toMatchObject({ deletable: true, reconnectable: true, domAttributes: { tabindex: 0 } })
+    }
   })
 
-  it('draws a connection dashed when nothing travelled along it in the shown run', () => {
-    const edges = fixedEdges([true, false, false])
-    expect(edges.map((e) => e.class)).toEqual(['designer-edge', 'designer-edge designer-edge--unused', 'designer-edge designer-edge--unused'])
-    expect(edges[1]!.ariaLabel).toBe('Transform was not invoked in this run')
+  it('removes a focused arrow with Delete or Backspace, and keeps focus on the step it came from', () => {
+    const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
+    expect(page).toMatch(/function deleteFocusedArrow\(event: KeyboardEvent\) \{\s*if \(event\.key !== 'Delete' && event\.key !== 'Backspace'\) return[\s\S]*?disconnect\(\[\{ id \}\]\)[\s\S]*?\.vue-flow__node\[data-id="\$\{source\}"\][\s\S]*?\.focus\(\)/)
+    // An arrow the library is handed is always drawn, even one that stopped fitting.
+    expect(page).toMatch(/const isValidConnection = \(c: \{ source: string; target: string \}\) =>\s*connections\.value\.some\(\(x\) => connectionKey\(x\) === connectionKey\(asConnection\(c\)\)\) \|\| verdict\(asConnection\(c\)\)\.ok/)
+  })
+
+  it('draws a connection dashed when nothing travelled along it in the shown run, and red when its contract fails', () => {
+    const edges = drawEdges(INITIAL_CONNECTIONS, { path: ['record', 'console-in'], steps: { 'console-in': {} as never } }, new Map([['console-in->transform', 'Transform reads A, but receives B.']]))
+    expect(edges.map((e) => e.class)).toEqual(['designer-edge', 'designer-edge designer-edge--problem', 'designer-edge designer-edge--unused'])
+    expect(edges[1]!.ariaLabel).toBe('Console hands on to Transform. Transform reads A, but receives B.')
+    expect(edges[2]!.ariaLabel).toBe('Transform hands on to Console. Nothing travelled along it in the shown run')
   })
 })
 
@@ -87,9 +101,9 @@ describe('What the canvas experiment never does', () => {
     for (const f of files) expect(source(f), f).not.toMatch(forbidden)
   })
 
-  it('runs the very same experiment as the list playground, never anything derived from positions', () => {
+  it('runs the path through the connections, never anything derived from positions', () => {
     const page = source('app/dev/designer/SpatialDesigner.vue')
-    expect(page).toMatch(/steps\.value = runExperiment\(/)
+    expect(page).toMatch(/shown\.value = runFlow\([\s\S]*?connections\.value,/)
     const runFunction = page.slice(page.indexOf('function run()'), page.indexOf('function startOver()'))
     expect(runFunction).not.toMatch(/position|nodes/)
   })

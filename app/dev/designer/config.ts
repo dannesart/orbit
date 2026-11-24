@@ -16,6 +16,7 @@ import {
 } from '#shared/features/definitions'
 import { type Mapping, type MappingProperty, reviseMapping } from '#shared/features/mappings'
 import type { FeatureRef, Outcome } from '#shared/features/features'
+import type { StepId } from './flow'
 
 /** One run, as the Transform step's evidence recorded it: exact versions, never the draft. */
 export interface RunRecord {
@@ -25,6 +26,11 @@ export interface RunRecord {
   readonly mapping: FeatureRef | null
   /** The output Definition that Mapping version names (immutable, so this can't drift). */
   readonly output: DefinitionRef | null
+  /**
+   * The path that run followed, from Record A (Experiment #8), frozen: the connections it used.
+   * Connecting differently afterwards changes the design, never this.
+   */
+  readonly path: readonly StepId[]
 }
 import { A1, B1, DEFINITIONS, INITIAL_MAPPING, WORKSPACE, definitionLabel } from '../features/experiment'
 import { type DraftProperty, fromDraft, toDraft } from './parts'
