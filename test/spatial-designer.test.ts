@@ -72,6 +72,33 @@ describe('The canvas’s graph: positions are only a picture', () => {
     expect(page).toMatch(/const isValidConnection = \(c: \{ source: string; target: string \}\) =>\s*connections\.value\.some\(\(x\) => connectionKey\(x\) === connectionKey\(asConnection\(c\)\)\) \|\| verdict\(asConnection\(c\)\)\.ok/)
   })
 
+  it('keeps grabbing a dot, an arrow’s end and a step apart, at any zoom', () => {
+    const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
+    const node = readFileSync(join(import.meta.dirname, '../app/dev/designer/StepNode.vue'), 'utf8')
+    // A connection starts only from a right-hand dot of a step that doesn't hand on yet; a left-hand
+    // dot only ever ends one (so it's never a grab target next to an arrow's end).
+    expect(node).toContain('<Handle v-if="!start" type="target" :position="Position.Left" :is-connectable-start="false" />')
+    expect(node).toContain('<Handle type="source" :position="Position.Right" :is-connectable-start="!handsOn" />')
+    expect(page).toContain(':hands-on="connections.some((c) => c.source === node.id)"')
+    // Each dot answers an invisible ring around it, sized for the zoom; so do arrow ends and snapping.
+    expect(page).toMatch(/\.designer \.vue-flow__handle::before \{[^}]*inset: calc\(-1 \* var\(--designer-grip/)
+    expect(page).toContain(`:style="{ '--designer-grip': \`\${grip.dot}px\` }"`)
+    expect(page).toContain(':connection-radius="grip.snap"')
+    expect(page).toContain(':reconnect-radius="grip.arrowEnd"')
+    expect(page).toContain('@viewport-change="zoom = $event.zoom"')
+    // The library places dots with `transform`: nothing of ours may set it, or a hovered dot moves
+    // out from under the pointer (and the press lands on the step, which then moves instead).
+    const styles = page.slice(page.indexOf('<style>'))
+    for (const rule of styles.match(/[^{}]*vue-flow__handle[^{]*\{[^}]*\}/g) ?? []) expect(rule).not.toMatch(/\btransform\s*:|\bscale\s*:/)
+  })
+
+  it('takes a moved arrow’s end as a move only, never as a second, new connection', () => {
+    // The library ends a moved end through connectEnd too (just before reconnectEnd); taken as a new
+    // connection there, it duplicated the arrow, or (dropped on a free step) branched the path.
+    const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
+    expect(page).toMatch(/function connectEnd\(\{ event, connectionState \}: ConnectEndEvent\) \{\s*connecting\.value = false\s*if \(moving\) return\s/)
+  })
+
   it('draws a connection dashed when nothing travelled along it in the shown run, and red when its contract fails', () => {
     const edges = drawEdges(INITIAL_CONNECTIONS, { path: ['record', 'console-in'], steps: { 'console-in': {} as never } }, new Map([['console-in->transform', 'Transform reads A, but receives B.']]))
     expect(edges.map((e) => e.class)).toEqual(['designer-edge', 'designer-edge designer-edge--problem', 'designer-edge designer-edge--unused'])

@@ -2,6 +2,9 @@
 // One step on the canvas: its place on the path, what it does in plain words, and how the shown
 // run went for it. Its dots are where connections start and end: small, shown when they're
 // relevant (hovering, selected, connecting), and never where nothing can connect (into Record A).
+// A connection starts only from a step's right-hand dot, and only from one that doesn't hand on yet:
+// a step that already does offers its arrow's end to move instead (one path only). The left-hand
+// dot is only ever where a connection ends, so it can't be grabbed, and shows only while connecting.
 import { Handle, Position } from '@xyflow/vue'
 
 export interface StepView {
@@ -20,7 +23,7 @@ export interface StepView {
   stale: boolean
 }
 
-defineProps<{ view: StepView; selected: boolean; start: boolean }>()
+defineProps<{ view: StepView; selected: boolean; start: boolean; handsOn: boolean }>()
 
 const tones = {
   ok: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
@@ -38,7 +41,7 @@ const tones = {
       selected ? 'border-accent-400 shadow-lg shadow-accent-500/10 ring-4 ring-accent-100' : 'border-slate-200/80 shadow-slate-900/[0.04] hover:border-slate-300 hover:shadow-md',
     ]"
   >
-    <Handle v-if="!start" type="target" :position="Position.Left" />
+    <Handle v-if="!start" type="target" :position="Position.Left" :is-connectable-start="false" />
     <div class="flex items-center gap-2">
       <span
         class="flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-semibold"
@@ -57,6 +60,6 @@ const tones = {
       <span class="rounded-full px-2 py-0.5 text-xs font-semibold ring-1" :class="tones[view.outcome.tone]">{{ view.outcome.label }}</span>
       <span v-if="view.stale" class="text-xs text-slate-500">earlier run</span>
     </div>
-    <Handle type="source" :position="Position.Right" />
+    <Handle type="source" :position="Position.Right" :is-connectable-start="!handsOn" />
   </div>
 </template>

@@ -213,6 +213,22 @@ function refuse(reason: string) {
 }
 onBeforeUnmount(() => clearTimeout(refusalTimer))
 const connecting = ref(false)
+/**
+ * How forgiving a grab is, kept about the same on screen at any zoom (the canvas library measures
+ * in canvas units, which shrink as you zoom out): a dot answers about 32px around it, and a dragged
+ * connection snaps to a dot within ~32px. An arrow's end answers up to ~36px out from where it meets
+ * its step, but never more than 40 canvas units, so the two ends of an arrow between steps at their
+ * usual spacing (80 apart) never overlap.
+ */
+const zoom = ref(1)
+const grip = computed(() => {
+  const z = zoom.value
+  return {
+    dot: Math.min(30, Math.max(6, (32 / z - 6) / 2)),
+    arrowEnd: Math.min(20, Math.max(14, 18 / z)),
+    snap: Math.min(80, Math.max(28, 32 / z)),
+  }
+})
 /** The connection whose end is being moved, if any: it doesn't count against its own new place. */
 let moving: Connection | undefined
 const asConnection = (c: { source: string; target: string }): Connection => ({ source: c.source as StepId, target: c.target as StepId })
@@ -237,9 +253,14 @@ function stepAt(event: MouseEvent | TouchEvent): StepId | undefined {
   if (!point) return undefined
   return document.elementFromPoint(point.clientX, point.clientY)?.closest<HTMLElement>('.vue-flow__node')?.dataset.id as StepId | undefined
 }
-/** A connection dropped on a step: made if it fits (when it wasn't already), or refused with why. */
+/**
+ * A connection dropped on a step: made if it fits (when it wasn't already), or refused with why.
+ * The library also ends a moved arrow's end here, just before reconnectEnd. That one is left to
+ * reconnectEnd: taken here as well, the connection being moved would be added a second time.
+ */
 function connectEnd({ event, connectionState }: ConnectEndEvent) {
   connecting.value = false
+  if (moving) return
   if (connectionState.isValid || !connectionState.fromNode || !event) return
   const from = connectionState.fromNode.id as StepId
   const to = (connectionState.toNode?.id as StepId | undefined) ?? stepAt(event)
@@ -496,7 +517,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
 </script>
 
 <template>
-  <div class="designer relative h-dvh overflow-hidden bg-slate-50" :class="{ 'designer--connecting': connecting }">
+  <div class="designer relative h-dvh overflow-hidden bg-slate-50" :class="{ 'designer--connecting': connecting }" :style="{ '--designer-grip': `${grip.dot}px` }">
     <!-- Orbit's distant orbits, far behind the canvas; they never move. -->
     <div class="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
       <div class="size-[56rem] rounded-full border border-accent-100/60" />
@@ -518,7 +539,8 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           v-model:nodes="nodes"
           :edges="edges"
           :is-valid-connection="isValidConnection"
-          :connection-radius="28"
+          :connection-radius="grip.snap"
+          :reconnect-radius="grip.arrowEnd"
           :delete-key-code="['Backspace', 'Delete']"
           :selection-key-code="null"
           :multi-selection-key-code="null"
@@ -529,7 +551,8 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           fit-view
           :fit-view-options="FIT"
           aria-label="The flow, as a canvas"
-          @init="flow = $event"
+          @init="flow = $event; zoom = $event.getViewport().zoom"
+          @viewport-change="zoom = $event.zoom"
           @nodes-initialized="small() && fit()"
           @connect-start="connecting = true"
           @connect="connect"
@@ -540,7 +563,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           @edges-change="edgesChange"
         >
           <template #node-step="node">
-            <StepNode :view="views[node.id as StepId]" :selected="node.selected" :start="node.id === 'record'" />
+            <StepNode :view="views[node.id as StepId]" :selected="node.selected" :start="node.id === 'record'" :hands-on="connections.some((c) => c.source === node.id)" />
           </template>
           <Background :gap="22" :size="1.2" pattern-color="#cbd5e1" />
           <Controls :show-interactive="false" position="bottom-left" :class="{ 'max-lg:hidden': selectedId }">
@@ -702,18 +725,28 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
 </template>
 
 <style>
-/* The canvas library's defaults, toned to Orbit. Connection dots: small, shown when relevant
-   (hovering or selecting a step, or while connecting), pink to act on, red where it can't connect. */
+/* The canvas library's defaults, toned to Orbit. Connection dots: small, shown where a connection
+   can start (hovering or selecting a step) or end (while connecting), pink to act on, red where it
+   can't connect. Each answers a ring around it, invisibly (--designer-grip, about 32px across on
+   screen at any zoom), and nothing else does: the step's body moves the step. The library places
+   each dot with `transform`, so a hovered dot grows by a ring (box-shadow), which can't move it. */
 .designer .vue-flow__handle {
   width: 10px; height: 10px; border: 2px solid var(--color-accent-500); background: white;
-  opacity: 0; transition: opacity 120ms, transform 120ms;
+  opacity: 0; transition: opacity 120ms, box-shadow 120ms;
 }
-.designer .vue-flow__node:hover .vue-flow__handle,
-.designer .vue-flow__node.selected .vue-flow__handle,
-.designer .vue-flow__node:focus-visible .vue-flow__handle,
-.designer.designer--connecting .vue-flow__handle { opacity: 1; }
-.designer .vue-flow__handle:hover, .designer .vue-flow__handle.connectingto.valid { background: var(--color-accent-500); transform: translate(-50%, -50%) scale(1.3); }
+.designer .vue-flow__handle::before { content: ''; position: absolute; inset: calc(-1 * var(--designer-grip, 13px)); border-radius: 9999px; }
+.designer .vue-flow__node:hover .vue-flow__handle.connectablestart,
+.designer .vue-flow__node.selected .vue-flow__handle.connectablestart,
+.designer .vue-flow__node:focus-visible .vue-flow__handle.connectablestart,
+.designer.designer--connecting .vue-flow__handle.connectionindicator,
+.designer .vue-flow__handle.connectingfrom { opacity: 1; }
+.designer .vue-flow__handle.connectionindicator:hover, .designer .vue-flow__handle.connectingto.valid { background: var(--color-accent-500); box-shadow: 0 0 0 3px var(--color-accent-100); }
 .designer .vue-flow__handle.connectingto:not(.valid) { border-color: var(--color-red-500); }
+/* An arrow's ends: grabbed to move or remove the connection (the library's invisible circles just
+   beyond each end, sized by grip.arrowEnd). Pink while hovered or moving, like the dots. */
+.designer .vue-flow__edgeupdater { cursor: crosshair; }
+.designer .vue-flow__edge:has(.vue-flow__edgeupdater:hover) .vue-flow__edge-path,
+.designer .vue-flow__edge.updating .vue-flow__edge-path { stroke: var(--color-accent-500); }
 .designer .vue-flow__connection-path { stroke: var(--color-accent-400); stroke-width: 2; stroke-dasharray: 6 6; }
 .designer .vue-flow__node-step { border: 0; background: transparent; padding: 0; }
 .designer .designer-edge .vue-flow__edge-path { stroke: var(--color-slate-400); stroke-width: 2; }
