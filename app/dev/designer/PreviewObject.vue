@@ -24,16 +24,23 @@ const rows = computed(() => {
   const extras = props.review.extras.map((x) => ({ name: props.draft.properties[x.index]!.name || 'unnamed', value: props.output.values[x.index]!, extra: true }))
   return [...required, ...extras]
 })
+const about = ref(false)
+/** Whether the previewed object fits the target: only known when every value could be made. */
+const fit = computed(() => (!props.output.fits || 'problem' in props.example || props.problems ? null : props.output.fits.issues.length === 0))
 </script>
 
 <template>
   <div>
-    <div class="flex flex-wrap items-baseline gap-x-2">
-      <h3 class="text-sm font-semibold text-slate-900">Preview</h3>
-      <p class="text-xs text-slate-500">Not executed · this draft, with Record A’s data</p>
+    <div class="flex items-center gap-2">
+      <h3 class="mr-auto text-sm font-semibold text-slate-900">Preview</h3>
+      <!-- Where it comes from and whether it fits, on demand -->
+      <button type="button" class="rounded-md px-1 text-xs text-slate-500 transition hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" :aria-expanded="about" aria-controls="preview-about" @click="about = !about">Not executed</button>
     </div>
+    <p v-if="about" id="preview-about" class="mt-1 text-xs text-slate-500">
+      This draft, with Record A’s data. Nothing has run.<template v-if="fit === true"> Fits {{ target.label }}.</template>
+    </p>
     <p v-if="'problem' in example" class="mt-1.5 text-sm text-amber-800">{{ example.problem }} <span v-if="example.details.length" class="block text-xs">{{ example.details.join(' ') }}</span></p>
-    <div v-else class="mt-1.5 rounded-2xl bg-slate-50 px-3 py-2 font-mono text-xs ring-1 ring-slate-200/80" aria-live="polite">
+    <div v-else class="mt-2 rounded-xl bg-slate-50 px-3 py-2 font-mono text-xs" aria-live="polite">
       <span class="text-slate-400">{</span>
       <div v-for="r in rows" :key="r.name" class="flex min-w-0 items-center gap-2 pl-3">
         <span class="shrink-0" :class="r.extra ? 'text-amber-800 line-through' : 'text-slate-600'">{{ r.name }}:</span>
@@ -44,8 +51,7 @@ const rows = computed(() => {
       </div>
       <span class="text-slate-400">}</span>
     </div>
-    <p v-if="output.fits && !('problem' in example) && !problems" class="mt-1 text-xs text-slate-500">
-      {{ output.fits.issues.length ? `${target.label} wouldn’t accept this: ${output.fits.issues.join(' ')}` : `Fits ${target.label}. A preview only: nothing has run.` }}
-    </p>
+    <!-- An actual mismatch stays in view; a good fit is said only on demand (above). -->
+    <p v-if="fit === false" class="mt-1.5 text-xs text-red-700">{{ target.label }} wouldn’t accept this: {{ output.fits!.issues.join(' ') }}</p>
   </div>
 </template>

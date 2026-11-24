@@ -1,8 +1,10 @@
 <script setup lang="ts">
 // The output's properties in the inspector, one line each: "fullName ← firstName". A simple value
 // (one field as it is, or one fixed value) is chosen right here; a composed value is described and
-// opens the focused editor, so a dropdown can never replace a composition by accident.
+// opens the focused editor (the whole row, or the chevron beside a simple one), so a dropdown can
+// never replace a composition by accident.
 import type { DefinitionVersion, FieldType } from '#shared/features/definitions'
+import DesignerIcon from './DesignerIcon.vue'
 import ShownText from './ShownText.vue'
 import type { TransformDraft } from './config'
 import { fromPiece, replaceAt } from './parts'
@@ -45,8 +47,33 @@ const control = 'min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-1
 </script>
 
 <template>
-  <ul class="flex flex-col divide-y divide-slate-100 rounded-2xl bg-white ring-1 ring-slate-200/80">
-    <li v-for="f in review.fields" :key="f.name" class="px-3.5 py-3">
+  <ul class="-mx-2 flex flex-col divide-y divide-slate-100">
+    <!-- A composed value: the whole row opens Mapping at this property. -->
+    <li v-for="f in review.fields" :key="f.name">
+      <button
+        v-if="f.name && quickOf(pieceAt(f.index)).kind === 'composed'"
+        type="button"
+        data-compose-row
+        class="flex w-full items-center gap-2 rounded-xl px-2 py-3 text-left transition hover:bg-accent-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-inset"
+        :aria-label="`${f.name}, ${typeWords[f.expected]}, ${status[f.state].label}: ${describeSource(fromPiece(pieceAt(f.index)!))}. Edit in Mapping`"
+        @click="emit('edit', f.name)"
+      >
+        <span class="min-w-0 flex-1">
+          <span class="flex items-center gap-2">
+            <span aria-hidden="true" class="w-3 text-center text-xs font-semibold" :class="status[f.state].tone">{{ status[f.state].icon }}</span>
+            <span class="truncate font-mono text-sm font-semibold text-slate-900">{{ f.name }}</span>
+            <span class="text-xs text-slate-400">{{ typeWords[f.expected] }}</span>
+          </span>
+          <span class="mt-1.5 flex items-center gap-2 pl-5 text-sm text-slate-700">
+            <span aria-hidden="true" class="text-slate-400">←</span>
+            <span class="min-w-0 truncate">{{ describeSource(fromPiece(pieceAt(f.index)!)) }}</span>
+          </span>
+          <span v-if="f.state === 'problem'" class="mt-1 block pl-5 text-xs text-red-700">{{ problemOf(f.index, f.problems) }}</span>
+        </span>
+        <DesignerIcon name="chevron" class="size-4 shrink-0 text-slate-400" />
+      </button>
+
+      <div v-else class="px-2 py-3">
       <div class="flex items-center gap-2">
         <span aria-hidden="true" class="w-3 text-center text-xs font-semibold" :class="status[f.state].tone">{{ status[f.state].icon }}</span>
         <span class="truncate font-mono text-sm font-semibold text-slate-900">{{ f.name || '(no name)' }}</span>
@@ -55,22 +82,17 @@ const control = 'min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-1
         <button
           v-if="f.name"
           type="button"
-          class="ml-auto rounded-full px-2.5 py-1 text-xs font-medium text-slate-500 transition hover:bg-accent-50 hover:text-accent-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
-          :aria-label="`Compose ${f.name} in the editor`"
+          class="ml-auto grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-accent-50 hover:text-accent-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+          :aria-label="`Compose ${f.name} in Mapping`"
+          :title="`Compose ${f.name} in Mapping`"
           @click="emit('edit', f.name)"
         >
-          Compose
+          <DesignerIcon name="chevron" class="size-4" />
         </button>
       </div>
 
       <div v-if="f.name" class="mt-1.5 flex flex-wrap items-center gap-2 pl-5">
         <span aria-hidden="true" class="text-slate-400">←</span>
-        <template v-if="quickOf(pieceAt(f.index)).kind === 'composed'">
-          <button type="button" class="min-w-0 truncate text-left text-sm text-slate-700 hover:text-accent-700" :aria-label="`${f.name} is composed: ${describeSource(fromPiece(pieceAt(f.index)!))}. Open it in the editor`" @click="emit('edit', f.name)">
-            {{ describeSource(fromPiece(pieceAt(f.index)!)) }}
-          </button>
-        </template>
-        <template v-else>
           <select :value="selectValue(f.index)" :aria-label="`${f.name}: where its value comes from`" :class="control" @change="choose(f.name, f.index, f.expected, ($event.target as HTMLSelectElement).value)">
             <option value="" disabled>Choose…</option>
             <option v-for="x in compatible(f.expected)" :key="x.name" :value="`field:${x.name}`">{{ x.name }}</option>
@@ -109,11 +131,11 @@ const control = 'min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-1
             </select>
           </template>
           <ShownText v-if="example(f.index) !== null && quickOf(pieceAt(f.index)).kind === 'field'" class="ml-auto" :value="example(f.index)!" />
-        </template>
       </div>
       <p v-else class="mt-1 pl-5 text-xs text-slate-500">Name this property in Structure first.</p>
       <p v-if="f.state === 'problem'" class="mt-1 pl-5 text-xs text-red-700">{{ problemOf(f.index, f.problems) }}</p>
+      </div>
     </li>
-    <li v-if="!review.fields.length" class="px-4 py-3 text-sm text-slate-500">No properties yet. Add some in Structure.</li>
+    <li v-if="!review.fields.length" class="px-2 py-3 text-sm text-slate-500">No properties yet. Add some in Structure.</li>
   </ul>
 </template>

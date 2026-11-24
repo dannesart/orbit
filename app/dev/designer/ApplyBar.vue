@@ -3,6 +3,7 @@
 // none), with Undo and Discard beside it. Shared by the inspector and the focused editor, so the
 // version boundary always reads the same.
 import type { DefinitionRef } from '#shared/features/definitions'
+import DesignerIcon from './DesignerIcon.vue'
 import { type Configuration, type Plan, type TransformDraft, labelOf } from './config'
 
 const props = defineProps<{ plan: Plan; config: Configuration; draft: TransformDraft; errors: readonly string[]; missing: readonly string[]; canUndo: boolean }>()
@@ -30,8 +31,18 @@ const words = computed(() => {
 <template>
   <div>
     <div class="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
-      <p class="mr-auto basis-full text-xs sm:basis-auto sm:max-w-[60%]" :class="plan.changes ? 'font-medium text-amber-800' : 'text-slate-500'" aria-live="polite">{{ words }}</p>
-      <button type="button" class="link px-1 text-sm" :disabled="!canUndo" @click="emit('undo')">Undo</button>
+      <!-- What Apply would do, only when there's something to apply (unchanged: said to screen readers only) -->
+      <p class="mr-auto basis-full text-xs sm:basis-auto sm:max-w-[60%]" :class="plan.changes ? 'font-medium text-amber-800' : 'sr-only'" aria-live="polite">{{ words }}</p>
+      <button
+        type="button"
+        class="grid size-9 shrink-0 place-items-center rounded-xl text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-40 disabled:hover:bg-transparent"
+        aria-label="Undo"
+        title="Undo"
+        :disabled="!canUndo"
+        @click="emit('undo')"
+      >
+        <DesignerIcon name="undo" class="size-4" />
+      </button>
       <button type="button" class="rounded-full px-3.5 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-40 disabled:hover:bg-transparent" :disabled="!plan.changes" @click="emit('discard')">Discard</button>
       <button type="button" class="btn-primary w-auto rounded-full px-5 py-1.5 text-sm disabled:cursor-default disabled:opacity-40" :disabled="!plan.changes || blocked" @click="emit('apply')">Apply</button>
     </div>

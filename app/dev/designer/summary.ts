@@ -50,14 +50,15 @@ export function summarize(properties: readonly MappingProperty[], limit = 3): { 
 }
 
 /**
- * The latest run's state for one compact row: every outcome the evidence can hold, and "Not
- * invoked" when the run stopped before this step. Taken from the evidence only, never the draft.
+ * The latest run's state for the inspector's status button: every outcome the evidence can hold,
+ * and "Not invoked" when the run stopped before this step. Taken from the evidence only, never the
+ * draft. Icon names are DesignerIcon's; the tone is semantic (and never the only signal).
  */
-export function runState(step: Step): { icon: string; tone: string; label: string } {
+export function runState(step: Step): { icon: 'check' | 'error' | 'clock' | 'minus'; tone: string; label: string } {
   const outcome = step?.evidence.outcome
-  if (!outcome) return { icon: '○', tone: 'text-slate-400', label: 'Not invoked' }
+  if (!outcome) return { icon: 'minus', tone: 'border-slate-200 bg-slate-50 text-slate-500', label: 'Not invoked' }
   const label = outcomeLabel(outcome)
-  if (outcome.kind === 'succeeded') return { icon: '✓', tone: 'text-emerald-600', label }
-  if (outcome.kind === 'failed') return { icon: '✕', tone: 'text-red-600', label }
-  return { icon: '!', tone: 'text-amber-600', label }
+  if (outcome.kind === 'succeeded') return { icon: 'check', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700', label }
+  if (outcome.kind === 'failed') return { icon: 'error', tone: 'border-red-200 bg-red-50 text-red-700', label }
+  return { icon: 'clock', tone: 'border-slate-200 bg-slate-50 text-slate-600', label }
 }

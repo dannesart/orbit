@@ -37,43 +37,84 @@ describe('Structure → Mapping', () => {
   })
 })
 
-describe('The inspector: orientation, not a second editor', () => {
-  it('offers Edit output in Output properties, opening the full editor, with focus returning there', () => {
-    const inspector = source('TransformInspector.vue')
-    const section = inspector.slice(inspector.indexOf('<section aria-labelledby="quick-heading"'), inspector.indexOf('</section>', inspector.indexOf('quick-heading')))
-    // In the section's heading row, with visible text (its accessible name) and a pencil.
-    expect(section).toMatch(/Output properties<\/h3>[\s\S]*?<button[^>]*data-open-editor[^>]*@click="emit\('focus', 'structure', null\)"\s*>\s*<svg aria-hidden="true"[\s\S]*?<\/svg>\s*Edit output\s*<\/button>[\s\S]*?<QuickMappings/)
-    // Exactly one editor action: nothing left in the inspector's header beside Close.
-    const page = source('SpatialDesigner.vue')
-    expect(page).not.toMatch(/Edit Transform/)
-    expect((page + inspector).match(/data-open-editor(?!\])/g)).toHaveLength(1)
-    expect(page).toMatch(/function closeFocus\(\) \{\s*focus\.value = null\s*nextTick\(\(\) => inspector\.value\?\.querySelector<HTMLElement>\('\[data-open-editor\]'\)\?\.focus\(\)\)/)
-    // A property's own mapping is still edited right there, or composed in Mapping at that property.
-    expect(section).toMatch(/<QuickMappings [^>]*@update:draft="emit\('update:draft', \$event\)" @edit="emit\('focus', 'mapping', \$event\)" \/>/)
+describe('The minimal inspector: a tool, not a report', () => {
+  const inspector = source('TransformInspector.vue')
+
+  it('has a compact header: number, title, applied Mapping version, run status and Close, and nothing else', () => {
+    const header = inspector.slice(inspector.indexOf('<!-- Header -->'), inspector.indexOf('<div class="min-h-0 flex-1 overflow-y-auto'))
+    expect(header).toMatch(/\{\{ badge \}\}<\/span>[\s\S]*?>Transform<\/h2>\s*<p[^>]*>Mapping v\{\{ config\.mapping\.version \}\}<\/p>[\s\S]*?<RunStatus [\s\S]*?aria-label="Close the Transform inspector"/)
+    expect(header).not.toMatch(/Feature|descriptions|Builds a new Value/)
+    // The shared header (Feature label, description) is for the other steps only.
+    expect(source('SpatialDesigner.vue')).toMatch(/<div v-if="selectedId !== 'transform'" class="flex items-start gap-3/)
+    expect(source('SpatialDesigner.vue')).toMatch(/:badge="panelTitle\.badge"[\s\S]*?@close="closeInspector"/)
   })
 
-  it('shows the latest run in one row, every outcome, with its evidence a click away', () => {
-    const inspector = source('TransformInspector.vue')
-    expect(inspector).toMatch(/<h3 id="latest-run-heading"[^>]*>Latest run<\/h3>/)
-    expect(inspector).toMatch(/aria-controls="transform-evidence" @click="details = !details">\{\{ details \? 'Back' : 'Evidence' \}\}/)
-    expect(inspector).toMatch(/<RunHistory v-if="details" id="transform-evidence"/)
+  it('puts the latest run behind one square status button: every outcome, with an accessible name and a popover', () => {
+    const status = source('RunStatus.vue')
+    expect(status).toMatch(/class="grid size-9 shrink-0 place-items-center rounded-xl border/)
+    expect(status).toMatch(/:aria-label="`Latest run: \$\{state\.label\}, run \$\{runNumber\}`"/)
+    expect(status).toMatch(/aria-haspopup="dialog"\s*:aria-expanded="open"/)
+    expect(status).toMatch(/@keydown\.escape\.stop="close\(true\)"/)
+    // The popover: what executed, the exact versions, what changed since, and the evidence.
+    expect(status).toMatch(/role="dialog" aria-label="Latest run"/)
+    expect(status).toMatch(/\{\{ state\.label \}\} · Run \{\{ runNumber \}\}/)
+    expect(status).toMatch(/\{\{ label\(run\.output\) \}\}[\s\S]*?Mapping v\{\{ run\.mapping\.version \}\}/)
+    expect(status).toMatch(/v-if="stale"[^>]*>Things changed since this run\./)
+    expect(status).toMatch(/v-else-if="unapplied"[^>]*>Your draft isn’t applied\. Runs use the applied versions\./)
+    expect(status).toMatch(/@click="evidence">Evidence</)
+    expect(inspector).toMatch(/<RunStatus [^>]*:unapplied="plan\.changes"[^>]*@evidence="showEvidence" \/>/)
+    expect(inspector).toMatch(/<RunHistory id="transform-evidence"/)
+    expect(inspector).not.toMatch(/Latest run<\/h3>/)
 
-    expect(runState(null)).toMatchObject({ label: 'Not invoked', icon: '○' })
+    expect(runState(null)).toMatchObject({ label: 'Not invoked', icon: 'minus' })
     const [, ok] = run()
-    expect(runState(ok)).toMatchObject({ label: 'Succeeded', icon: '✓' })
+    expect(runState(ok)).toMatchObject({ label: 'Succeeded', icon: 'check' })
+    expect(runState(ok).tone).toMatch(/emerald/)
     const [, refused] = run([deepFreeze({ ...INITIAL_MAPPING, properties: [{ name: 'fullName', source: { kind: 'property', name: 'middleName' } }] })])
-    expect(runState(refused)).toMatchObject({ label: 'Not attempted', icon: '!' })
+    expect(runState(refused)).toMatchObject({ label: 'Not attempted', icon: 'clock' })
     const [, failed] = run([deepFreeze({ ...INITIAL_MAPPING, properties: [{ name: 'fullName', source: { kind: 'literal', value: 7 } }] })])
-    expect(runState(failed)).toMatchObject({ label: 'Failed', icon: '✕' })
-    // The evidence still names the exact versions; the row only summarizes it.
+    expect(runState(failed)).toMatchObject({ label: 'Failed', icon: 'error' })
+    expect(runState(failed).tone).toMatch(/red/)
+    // The evidence still names the exact versions; the button only summarizes it.
     expect(ok!.evidence.mapping).toEqual({ id: INITIAL_MAPPING.id, version: 1 })
     expect(ok!.evidence.output).toEqual({ definition: { id: B1.id, version: 1 } })
   })
 
-  it('never presents the current preview as a run', () => {
+  it('shows input → output with exact versions, without “Reads” and “makes”', () => {
+    expect(inspector).toMatch(/<span>\{\{ definitionLabel\(input\) \}\}<\/span>\s*<span aria-hidden="true"[^>]*>→<\/span>\s*<span class="sr-only">makes<\/span>\s*<span[^>]*>\{\{ target\.label \}\}<\/span>/)
+    expect(inspector).not.toMatch(/>Reads</)
+    expect(inspector.replace('<span class="sr-only">makes</span>', '')).not.toMatch(/>makes</)
+  })
+
+  it('has one Output heading with its count and a square pencil, Edit output, opening Structure; focus returns to it', () => {
+    const section = inspector.slice(inspector.indexOf('<section aria-labelledby="output-heading"'), inspector.indexOf('</section>', inspector.indexOf('output-heading')))
+    expect(section).toMatch(/>Output<\/h3>\s*<span[^>]*>\{\{ mapped \}\}\/\{\{ review\.fields\.length \}\}<\/span>/)
+    expect(section).toMatch(/<button\s*type="button"\s*data-open-editor\s*aria-label="Edit output"\s*title="Edit output"[\s\S]*?@click="emit\('focus', 'structure', null\)"\s*>\s*<DesignerIcon name="pencil"/)
+    expect((source('SpatialDesigner.vue') + inspector).match(/data-open-editor(?!\])/g)).toHaveLength(1)
+    expect(source('SpatialDesigner.vue')).toMatch(/function closeFocus\(\) \{\s*focus\.value = null\s*nextTick\(\(\) => inspector\.value\?\.querySelector<HTMLElement>\('\[data-open-editor\]'\)\?\.focus\(\)\)/)
+  })
+
+  it('keeps property rows: a composed row opens Mapping at it, a simple one keeps its inline controls and a chevron', () => {
+    const rows = source('QuickMappings.vue')
+    expect(rows).toMatch(/v-if="f\.name && quickOf\(pieceAt\(f\.index\)\)\.kind === 'composed'"\s*type="button"\s*data-compose-row[\s\S]*?:aria-label="`\$\{f\.name\}, \$\{typeWords\[f\.expected\]\}, \$\{status\[f\.state\]\.label\}: \$\{describeSource\(fromPiece\(pieceAt\(f\.index\)!\)\)\}\. Edit in Mapping`"\s*@click="emit\('edit', f\.name\)"/)
+    expect(rows).toMatch(/:aria-label="`Compose \$\{f\.name\} in Mapping`"[\s\S]*?@click="emit\('edit', f\.name\)"\s*>\s*<DesignerIcon name="chevron"/)
+    expect(rows).toMatch(/:aria-label="`\$\{f\.name\}: where its value comes from`"/)
+    expect(rows).not.toMatch(/>\s*Compose\s*</)
+    expect(inspector).toMatch(/<QuickMappings [^>]*@update:draft="emit\('update:draft', \$event\)" @edit="emit\('focus', 'mapping', \$event\)" \/>/)
+  })
+
+  it('heads the preview “Preview · Not executed”, says the rest on demand, and keeps a real mismatch in view', () => {
     const preview = source('PreviewObject.vue')
-    expect(preview).toMatch(/<h3 class="text-sm font-semibold text-slate-900">Preview<\/h3>\s*<p class="text-xs text-slate-500">Not executed · this draft, with Record A’s data<\/p>/)
+    expect(preview).toMatch(/>Preview<\/h3>[\s\S]*?:aria-expanded="about" aria-controls="preview-about" @click="about = !about">Not executed<\/button>/)
+    expect(preview).toMatch(/<p v-if="about" id="preview-about"[^>]*>\s*This draft, with Record A’s data\. Nothing has run\./)
+    expect(preview).toMatch(/<p v-if="fit === false" class="mt-1\.5 text-xs text-red-700">/)
     expect(preview).not.toMatch(/uppercase|Latest run/)
-    expect(source('TransformInspector.vue')).not.toMatch(/>Preview</)
+  })
+
+  it('keeps Undo as an icon button and says what Apply does only when there is something to apply', () => {
+    const bar = source('ApplyBar.vue')
+    expect(bar).toMatch(/aria-label="Undo"\s*title="Undo"\s*:disabled="!canUndo"\s*@click="emit\('undo'\)"\s*>\s*<DesignerIcon name="undo"/)
+    expect(bar).toMatch(/:class="plan\.changes \? 'font-medium text-amber-800' : 'sr-only'"/)
+    expect(bar).toMatch(/to fix before applying/)
   })
 })

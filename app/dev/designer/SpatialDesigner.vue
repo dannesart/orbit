@@ -415,7 +415,8 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       @keydown.escape="closeInspector"
     >
       <div class="mx-auto mt-2 h-1 w-10 rounded-full bg-slate-200 lg:hidden" aria-hidden="true" />
-      <div class="flex items-start gap-3 px-5 pt-3 pb-3 lg:pt-4">
+      <!-- The Transform has its own compact header (TransformInspector); the other steps share this one. -->
+      <div v-if="selectedId !== 'transform'" class="flex items-start gap-3 px-5 pt-3 pb-3 lg:pt-4">
         <span class="mt-0.5 flex h-7 min-w-7 items-center justify-center rounded-full bg-accent-600 px-2 text-xs font-semibold text-white" aria-hidden="true">{{ panelTitle.badge }}</span>
         <div class="min-w-0 flex-1">
           <p class="text-xs text-slate-500">{{ panelTitle.kind }}</p>
@@ -427,6 +428,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
 
       <TransformInspector
         v-if="selectedId === 'transform'"
+        :badge="panelTitle.badge"
         :draft="draft"
         :config="config"
         :target="target"
@@ -446,6 +448,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         @discard="discard"
         @undo="undo"
         @focus="openFocus"
+        @close="closeInspector"
       />
       <div v-else class="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
         <section v-if="selectedId !== 'console-out'" aria-labelledby="setup-heading">
