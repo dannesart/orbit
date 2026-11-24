@@ -20,6 +20,8 @@ import { reviewDraft } from '../app/dev/designer/preview'
 import { A1, ELSEWHERE, INITIAL_DATA, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
 import { placeOf, workspacePlaces } from '../app/utils/workspaceNav'
 import { experimentPlaces } from '../app/dev/workspace/place'
+import { COLORS, DEFAULT_APPEARANCE, ICON_NAMES, checkAppearance } from '../app/dev/definitions/appearance'
+import { validate } from '../shared/features/definitions'
 
 const root = join(import.meta.dirname, '..')
 const source = (f: string) => readFileSync(join(root, f), 'utf8')
@@ -125,6 +127,32 @@ describe('Evolving a Definition', () => {
     expect(next.versions).toBe(made.versions)
     expect([next.id, next.name, next.description]).toEqual([made.id, 'Contact', 'Anyone we write to.'])
     expect(next.versions[0]!.name).toBe('Person') // the name it was made with, as Orbit's model keeps it
+  })
+
+  it('starts as the Definition icon in pink, from a curated set of about two dozen icons and eight colours', () => {
+    expect(person().appearance).toEqual({ icon: 'definition', color: 'pink' })
+    expect(DEFAULT_APPEARANCE).toEqual({ icon: 'definition', color: 'pink' })
+    expect(ICON_NAMES.length).toBeGreaterThanOrEqual(22)
+    expect(ICON_NAMES.length).toBeLessThanOrEqual(26)
+    expect([...COLORS]).toEqual(['pink', 'purple', 'blue', 'cyan', 'green', 'yellow', 'orange', 'slate'])
+    expect(() => checkAppearance({ icon: 'rocket' as never, color: 'pink' })).toThrow()
+    expect(() => checkAppearance({ icon: 'person', color: 'teal' as never })).toThrow()
+  })
+
+  it('changes appearance without a version, a new identity or anything a version says', () => {
+    const made = addVersion(person(), updateField(addField(draftFrom(person().versions[0]!)), 2, { name: 'email' }))
+    const next = renamed(made, { name: made.name, description: made.description, appearance: { icon: 'person', color: 'blue' } })
+    expect(next.appearance).toEqual({ icon: 'person', color: 'blue' })
+    expect(next.id).toBe(made.id)
+    expect(next.versions).toBe(made.versions) // the very same, frozen versions: none added, none copied
+    for (const v of next.versions) expect(Object.keys(v).sort()).toEqual(['fields', 'id', 'name', 'version', 'workspaceId'])
+    // What a version accepts is unchanged.
+    const data = { 'full name': 'Ada', subscribed: true, email: 'ada@example.com' }
+    expect(validate(next.versions[1]!, data)).toEqual(validate(made.versions[1]!, data))
+    // The next version still follows on from the last, exactly as before.
+    expect(addVersion(next, updateField(addField(draftFrom(next.versions[1]!)), 3, { name: 'phone' })).versions).toHaveLength(3)
+    // Left out, appearance stays as it was (a rename alone never resets it).
+    expect(renamed(next, { name: 'Contact', description: '' }).appearance).toEqual({ icon: 'person', color: 'blue' })
   })
 
   it('says what changed, row by row: renamed, retyped, removed, added', () => {
@@ -236,6 +264,18 @@ describe('Journey A: made in Definitions, used as an exact version in the Transf
     expect(out!.evidence.outcome.kind).toBe('succeeded')
   })
 
+  it('is unaffected by appearance: the same versions offered, the same run, the same evidence', () => {
+    const restyled = renamed(v2, { name: v2.name, description: v2.description, appearance: { icon: 'receipt', color: 'orange' } })
+    const before = offeredIn(acme, [v2])
+    const after = offeredIn(acme, [restyled])
+    expect(after.map((o) => o.definition)).toEqual(before.map((o) => o.definition))
+    const runOf = (made: typeof v2) => run(use(initialConfiguration(offeredIn(acme, [made])), { id: v1.id, version: 1 }, [fullName, subscribed]), 'ws-acme')
+    const [, a] = runOf(v2)
+    const [, b] = runOf(restyled)
+    expect(b!.evidence).toEqual(a!.evidence)
+    expect(b!.output).toEqual(a!.output)
+  })
+
   it('keeps using version 1 after version 2 exists: nothing moves by itself', () => {
     const config = use(initialConfiguration(offeredIn(acme, [v2])), { id: v1.id, version: 1 }, [fullName, subscribed])
     expect(run(config, 'ws-acme')[1]!.output!.definition).toEqual({ id: v1.id, version: 1 })
@@ -323,7 +363,7 @@ describe('Preview-only, and nothing kept', () => {
     const place = source('app/dev/definitions/DefinitionsPlace.vue')
     expect(place).toMatch(/stays in this browser tab, for \{\{ ws\.name \}\} only, until you reload or close it\. Nothing is saved/)
     expect(place).toMatch(/Orbit’s are samples that exist only in this preview/)
-    expect(source('app/dev/definitions/DefinitionCreate.vue')).toMatch(/Only this experiment keeps the description/)
+    expect(source('app/dev/definitions/DefinitionEditor.vue')).toMatch(/Only this experiment keeps the description and appearance/)
     expect(source('app/dev/definitions/store.ts')).toMatch(/if \(import\.meta\.server\) return emptyShelf\(\)/)
   })
 })
@@ -340,13 +380,14 @@ describe('The Definitions Studio: a catalogue, an inspector, and editing on purp
   it('shows each Definition as a compact card: icon, name, latest version and property count, nothing more', () => {
     for (const group of ['own-heading', 'orbit-heading']) {
       const markup = cards(group)
-      expect(markup).toMatch(/<DefinitionsIcon name="definition"/)
+      expect(markup).toMatch(/<DefinitionTile :appearance="(d\.appearance|null)" \/>/)
       expect(markup).toMatch(/Version \{\{ d\.versions?(\.length)? \}\} · \{\{ count\(/)
       expect(markup, group).not.toMatch(/description|DESCRIPTIONS|fields\.map|versions\.map/i)
     }
-    // Pink for the workspace's own; slate with a lock for Orbit's, which say they're read-only.
-    expect(cards('own-heading')).toMatch(/bg-accent-50 text-accent-600/)
-    expect(cards('orbit-heading')).toMatch(/bg-slate-100 text-slate-500[\s\S]*name="lock"[\s\S]*, read-only/)
+    // The workspace's own in the colour chosen for each; Orbit's in slate with a lock, read-only.
+    expect(cards('own-heading')).toContain('<DefinitionTile :appearance="d.appearance" />')
+    expect(cards('orbit-heading')).toMatch(/<DefinitionTile :appearance="null" \/>[\s\S]*name="lock"[\s\S]*, read-only/)
+    expect(source('app/dev/definitions/DefinitionTile.vue')).toContain("props.appearance ? COLOR_STYLES[props.appearance.color].tile : 'bg-slate-100 text-slate-500'")
   })
 
   it('opens a Definition in the inspector at its own address, and closes back to the catalogue', () => {
@@ -363,13 +404,47 @@ describe('The Definitions Studio: a catalogue, an inspector, and editing on purp
     // Only for Definitions made here: Orbit's are read-only.
     expect(inspector).toMatch(/<NuxtLink v-if="made" :to="\{ query: \{ d: id, about: null \} \}"/)
     expect(inspector).toMatch(/<button\s+v-if="made"[\s\S]*@click="newVersion"/)
-    expect(editor).toMatch(/<section v-if="!made"[\s\S]*Definitions provided by Orbit are read-only/)
+    expect(editor).toMatch(/<section v-if="part !== 'new' && !made"[\s\S]*Definitions provided by Orbit are read-only/)
   })
 
   it('leaves an editor by replacing it, so Back never lands on one that has finished', () => {
-    expect(editor).toContain('const leave = (v?: number) => navigateTo(back(v), { replace: true })')
-    for (const fn of ['createVersion', 'discardDraft', 'saveDescription']) {
-      expect(editor.slice(editor.indexOf(`function ${fn}`), editor.indexOf('}\n', editor.indexOf(`function ${fn}`))), fn).toMatch(/leave\(/)
-    }
+    expect(editor).toMatch(/const leave = [^\n]*\n  finished = true\n  return navigateTo\(\{ query \}, \{ replace: true \}\)/)
+    const act = editor.slice(editor.indexOf('function act()'), editor.indexOf('// --- Something to lose?'))
+    expect(act).toContain('navigateTo({ query: { d: id } }, { replace: true })')
+    expect(act.match(/leave\(/g)).toHaveLength(2)
+    expect(editor.slice(editor.indexOf('async function cancel()'), editor.indexOf('// Name and appearance are held'))).toMatch(/leave\(/)
+  })
+
+  it('is one editor in segments, moved between freely: General, Model and Preview', () => {
+    expect(editor).toContain("const SEGMENTS: Record<Part, Segment[]> = { new: ['general', 'model', 'preview'], next: ['model', 'preview'], about: ['general'] }")
+    expect(editor).toMatch(/role="tablist"[\s\S]*role="tab"[\s\S]*:aria-selected="segment === s"[\s\S]*@click="segment = s"/)
+    // No wizard: nothing stops you choosing any segment, and the draft is the shelf's, not a segment's.
+    expect(editor).not.toMatch(/disabled[^\n]*segment|segment[^\n]*disabled|Next step/i)
+    expect(editor).toContain("const creating = ref<NewDefinition | null>(props.part === 'new' ? startCreating(props.workspace.id) : null)")
+    expect(editor).toContain('watch(creating, (next) => next && setCreating(props.workspace.id, next))')
+  })
+
+  it('keeps the name, icon and draft in view, and the one action in every segment', () => {
+    const header = editor.slice(editor.indexOf("<!-- What's being edited: always in view -->"), editor.indexOf('id="segment-panel"'))
+    expect(header).toMatch(/<DefinitionTile :appearance="appearance"[\s\S]*\{\{ name \|\| 'New Definition' \}\}[\s\S]*\{\{ context \}\}/)
+    expect(header).toContain('data-back')
+    const footer = editor.slice(editor.indexOf('<!-- The one action, in every segment -->'))
+    expect(footer).toMatch(/data-editor-action @click="act">\{\{ action \}\}/)
+    expect(footer).toContain('@click="cancel"')
+    // Preview is optional: nothing about creating depends on it.
+    const problems = editor.slice(editor.indexOf('const problems = computed'), editor.indexOf('const tried'))
+    expect(problems).not.toMatch(/preview|example/i)
+  })
+
+  it('asks before losing real work, with Orbit’s confirmation, and never for an untouched draft', () => {
+    expect(editor).toContain("import LeaveDialog from '../designer/LeaveDialog.vue'")
+    expect(editor).toMatch(/async function cancel\(\) \{\n  if \(losing\.value\.length && !\(await ask\(losing\.value\)\)\) return/)
+    expect(editor).toMatch(/return untouched \? \[\] :/)
+    expect(editor).toContain('onBeforeRouteLeave(guard)')
+  })
+
+  it('offers an invitation to make the first Definition when there are none', () => {
+    expect(place).toMatch(/<ul v-else :class="grid">[\s\S]*data-first-definition[\s\S]*Create \{\{ ws\.name \}\}’s first Definition/)
+    expect(place).not.toContain('Nothing is made in')
   })
 })

@@ -5,8 +5,8 @@
 // properties and nothing else (validate). Its `name` is for people and never identity.
 //
 // What is only this experiment's, kept here and nowhere else:
-//   - A Definition's current name and description. They describe the identity, not a version, so
-//     changing them never makes a version. (Orbit's model puts `name` inside each frozen version;
+//   - A Definition's current name, description and appearance (an icon and a colour, appearance.ts).
+//     They describe the identity, not a version, so changing them never makes a version. (Orbit's model puts `name` inside each frozen version;
 //     each version here keeps the name it was made with, as Orbit requires, and that's all.)
 //   - Generated identities, and the safeguards Orbit's model doesn't have: versions are numbered
 //     1, 2, 3… with no gaps or repeats, an identity is never reused, and a version is never made
@@ -16,6 +16,7 @@ import {
   type DefinitionVersion, type Field, type FieldType, type Issue,
   deepFreeze, defineVersion, sameData, validate,
 } from '#shared/features/definitions'
+import { type Appearance, DEFAULT_APPEARANCE, checkAppearance } from './appearance'
 
 /** A Definition made in one workspace, with every version it has had (oldest first). */
 export interface MadeDefinition {
@@ -24,6 +25,8 @@ export interface MadeDefinition {
   /** Experimental metadata, for people only. Never identity, and never a version. */
   readonly name: string
   readonly description: string
+  /** How people see it in Orbit: an icon and a colour. Presentation only, never in a version. */
+  readonly appearance: Appearance
   readonly versions: readonly DefinitionVersion[]
 }
 
@@ -42,10 +45,12 @@ export interface Draft {
   readonly nextKey: number
 }
 
-/** A new Definition before its first version: its name and description, and its properties. */
+/** A new Definition before its first version: its name, description and appearance, and its properties. */
 export interface NewDefinition {
   readonly name: string
   readonly description: string
+  /** The Definition icon in pink, unless chosen. */
+  readonly appearance?: Appearance
   readonly draft: Draft
 }
 
@@ -174,12 +179,13 @@ export function checkSequence(made: MadeDefinition): void {
 }
 
 /** A new Definition and its first, immutable version. */
-export function createDefinition(input: { id: string; workspaceId: string; name: string; description: string; draft: Draft }): MadeDefinition {
+export function createDefinition(input: { id: string; workspaceId: string; name: string; description: string; appearance?: Appearance; draft: Draft }): MadeDefinition {
   const name = input.name.trim()
   if (!name) throw new Error('A Definition needs a name')
   if (draftProblems(input.draft).length) throw new Error('These properties can’t be a Definition yet')
   const first = defineVersion({ id: input.id, version: 1, name, workspaceId: input.workspaceId, fields: fieldsOf(input.draft) })
-  return deepFreeze({ id: input.id, workspaceId: input.workspaceId, name, description: input.description.trim(), versions: [first] })
+  const appearance = checkAppearance(input.appearance ?? DEFAULT_APPEARANCE)
+  return deepFreeze({ id: input.id, workspaceId: input.workspaceId, name, description: input.description.trim(), appearance, versions: [first] })
 }
 
 /**
@@ -197,11 +203,15 @@ export function addVersion(made: MadeDefinition, draft: Draft): MadeDefinition {
   return deepFreeze({ ...made, versions: [...made.versions, next] })
 }
 
-/** A new name or description: the same Definition, the same versions, nothing frozen. */
-export function renamed(made: MadeDefinition, change: { name: string; description: string }): MadeDefinition {
+/**
+ * A new name, description or appearance: the same Definition, the very same versions (not copies),
+ * nothing frozen. Appearance left out stays as it was.
+ */
+export function renamed(made: MadeDefinition, change: { name: string; description: string; appearance?: Appearance }): MadeDefinition {
   const name = change.name.trim()
   if (!name) throw new Error('A Definition needs a name')
-  return deepFreeze({ ...made, name, description: change.description.trim() })
+  const appearance = checkAppearance(change.appearance ?? made.appearance)
+  return deepFreeze({ ...made, name, description: change.description.trim(), appearance })
 }
 
 // --- Checking an example ---

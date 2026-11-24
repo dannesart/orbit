@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // One Definition, in a floating inspector beside the catalogue (a sheet on phones): its name, the
 // version shown and whose it is, its description, the properties of that version, its other
-// versions on demand, and what can be done with it. Nothing is edited here: a new version, or a
+// versions on demand, and what can be done with it, under the icon and colour chosen for it. Nothing is edited here: a new version, or a
 // new name or description, is made in its own view (DefinitionEditor), on purpose.
 import type { DefinitionVersion } from '#shared/features/definitions'
 import { ORBIT_DESCRIPTIONS, ORBIT_PROVIDED, draftFrom, typeWords } from './model'
 import { findMade, setEvolving, shelfOf } from './store'
 import { definitionsPath } from './designer'
+import DefinitionTile from './DefinitionTile.vue'
 import DefinitionsIcon from './DefinitionsIcon.vue'
 
 const props = defineProps<{ workspace: { id: string; name: string }; id: string; version: number | null; created: number | null }>()
@@ -62,9 +63,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-full text-sl
     <template v-else-if="shown">
       <!-- Header -->
       <div class="flex items-center gap-3 px-5 pt-3 pb-4 lg:pt-4">
-        <span class="grid size-9 shrink-0 place-items-center rounded-xl" :class="made ? 'bg-accent-50 text-accent-600' : 'bg-slate-100 text-slate-500'">
-          <DefinitionsIcon name="definition" class="size-[18px]" />
-        </span>
+        <DefinitionTile :appearance="made?.appearance ?? null" size="sm" />
         <div class="min-w-0 flex-1">
           <h2 ref="heading" tabindex="-1" class="truncate text-base leading-tight font-semibold text-slate-900 focus:outline-none">{{ name }}</h2>
           <p class="flex items-center gap-1 text-xs text-slate-500">
@@ -72,7 +71,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-full text-sl
             <span>Version {{ shown.version }}<template v-if="versions.length > 1"> of {{ versions.length }}</template> · {{ made ? workspace.name : 'Provided by Orbit' }}</span>
           </p>
         </div>
-        <NuxtLink v-if="made" :to="{ query: { d: id, about: null } }" :class="iconButton" aria-label="Change name or description" title="Change name or description">
+        <NuxtLink v-if="made" :to="{ query: { d: id, about: null } }" :class="iconButton" aria-label="Change name, description or appearance" title="Name and appearance">
           <DefinitionsIcon name="pencil" class="size-4" />
         </NuxtLink>
         <button type="button" :class="iconButton" aria-label="Close the inspector" title="Close" @click="emit('close')">

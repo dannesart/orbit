@@ -18,9 +18,9 @@
 <script setup lang="ts">
 import { ORBIT_PROVIDED } from './model'
 import { enterWorkspace, shelfHasWork, shelfOf } from './store'
-import DefinitionCreate from './DefinitionCreate.vue'
 import DefinitionEditor from './DefinitionEditor.vue'
 import DefinitionInspector from './DefinitionInspector.vue'
+import DefinitionTile from './DefinitionTile.vue'
 import DefinitionsIcon from './DefinitionsIcon.vue'
 
 const { workspace: ws } = useCurrentWorkspace()
@@ -83,10 +83,9 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
 </script>
 
 <template>
-  <main v-if="mode !== 'catalogue'" class="mx-auto max-w-2xl px-4 pt-10 pb-20 sm:px-6 sm:pt-14">
+  <main v-if="mode !== 'catalogue'" class="mx-auto max-w-5xl px-4 pt-8 pb-20 sm:px-6 sm:pt-10">
     <ClientOnly>
-      <DefinitionCreate v-if="mode === 'new'" :workspace="context" @created="navigateTo({ query: { d: $event } }, { replace: true })" @cancel="navigateTo({ query: {} })" />
-      <DefinitionEditor v-else :key="`${selected}-${mode}`" :workspace="context" :id="selected" :part="mode" :version="version" @created="created = $event" />
+      <DefinitionEditor :key="`${selected}-${mode}`" :workspace="context" :id="selected" :part="mode" :version="version" @created="created = $event" />
       <template #fallback>
         <p class="text-sm text-slate-500">Loading…</p>
       </template>
@@ -112,9 +111,7 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
         <ul v-if="made.length" :class="grid">
           <li v-for="d in made" :key="d.id">
             <NuxtLink :to="open(d.id)" :data-definition-card="d.id" :aria-current="d.id === selected ? 'true' : undefined" :class="[card, cardState(d.id)]">
-              <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-50 text-accent-600">
-                <DefinitionsIcon name="definition" class="size-5" />
-              </span>
+              <DefinitionTile :appearance="d.appearance" />
               <span class="min-w-0 flex-1">
                 <span class="block truncate font-medium text-slate-900">{{ d.name }}</span>
                 <span class="block text-xs text-slate-500">Version {{ d.versions.length }} · {{ count(d.versions.at(-1)!.fields.length) }}</span>
@@ -122,9 +119,20 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
             </NuxtLink>
           </li>
         </ul>
-        <p v-else class="mt-3 rounded-2xl border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500">
-          Nothing is made in {{ ws.name }} in this tab.
-        </p>
+        <!-- Nothing yet: an invitation, the size of a card, to make the first one. -->
+        <ul v-else :class="grid">
+          <li>
+            <NuxtLink :to="{ query: { new: null } }" data-first-definition :class="[card, 'border-dashed border-slate-300 hover:border-accent-300']">
+              <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-50 text-accent-600">
+                <DefinitionsIcon name="plus" class="size-5" />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block font-medium text-slate-900">Create {{ ws.name }}’s first Definition</span>
+                <span class="block text-xs text-slate-500">{{ creating ? 'Continue where you left off' : 'Name it, then add its properties' }}</span>
+              </span>
+            </NuxtLink>
+          </li>
+        </ul>
       </ClientOnly>
     </section>
 
@@ -133,9 +141,7 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
       <ul :class="grid">
         <li v-for="d in ORBIT_PROVIDED" :key="d.id">
           <NuxtLink :to="open(d.id)" :data-definition-card="d.id" :aria-current="d.id === selected ? 'true' : undefined" :class="[card, cardState(d.id)]">
-            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500">
-              <DefinitionsIcon name="definition" class="size-5" />
-            </span>
+            <DefinitionTile :appearance="null" />
             <span class="min-w-0 flex-1">
               <span class="flex items-center gap-1.5">
                 <span class="truncate font-medium text-slate-900">{{ d.name }}</span>

@@ -6,6 +6,7 @@
 // browser writes here (the server renders an empty, throwaway shelf), so nothing can be shared
 // between people through the server's memory.
 import { reactive } from 'vue'
+import { type Appearance, DEFAULT_APPEARANCE } from './appearance'
 import { DEFINITIONS } from '../features/experiment'
 import { LOCAL_ID } from '../designer/config'
 import {
@@ -66,7 +67,7 @@ function replace(workspaceId: string, next: MadeDefinition) {
 
 export function startCreating(workspaceId: string): NewDefinition {
   const shelf = shelfOf(workspaceId)
-  return (shelf.creating ??= { name: '', description: '', draft: blankDraft() })
+  return (shelf.creating ??= { name: '', description: '', appearance: DEFAULT_APPEARANCE, draft: blankDraft() })
 }
 
 export function setCreating(workspaceId: string, next: NewDefinition | null) {
@@ -100,7 +101,8 @@ export function versionFromDraft(workspaceId: string, id: string): number {
   return next.versions.length
 }
 
-export function redescribe(workspaceId: string, id: string, change: { name: string; description: string }) {
+/** Its name, description or appearance: never a version (model.ts, renamed). */
+export function redescribe(workspaceId: string, id: string, change: { name: string; description: string; appearance?: Appearance }) {
   const made = findMade(workspaceId, id)
   if (made) replace(workspaceId, renamed(made, change))
 }
