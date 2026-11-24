@@ -1,22 +1,23 @@
 <!--
-  The workspace navigation: Home, People and Settings, in one of two forms.
+  The workspace navigation: Home, then People and Settings, in one of two forms.
 
-    rail  From lg up: a compact white rail of icons in Orbit's frame, beneath the header, with
-          Orbit's mark at its top and Settings set apart below a divider. Each icon is named
-          (aria-label) and shows its name in a tooltip on hover and on keyboard focus; Escape
-          hides the tooltip. It lives in the workspace layout (pages/w/[id].vue), so it stays
-          mounted between pages. Pages are kept clear of it by .workspace-stage.
-    pill  Below lg: the same places with their names in a bottom pill, above the safe area, and a
-          pink moon that glides to where you are. .workspace-stage reserves its height so it never
-          covers the end of a page; it steps aside while you type, so it can't cover a focused
-          field or the keyboard's edge.
+    rail  From lg up: a compact white rail of icons in Orbit's frame, beneath the header (which
+          has Orbit's mark), in two groups: what the workspace does, then below a divider who's
+          in it and its settings (People, Settings). Each icon is named (aria-label) and shows
+          its name in a tooltip on hover and on keyboard focus; Escape hides the tooltip. It
+          lives in the workspace layout (pages/w/[id].vue), so it stays mounted between pages.
+          Pages are kept clear of it by .workspace-stage.
+    pill  Below lg: the same places, in the same order, with their names in a bottom pill, above
+          the safe area, and a pink moon that glides to where you are. .workspace-stage reserves
+          its height so it never covers the end of a page; it steps aside while you type, so it
+          can't cover a focused field or the keyboard's edge.
 
   Only one of the two is ever displayed, so only one navigation landmark exists at a time.
   With reduced motion, nothing moves (main.css).
 
   Where the experiments exist (`nuxt dev`, Deploy Previews), two more places, Workflows and then
-  Definitions, sit before Settings: each its own destination (Workflows use Definitions; they
-  don't own them). The flag is fixed at build time (nuxt.config.ts), so production builds have
+  Definitions, join Home in the first group: each its own destination (Workflows use
+  Definitions; they don't own them). The flag is fixed at build time (nuxt.config.ts), so production builds have
   exactly the three places above.
 -->
 <script setup lang="ts">
@@ -32,9 +33,9 @@ const current = computed(() => placeOf(route.path, props.workspaceId, extra.valu
 const index = computed(() => places.value.findIndex((p) => p.key === current.value))
 const icon = (key: string) => (key === 'settings' && !props.canManage ? 'about' : key)
 
-// The rail: the places, then Settings on its own below a divider.
-const primary = computed(() => places.value.filter((p) => p.key !== 'settings'))
-const settings = computed(() => places.value.filter((p) => p.key === 'settings'))
+// The rail: what the workspace does, then (below a divider) who's in it and its settings.
+const SECOND = ['people', 'settings']
+const groups = computed(() => [places.value.filter((p) => !SECOND.includes(p.key)), places.value.filter((p) => SECOND.includes(p.key))])
 
 // Escape hides the tooltips (they can't be dismissed otherwise without moving away) until the
 // pointer leaves the rail or focus moves to another place.
@@ -59,9 +60,7 @@ const pill = computed(() => places.value.length === 5
         @pointerleave="hushed = false"
       >
         <div class="flex w-[3.875rem] flex-col items-center gap-2 rounded-2xl border border-slate-200/80 bg-white p-2 shadow-lg shadow-slate-900/[0.05]">
-          <OrbitSymbol class="my-1.5 size-6" />
-          <span aria-hidden="true" class="h-px w-6 bg-slate-200" />
-          <template v-for="(group, g) in [primary, settings]" :key="g">
+          <template v-for="(group, g) in groups" :key="g">
             <span v-if="g === 1" aria-hidden="true" class="h-px w-6 bg-slate-200" />
             <ul class="flex flex-col gap-2">
               <li v-for="p in group" :key="p.key">

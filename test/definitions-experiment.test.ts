@@ -289,9 +289,9 @@ describe('Preview-only, and nothing kept', () => {
     const extra = experimentPlaces('ws-acme')
     expect(workspacePlaces('ws-acme', true, extra).map((p) => [p.key, p.label, p.to])).toEqual([
       ['home', 'Home', '/w/ws-acme'],
-      ['people', 'People', '/w/ws-acme/people'],
       ['workflows', 'Workflows', '/w/ws-acme/workflows'],
       ['definitions', 'Definitions', '/w/ws-acme/definitions'],
+      ['people', 'People', '/w/ws-acme/people'],
       ['settings', 'Settings', '/w/ws-acme/settings'],
     ])
     // Shown as itself, whatever Definition or version is open; never as Workflows.
@@ -322,8 +322,54 @@ describe('Preview-only, and nothing kept', () => {
   it('tells the truth about how long things last, and what’s a sample', () => {
     const place = source('app/dev/definitions/DefinitionsPlace.vue')
     expect(place).toMatch(/stays in this browser tab, for \{\{ ws\.name \}\} only, until you reload or close it\. Nothing is saved/)
-    expect(place).toMatch(/These are samples that exist only in this preview/)
+    expect(place).toMatch(/Orbit’s are samples that exist only in this preview/)
     expect(source('app/dev/definitions/DefinitionCreate.vue')).toMatch(/Only this experiment keeps the description/)
     expect(source('app/dev/definitions/store.ts')).toMatch(/if \(import\.meta\.server\) return emptyShelf\(\)/)
+  })
+})
+
+describe('The Definitions Studio: a catalogue, an inspector, and editing on purpose', () => {
+  const place = source('app/dev/definitions/DefinitionsPlace.vue')
+  const inspector = source('app/dev/definitions/DefinitionInspector.vue')
+  const editor = source('app/dev/definitions/DefinitionEditor.vue')
+  const cards = (group: string) => {
+    const from = place.indexOf(`id="${group}"`)
+    return place.slice(from, place.indexOf('</section>', from))
+  }
+
+  it('shows each Definition as a compact card: icon, name, latest version and property count, nothing more', () => {
+    for (const group of ['own-heading', 'orbit-heading']) {
+      const markup = cards(group)
+      expect(markup).toMatch(/<DefinitionsIcon name="definition"/)
+      expect(markup).toMatch(/Version \{\{ d\.versions?(\.length)? \}\} · \{\{ count\(/)
+      expect(markup, group).not.toMatch(/description|DESCRIPTIONS|fields\.map|versions\.map/i)
+    }
+    // Pink for the workspace's own; slate with a lock for Orbit's, which say they're read-only.
+    expect(cards('own-heading')).toMatch(/bg-accent-50 text-accent-600/)
+    expect(cards('orbit-heading')).toMatch(/bg-slate-100 text-slate-500[\s\S]*name="lock"[\s\S]*, read-only/)
+  })
+
+  it('opens a Definition in the inspector at its own address, and closes back to the catalogue', () => {
+    expect(place).toContain("const open = (id: string) => ({ query: { d: id } })")
+    expect(place).toMatch(/<DefinitionInspector v-if="inspecting"[^>]*:version="version"/)
+    expect(place).toMatch(/if \(back === route\.path\) router\.back\(\)\s*else navigateTo\(\{ query: \{\} \}, \{ replace: true \}\)/)
+    expect(inspector).toMatch(/@keydown\.escape="emit\('close'\)"/)
+  })
+
+  it('edits nothing in the inspector: a new version and a new name each open their own view', () => {
+    expect(inspector).not.toMatch(/<input|<textarea|PropertiesEditor|redescribe|versionFromDraft/)
+    expect(inspector).toContain("navigateTo({ query: { d: props.id, next: null } })")
+    expect(inspector).toContain(":to=\"{ query: { d: id, about: null } }\"")
+    // Only for Definitions made here: Orbit's are read-only.
+    expect(inspector).toMatch(/<NuxtLink v-if="made" :to="\{ query: \{ d: id, about: null \} \}"/)
+    expect(inspector).toMatch(/<button\s+v-if="made"[\s\S]*@click="newVersion"/)
+    expect(editor).toMatch(/<section v-if="!made"[\s\S]*Definitions provided by Orbit are read-only/)
+  })
+
+  it('leaves an editor by replacing it, so Back never lands on one that has finished', () => {
+    expect(editor).toContain('const leave = (v?: number) => navigateTo(back(v), { replace: true })')
+    for (const fn of ['createVersion', 'discardDraft', 'saveDescription']) {
+      expect(editor.slice(editor.indexOf(`function ${fn}`), editor.indexOf('}\n', editor.indexOf(`function ${fn}`))), fn).toMatch(/leave\(/)
+    }
   })
 })

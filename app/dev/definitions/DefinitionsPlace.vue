@@ -3,26 +3,35 @@
   (registered as a child of pages/w/[id].vue by nuxt.config.ts; production has no such route).
   Its own place in the workspace navigation, after Workflows (which use Definitions, not own them).
 
-  Two groups, never mixed: what's made in this workspace (this tab's memory only), and what's
-  available to it (Orbit-provided samples, read-only). Another workspace's Definitions are never
-  shown, in any form. The page says plainly how long anything made here lasts.
+  A catalogue across the workspace's width, in two groups never mixed: the workspace's own (this
+  tab's memory only) and those provided by Orbit (samples, read-only). Another workspace's
+  Definitions are never shown, in any form. One short notice says how long anything made here lasts.
+  Choosing a Definition opens it in a floating inspector beside the catalogue (a sheet on phones).
+  Making or changing one happens in its own view, on purpose: never inside the inspector.
 
-    /w/:id/definitions            the overview
-    /w/:id/definitions?new        making a new Definition
-    /w/:id/definitions?d=…&v=…    one Definition, at one version
+    /w/:id/definitions               the catalogue
+    /w/:id/definitions?new           making a new Definition
+    /w/:id/definitions?d=…&v=…       the catalogue, with one Definition at one version in the inspector
+    /w/:id/definitions?d=…&next      a draft of its next version
+    /w/:id/definitions?d=…&about     its name and description
 -->
 <script setup lang="ts">
-import { ORBIT_DESCRIPTIONS, ORBIT_PROVIDED } from './model'
+import { ORBIT_PROVIDED } from './model'
 import { enterWorkspace, shelfHasWork, shelfOf } from './store'
 import DefinitionCreate from './DefinitionCreate.vue'
-import DefinitionDetail from './DefinitionDetail.vue'
+import DefinitionEditor from './DefinitionEditor.vue'
+import DefinitionInspector from './DefinitionInspector.vue'
+import DefinitionsIcon from './DefinitionsIcon.vue'
 
 const { workspace: ws } = useCurrentWorkspace()
 const route = useRoute()
+const router = useRouter()
 const context = computed(() => ({ id: ws.value.id, name: ws.value.name }))
 
-const mode = computed<'overview' | 'new' | 'definition'>(() => ('new' in route.query ? 'new' : typeof route.query.d === 'string' ? 'definition' : 'overview'))
+type Mode = 'catalogue' | 'new' | 'next' | 'about'
 const selected = computed(() => (typeof route.query.d === 'string' ? route.query.d : ''))
+const mode = computed<Mode>(() => ('new' in route.query ? 'new' : selected.value && 'next' in route.query ? 'next' : selected.value && 'about' in route.query ? 'about' : 'catalogue'))
+const inspecting = computed(() => mode.value === 'catalogue' && !!selected.value)
 const version = computed(() => {
   const v = Number(route.query.v)
   return Number.isInteger(v) && v > 0 ? v : null
@@ -48,75 +57,110 @@ onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
 onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 const open = (id: string) => ({ query: { d: id } })
-const card = 'group flex flex-col rounded-2xl bg-white p-4 ring-1 ring-slate-200 transition hover:ring-accent-300 hover:shadow-md hover:shadow-accent-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500'
 const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
+
+// The version just made, for the inspector to say so once: forgotten as soon as you go elsewhere.
+const created = ref<number | null>(null)
+watch(() => route.fullPath, () => {
+  if (version.value !== created.value || mode.value !== 'catalogue') created.value = null
+}, { flush: 'post' })
+
+/** Closing returns to the catalogue: back, when that's where you came from; otherwise in place. */
+function closeInspector() {
+  const back = window.history.state?.back
+  if (back === route.path) router.back()
+  else navigateTo({ query: {} }, { replace: true })
+}
+// Focus returns to the card the inspector was opened from.
+watch(selected, (now, before) => {
+  if (now || !before) return
+  nextTick(() => document.querySelector<HTMLElement>(`[data-definition-card="${CSS.escape(before)}"]`)?.focus())
+})
+
+const card = 'group flex items-center gap-3 rounded-2xl border bg-white p-4 transition hover:shadow-md hover:shadow-slate-900/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500'
+const cardState = (id: string) => (id === selected.value ? 'border-accent-300 ring-4 ring-accent-50' : 'border-slate-200/80 hover:border-slate-300')
+const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))]'
 </script>
 
 <template>
-  <main class="mx-auto max-w-2xl px-4 pt-10 pb-20 sm:px-6 sm:pt-14">
+  <main v-if="mode !== 'catalogue'" class="mx-auto max-w-2xl px-4 pt-10 pb-20 sm:px-6 sm:pt-14">
     <ClientOnly>
       <DefinitionCreate v-if="mode === 'new'" :workspace="context" @created="navigateTo({ query: { d: $event } }, { replace: true })" @cancel="navigateTo({ query: {} })" />
-      <DefinitionDetail v-else-if="mode === 'definition'" :key="selected" :workspace="context" :id="selected" :version="version" />
+      <DefinitionEditor v-else :key="`${selected}-${mode}`" :workspace="context" :id="selected" :part="mode" :version="version" @created="created = $event" />
       <template #fallback>
-        <p v-if="mode !== 'overview'" class="text-sm text-slate-500">Loading…</p>
+        <p class="text-sm text-slate-500">Loading…</p>
       </template>
     </ClientOnly>
+  </main>
 
-    <div v-if="mode === 'overview'" class="flex flex-col gap-4">
-      <section class="animate-rise rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8" aria-labelledby="definitions">
-        <p class="text-xs font-semibold tracking-wide text-accent-700 uppercase">Experiment · previews only</p>
-        <h1 id="definitions" class="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Definitions</h1>
-        <p class="mt-2 text-slate-600">
-          A Definition describes one kind of information, such as a person or an invoice: what it’s called, what it means and what it contains.
-          It holds no information itself. A Person Definition says what every person’s information contains, without anyone in it.
-        </p>
-        <p class="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200/70">
-          Anything made here stays in this browser tab, for {{ ws.name }} only, until you reload or close it. Nothing is saved, and nobody else sees it.
-        </p>
-      </section>
+  <main v-else class="definitions-catalogue px-4 pt-8 pb-20 transition-[padding] sm:px-6 sm:pt-10 lg:pb-12" :class="{ 'definitions-catalogue--inspecting': inspecting }">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Definitions</h1>
+      <NuxtLink :to="{ query: { new: null } }" class="btn-primary inline-flex w-auto items-center gap-1.5 rounded-full px-4 py-2 text-sm">
+        <DefinitionsIcon name="plus" class="size-4" />
+        {{ creating ? 'Continue the new Definition' : 'New Definition' }}
+      </NuxtLink>
+    </div>
+    <p class="mt-2 max-w-2xl text-xs text-slate-500">
+      A preview experiment. Anything made here stays in this browser tab, for {{ ws.name }} only, until you reload or close it. Nothing is saved.
+      Orbit’s are samples that exist only in this preview.
+    </p>
 
-      <section class="animate-rise rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8" aria-labelledby="made-heading">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 id="made-heading" class="text-base font-semibold text-slate-900">Made in {{ ws.name }}</h2>
-            <p class="text-sm text-slate-500">{{ ws.name }}’s own. Made and changed here.</p>
-          </div>
-          <NuxtLink :to="{ query: { new: null } }" class="btn-primary w-auto rounded-full px-4 py-2 text-sm">
-            {{ creating ? 'Continue the new Definition' : 'New Definition' }}
-          </NuxtLink>
-        </div>
-        <ul v-if="made.length" class="mt-4 grid gap-2 sm:grid-cols-2">
+    <section class="mt-8" aria-labelledby="own-heading">
+      <h2 id="own-heading" class="text-sm font-semibold text-slate-900">Your workspace</h2>
+      <ClientOnly>
+        <ul v-if="made.length" :class="grid">
           <li v-for="d in made" :key="d.id">
-            <NuxtLink :to="open(d.id)" :class="card">
-              <span class="font-medium text-slate-900 group-hover:text-accent-800">{{ d.name }}</span>
-              <span v-if="d.description" class="mt-0.5 line-clamp-2 text-sm text-slate-600">{{ d.description }}</span>
-              <span class="mt-2 text-xs text-slate-500">
-                Version {{ d.versions.length }} · {{ count(d.versions.at(-1)!.fields.length) }}<template v-if="shelfOf(ws.id).evolving[d.id]"> · a draft of version {{ d.versions.length + 1 }}</template>
+            <NuxtLink :to="open(d.id)" :data-definition-card="d.id" :aria-current="d.id === selected ? 'true' : undefined" :class="[card, cardState(d.id)]">
+              <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-50 text-accent-600">
+                <DefinitionsIcon name="definition" class="size-5" />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate font-medium text-slate-900">{{ d.name }}</span>
+                <span class="block text-xs text-slate-500">Version {{ d.versions.length }} · {{ count(d.versions.at(-1)!.fields.length) }}</span>
               </span>
             </NuxtLink>
           </li>
         </ul>
-        <p v-else class="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
+        <p v-else class="mt-3 rounded-2xl border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500">
           Nothing is made in {{ ws.name }} in this tab.
         </p>
-      </section>
+      </ClientOnly>
+    </section>
 
-      <section class="animate-rise rounded-3xl border border-slate-200/80 bg-white/70 p-6 shadow-sm sm:p-8" aria-labelledby="available-heading">
-        <h2 id="available-heading" class="text-base font-semibold text-slate-900">Available to {{ ws.name }}</h2>
-        <p class="text-sm text-slate-500">Provided by Orbit. {{ ws.name }} can use them, not change them. These are samples that exist only in this preview.</p>
-        <ul class="mt-4 grid gap-2 sm:grid-cols-2">
-          <li v-for="d in ORBIT_PROVIDED" :key="d.id">
-            <NuxtLink :to="open(d.id)" :class="[card, 'bg-slate-50/80']">
-              <span class="flex items-center gap-2">
-                <span class="font-medium text-slate-900 group-hover:text-accent-800">{{ d.name }}</span>
-                <span class="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200">Orbit · sample</span>
+    <section class="mt-10" aria-labelledby="orbit-heading">
+      <h2 id="orbit-heading" class="text-sm font-semibold text-slate-900">Provided by Orbit</h2>
+      <ul :class="grid">
+        <li v-for="d in ORBIT_PROVIDED" :key="d.id">
+          <NuxtLink :to="open(d.id)" :data-definition-card="d.id" :aria-current="d.id === selected ? 'true' : undefined" :class="[card, cardState(d.id)]">
+            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500">
+              <DefinitionsIcon name="definition" class="size-5" />
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-1.5">
+                <span class="truncate font-medium text-slate-900">{{ d.name }}</span>
+                <DefinitionsIcon name="lock" class="size-3.5 shrink-0 text-slate-400" />
+                <span class="sr-only">, read-only</span>
               </span>
-              <span class="mt-0.5 text-sm text-slate-600">{{ ORBIT_DESCRIPTIONS[d.id] }}</span>
-              <span class="mt-2 text-xs text-slate-500">Version {{ d.version }} · {{ count(d.fields.length) }} · read-only</span>
-            </NuxtLink>
-          </li>
-        </ul>
-      </section>
-    </div>
+              <span class="block text-xs text-slate-500">Version {{ d.version }} · {{ count(d.fields.length) }}</span>
+            </span>
+          </NuxtLink>
+        </li>
+      </ul>
+    </section>
+
+    <ClientOnly>
+      <DefinitionInspector v-if="inspecting" :key="selected" :workspace="context" :id="selected" :version="version" :created="created" @close="closeInspector" />
+    </ClientOnly>
   </main>
 </template>
+
+<style>
+/* With the inspector open on wide screens, the catalogue makes room for it rather than hiding
+   under it: the stage already keeps --nav-reserve (and any centring gutter) on the right. */
+@media (width >= 64rem) {
+  .definitions-catalogue--inspecting {
+    padding-right: max(1.5rem, calc(27rem - max(0px, (100vw - 80rem) / 2) - var(--nav-reserve, 0px)));
+  }
+}
+</style>

@@ -40,12 +40,12 @@ describe('the Workflows place (only where the workflow designer experiment exist
     expect(placeOf('/w/abc/workflows', 'abc')).toBe('home')
   })
 
-  it('sits before Settings when the build has the experiment', () => {
+  it('follows Home, before People and Settings, when the build has the experiment', () => {
     const extra = [workflowsPlace('abc')]
     expect(workspacePlaces('abc', false, extra)).toEqual([
       { key: 'home', label: 'Home', to: '/w/abc' },
-      { key: 'people', label: 'People', to: '/w/abc/people' },
       { key: 'workflows', label: 'Workflows', to: '/w/abc/workflows' },
+      { key: 'people', label: 'People', to: '/w/abc/people' },
       { key: 'settings', label: 'About', to: '/w/abc/settings' },
     ])
     expect(placeOf('/w/abc/workflows/', 'abc', extra)).toBe('workflows')
@@ -72,16 +72,18 @@ describe('The rail (wide screens): compact icons, each named and explained', () 
     expect(nav).toMatch(/\.workspace-rail--hushed \.workspace-rail-tip \{ opacity: 0 !important; \}/)
   })
 
-  it('gives every icon a 44px target, 8px apart, active in pink, and Settings below a divider', () => {
+  it('gives every icon a 44px target, 8px apart, active in pink, and People and Settings below a divider', () => {
     expect(rail).toMatch(/class="group relative flex size-11 /)
     expect(rail).toMatch(/flex flex-col gap-2/)
     expect(rail).toContain("p.key === current ? 'bg-accent-50 text-accent-600' : 'text-slate-500")
-    expect(rail).toContain('v-for="(group, g) in [primary, settings]"')
+    expect(nav).toContain("const SECOND = ['people', 'settings']")
+    expect(rail).toContain('v-for="(group, g) in groups"')
     expect(rail).toMatch(/v-if="g === 1" aria-hidden="true" class="h-px/)
   })
 
-  it('puts Orbit’s own mark at the top, and a house for Home: no indicator dots', () => {
-    expect(rail).toMatch(/<OrbitSymbol class="[^"]*" \/>\s*<span aria-hidden="true" class="h-px/)
+  it('leaves Orbit’s mark to the header, and has a house for Home: no indicator dots', () => {
+    expect(rail).not.toMatch(/OrbitSymbol|OrbitMark/)
+    expect(rail.match(/class="h-px/g)).toHaveLength(1)
     expect(nav).not.toMatch(/size-1\.5 rounded-full bg-accent-400/)
     expect(icons).toMatch(/name === 'home'">\s*<path d="M2\.5 7\.25 8 2\.75l5\.5 4\.5" \/>/)
     expect(icons).not.toMatch(/fill="currentColor"/)
