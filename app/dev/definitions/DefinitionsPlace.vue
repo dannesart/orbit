@@ -1,7 +1,7 @@
 <!--
   Experiment #7: a workspace's Definitions. Only in `nuxt dev` and Netlify Deploy Previews
   (registered as a child of pages/w/[id].vue by nuxt.config.ts; production has no such route).
-  Reached from the Workflows place: no navigation item of its own.
+  Its own place in the workspace navigation, after Workflows (which use Definitions, not own them).
 
   Two groups, never mixed: what's made in this workspace (this tab's memory only), and what's
   available to it (Orbit-provided samples, read-only). Another workspace's Definitions are never

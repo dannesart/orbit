@@ -1,5 +1,8 @@
-/** The places inside a workspace, in the order the navigation shows them. */
-export type Place = 'home' | 'people' | 'workflows' | 'settings'
+/**
+ * The places inside a workspace: Home, People and Settings. Builds with experiments add their own
+ * (`extra`, keyed by their own names), so this file names none of them.
+ */
+export type Place = 'home' | 'people' | 'settings' | (string & {})
 
 export interface PlaceLink {
   key: Place

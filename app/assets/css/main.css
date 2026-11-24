@@ -116,7 +116,7 @@ body {
    * what remains. Below lg, it reserves the bottom pill's height and the safe area instead.
    */
   .workspace-stage {
-    --nav-reserve: 8.5rem; /* 2rem frame padding + 5rem rail + 1.5rem clearance */
+    --nav-reserve: 7.5rem; /* 2rem frame padding + 3.875rem rail + 1.625rem clearance */
     padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
     @media (width >= 64rem) {
       padding-inline: calc(max(0px, (100% - 80rem) / 2) + var(--nav-reserve));

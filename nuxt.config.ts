@@ -28,8 +28,8 @@ export default defineNuxtConfig({
         workspace.children = [
           ...(workspace.children ?? []),
           { name: 'w-id-workflows', path: 'workflows', file: fileURLToPath(new URL('./app/dev/workspace/WorkflowsPlace.vue', import.meta.url)) },
-          // Experiment #7: the workspace's Definitions, reached from the Workflows place (no new
-          // navigation item), under the same guard.
+          // Experiment #7: the workspace’s Definitions, its own place in the workspace navigation,
+          // under the same guard.
           { name: 'w-id-definitions', path: 'definitions', file: fileURLToPath(new URL('./app/dev/definitions/DefinitionsPlace.vue', import.meta.url)) },
         ]
       })

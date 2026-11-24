@@ -18,7 +18,8 @@ import {
 import { toDraft } from '../app/dev/designer/parts'
 import { reviewDraft } from '../app/dev/designer/preview'
 import { A1, ELSEWHERE, INITIAL_DATA, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
-import { experimentPlaceOf } from '../app/dev/workspace/place'
+import { placeOf, workspacePlaces } from '../app/utils/workspaceNav'
+import { experimentPlaces } from '../app/dev/workspace/place'
 
 const root = join(import.meta.dirname, '..')
 const source = (f: string) => readFileSync(join(root, f), 'utf8')
@@ -284,12 +285,28 @@ describe('Preview-only, and nothing kept', () => {
     for (const page of pages('app/pages')) expect(source(page), page).not.toMatch(/definitions|DefinitionsPlace/i)
   })
 
-  it('adds no navigation item: Definitions shows as the Workflows place, and only behind the flag', () => {
-    expect(experimentPlaceOf('/w/ws-acme/definitions', 'ws-acme')).toBe('workflows')
-    expect(experimentPlaceOf('/w/ws-acme/definitions?d=x&v=2', 'ws-acme')).toBe('workflows')
-    expect(experimentPlaceOf('/w/ws-acme/people', 'ws-acme')).toBeNull()
-    expect(source('app/components/WorkspaceNav.vue')).toMatch(/import\.meta\.env\.ORBIT_PLAYGROUND === true \? experimentPlaceOf\(/)
+  it('is its own place in the navigation, after Workflows, and only behind the flag', () => {
+    const extra = experimentPlaces('ws-acme')
+    expect(workspacePlaces('ws-acme', true, extra).map((p) => [p.key, p.label, p.to])).toEqual([
+      ['home', 'Home', '/w/ws-acme'],
+      ['people', 'People', '/w/ws-acme/people'],
+      ['workflows', 'Workflows', '/w/ws-acme/workflows'],
+      ['definitions', 'Definitions', '/w/ws-acme/definitions'],
+      ['settings', 'Settings', '/w/ws-acme/settings'],
+    ])
+    // Shown as itself, whatever Definition or version is open; never as Workflows.
+    expect(placeOf('/w/ws-acme/definitions', 'ws-acme', extra)).toBe('definitions')
+    expect(placeOf('/w/ws-acme/definitions?d=x&v=2', 'ws-acme', extra)).toBe('definitions')
+    expect(placeOf('/w/ws-acme/definitions?new', 'ws-acme', extra)).toBe('definitions')
+    expect(placeOf('/w/ws-acme/workflows', 'ws-acme', extra)).toBe('workflows')
+    // Without the experiments (production), neither exists.
+    expect(placeOf('/w/ws-acme/definitions', 'ws-acme')).toBe('home')
     expect(source('app/utils/workspaceNav.ts')).not.toMatch(/definitions/i)
+  })
+
+  it('is no longer offered from inside the Workflows place: it isn’t part of it', () => {
+    const workflows = source('app/dev/workspace/WorkflowsPlace.vue')
+    expect(workflows.slice(workflows.indexOf('<template>'))).not.toMatch(/definitions/i)
   })
 
   it('never fetches, stores, logs or evaluates anything, and imports only the experiments and Orbit’s language', () => {

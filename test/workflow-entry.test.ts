@@ -37,9 +37,9 @@ describe('Only in builds that have the designer', () => {
 
   it('keeps production’s pill markup: three columns, the same widths and padding', () => {
     const nav = source('app/components/WorkspaceNav.vue')
-    expect(nav).toMatch(/four \? 'grid-cols-4' : 'grid-cols-3'/)
-    expect(nav).toMatch(/four \? 'w-\[calc\(\(100%-0\.5rem\)\/4\)\]' : 'w-\[calc\(\(100%-0\.5rem\)\/3\)\]'/)
-    expect(nav).toMatch(/four \? 'min-w-20 px-2' : 'min-w-22 px-4'/)
+    expect(nav).toMatch(/\{ cols: 'grid-cols-3', moon: 'w-\[calc\(\(100%-0\.5rem\)\/3\)\]', item: 'min-w-22 px-4 text-xs' \}/)
+    // Builds with the experiments: five columns (Workflows and Definitions added).
+    expect(nav).toMatch(/places\.value\.length === 5\s*\? \{ cols: 'grid-cols-5', moon: 'w-\[calc\(\(100%-0\.5rem\)\/5\)\]'/)
   })
 })
 
@@ -122,6 +122,6 @@ describe('Leaving the designer never silently discards work', async () => {
 describe('Production carries no trace of the Workflows place', () => {
   it('keeps the link out of the shared navigation code, behind the build-time constant', () => {
     expect(source('app/utils/workspaceNav.ts')).not.toMatch(/Workflows|'\/workflows'/)
-    expect(source('app/components/WorkspaceNav.vue')).toMatch(/import\.meta\.env\.ORBIT_PLAYGROUND === true \? \[workflowsPlace\(props\.workspaceId\)\] : \[\]/)
+    expect(source('app/components/WorkspaceNav.vue')).toMatch(/import\.meta\.env\.ORBIT_PLAYGROUND === true \? experimentPlaces\(props\.workspaceId\) : \[\]/)
   })
 })
