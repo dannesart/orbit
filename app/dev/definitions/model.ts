@@ -16,7 +16,7 @@
 //     the same properties in another order are the same (versionLike), and reordering alone never
 //     makes a version.
 import {
-  type DefinitionVersion, type Field, type FieldType, type Issue, type PropertyType, type ScalarField,
+  type DefinitionVersion, type Field, type FieldType, type Issue, type PropertyType, type ScalarField, isScalarField,
   checkPropertyNames, deepFreeze, defineVersion, propertyPathWords, sameFields, validate,
 } from '#shared/features/definitions'
 import { describeNamingIssues } from '../features/experiment'
@@ -102,11 +102,11 @@ export const blankDraft = (): Draft => ({ basedOn: null, fields: [{ key: 0, name
 
 /**
  * A version's properties as the Studio edits them: value properties only. The Studio has no editor
- * for local objects (Orbit's model has them; this experiment doesn't build them), so a version
- * with one is refused here, never shown flattened or with its objects dropped.
+ * for local objects or references (Orbit's model has them; this experiment doesn't build them), so
+ * a version with one is refused here, never shown flattened, copied or with anything dropped.
  */
 function editableFields(version: DefinitionVersion): readonly ScalarField[] {
-  if (version.fields.some((f) => f.type === 'object')) throw new Error(`${version.id}@${version.version} has local objects, which the Studio can’t edit yet`)
+  if (!version.fields.every(isScalarField)) throw new Error(`${version.id}@${version.version} has local objects or references, which the Studio can’t edit yet`)
   return version.fields as readonly ScalarField[]
 }
 
@@ -275,7 +275,7 @@ export const checkExample = (fields: readonly Field[], data: unknown): Issue[] =
 
 // --- Words ---
 
-export const typeWords: Record<PropertyType, string> = { string: 'Text', number: 'Number', boolean: 'Yes or no', object: 'Object' }
+export const typeWords: Record<PropertyType, string> = { string: 'Text', number: 'Number', boolean: 'Yes or no', object: 'Object', reference: 'Definition' }
 const kindWords: Record<string, string> = {
   string: 'text', number: 'a number', boolean: 'yes or no', undefined: 'missing', null: 'empty', array: 'a list', object: 'a group', other: 'something else',
 }

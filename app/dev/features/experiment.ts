@@ -3,7 +3,7 @@
 // not a reusable orchestration abstraction), and plain words for outcomes and issues.
 // Development only: the page that uses this is registered only by `nuxt dev` (nuxt.config.ts).
 import {
-  type Data, type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type Kind, type NamingIssue, type PropertyType,
+  type Data, type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type Kind, type NamingIssue, type PropertyType, type DefinitionIssue, MAX_OBJECT_LEVELS,
   deepFreeze, defineVersion, propertyPathWords, sameDefinition,
 } from '#shared/features/definitions'
 import {
@@ -63,7 +63,7 @@ export const CONSOLES: readonly { feature: PassThroughFeature; label: string }[]
   { feature: orbitConsole, label: 'Orbit.Console' },
   {
     label: 'A Console that tries to change the value',
-    feature: { id: 'playground.console-that-edits', version: 1, contract: 'pass-through', localObjects: 'unsupported', run(input, { inspect }) {
+    feature: { id: 'playground.console-that-edits', version: 1, contract: 'pass-through', localObjects: 'unsupported', references: 'unsupported', run(input, { inspect }) {
       inspect(input)
       ;(input as Record<string, unknown>).firstName = 'Grace' // the input is frozen: this throws
       return input
@@ -71,7 +71,7 @@ export const CONSOLES: readonly { feature: PassThroughFeature; label: string }[]
   },
   {
     label: 'A Console that hands on something else',
-    feature: { id: 'playground.console-that-swaps', version: 1, contract: 'pass-through', localObjects: 'unsupported', run(input, { inspect }) {
+    feature: { id: 'playground.console-that-swaps', version: 1, contract: 'pass-through', localObjects: 'unsupported', references: 'unsupported', run(input, { inspect }) {
       inspect(input)
       return { ...input, firstName: 'Grace' }
     } },
@@ -181,19 +181,33 @@ export function describeOutcome(outcome: Outcome): string {
     case 'invalid_input': return 'The input doesn’t match its own Definition, so the Feature didn’t run.'
     case 'contract_mismatch': return `It reads ${definitionLabel(outcome.expected)}, but received ${definitionLabel(outcome.actual)}. Exact versions only, so the Feature didn’t run.`
     case 'invalid_mapping': return 'The Mapping can’t be applied to this input, so the Feature didn’t run.'
-    case 'unsupported_contract': return `This version of the Feature doesn’t accept ${definitionLabel(outcome.definition)}: it has objects inside it (${outcome.paths.map(propertyPathWords).join(', ')}). The Feature didn’t run.`
+    case 'invalid_contract': return `${definitionLabel(outcome.definition)} doesn’t hold together here as a contract, so the Feature didn’t run.`
+    case 'unsupported_contract': return `This version of the Feature doesn’t accept ${definitionLabel(outcome.definition)}: it has objects or other Definitions inside it (${outcome.paths.map(propertyPathWords).join(', ')}). The Feature didn’t run.`
     case 'threw': return `The Feature stopped with an error (${outcome.error}). Nothing was handed on.`
     case 'invalid_output': return 'Its output doesn’t satisfy the target Definition, so it went no further.'
     case 'pass_through_broken': return 'It handed on something different from what it received. The boundary stopped it there.'
   }
 }
 
-export const outcomeIssues = (outcome: Outcome): string[] =>
-  'issues' in outcome
-    ? outcome.reason === 'invalid_mapping'
-      ? outcome.issues.map((i) => `${formatPath(i.path)}: ${describeMappingIssue(i)}`)
-      : outcome.issues.map(describeIssue)
-    : []
+/** A problem with a contract (checkFields, checkContract), in words. */
+export function describeDefinitionIssue(issue: DefinitionIssue): string {
+  const at = propertyPathWords(issue.path)
+  switch (issue.problem) {
+    case 'unresolved_reference': return `${at} refers to ${definitionLabel(issue.definition)}, which can’t be found here.`
+    case 'unavailable_reference': return `${at} refers to ${definitionLabel(issue.definition)}, which this Definition may not depend on.`
+    case 'cyclic_reference': return `${at} refers back to ${definitionLabel(issue.definition)}, which contains it, so it never ends.`
+    case 'too_deep': return `${at} would nest ${issue.level} levels deep. At most ${MAX_OBJECT_LEVELS} are allowed.`
+    case 'malformed': return `${at} isn’t a property Orbit understands.`
+    default: return describeNamingIssues([issue])[0]!
+  }
+}
+
+export const outcomeIssues = (outcome: Outcome): string[] => {
+  if (!('issues' in outcome)) return []
+  if (outcome.reason === 'invalid_mapping') return outcome.issues.map((i) => `${formatPath(i.path)}: ${describeMappingIssue(i)}`)
+  if (outcome.reason === 'invalid_contract') return outcome.issues.map(describeDefinitionIssue)
+  return outcome.issues.map(describeIssue)
+}
 
 /**
  * Hints while editing a Mapping, before anything runs: each property's type (from its source),

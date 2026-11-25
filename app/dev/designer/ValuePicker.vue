@@ -2,7 +2,7 @@
 // Choosing a value, value first: a field of the input (with its example value), a space, some
 // text, or a group of parts. An inline list of buttons rather than a floating menu, so it works
 // the same with a mouse, a keyboard, a screen reader and a thumb.
-import type { Field, FieldType, PropertyType, Scalar } from '#shared/features/definitions'
+import { type Field, type FieldType, type PropertyType, type Scalar, isScalarField } from '#shared/features/definitions'
 import ShownText from './ShownText.vue'
 import type { Piece } from './parts'
 import type { Example } from './preview'
@@ -13,13 +13,13 @@ const emit = defineEmits<{ pick: [Piece]; cancel: [] }>()
 const root = ref<HTMLElement>()
 onMounted(() => root.value?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus())
 
-const typeWords: Record<PropertyType, string> = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object' }
+const typeWords: Record<PropertyType, string> = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object', reference: 'Definition' }
 /** An input value to show beside its property: only a value, never a whole local object (sources can't read one). */
 const exampleOf = (name: string): Scalar | undefined => {
   const value = 'data' in props.example ? props.example.data[name] : undefined
   return value !== undefined && typeof value !== 'object' ? value : undefined
 }
-const unusable = (f: Field) => f.type === 'object' || (!!props.need && f.type !== props.need)
+const unusable = (f: Field) => !isScalarField(f) || (!!props.need && f.type !== props.need)
 const option = 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ring-1 ring-slate-200 transition hover:bg-accent-50 hover:ring-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
 </script>
 

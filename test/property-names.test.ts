@@ -31,6 +31,13 @@ describe('The naming rule', () => {
     expect(problems('CAFÉ', NFD)).toEqual(['differs_only_by_case'])
   })
 
+  it('has the documented limits of its case comparison (strict: it only ever refuses more)', () => {
+    for (const [a, b] of [['ß', 'SS'], ['ß', 'ss'], ['ı', 'i'], ['İ', 'i̇'], ['ς', 'σ'], ['ﬁ', 'fi']]) {
+      expect(problems(a!, b!), `${a} / ${b}`).toEqual(['differs_only_by_case'])
+    }
+    expect(problems('Ａ', 'A')).toEqual([]) // full-width: compatibility, not canonical, equivalence
+  })
+
   it('locates each problem at the name it is about, under its parent', () => {
     expect(checkPropertyNames(['x', 'X'], ['contact'])).toEqual([{ problem: 'differs_only_by_case', path: ['contact', 'X'], other: 'x' }])
   })

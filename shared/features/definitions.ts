@@ -8,10 +8,11 @@
  *   A Value is data together with the Definition version it satisfies. It has no identity and is
  *   never stored: it is what Features receive and produce.
  *
- * A Definition is an object of fields (properties), each a string, a number, a boolean, or a local
- * object: an object with fields of its own, under the same rules, belonging to the Definition
- * version that contains it (ObjectField). Nothing else is allowed (no extra fields, at any level).
- * There are no lists, no references to other Definitions and no Record relationships. A field is required unless it is marked
+ * A Definition is an object of fields (properties), each a string, a number, a boolean, a local
+ * object (an object with fields of its own, under the same rules, belonging to the Definition
+ * version that contains it: ObjectField), or a reference to another published Definition version,
+ * pinned exactly (ReferenceField). Nothing else is allowed (no extra fields, at any level). There
+ * are no lists and no Record relationships: a reference describes structure, never a Record. A field is required unless it is marked
  * optional. An optional field may be absent; when present, it must be of its type. Optional never
  * means nullable: null is not a string, a number or a boolean, so it is never accepted, and absence
  * is never turned into an empty string, zero, false or null. Whether a field is required is part of
@@ -35,12 +36,24 @@
  *     source code, where a later edit could change them; regression tests pin their content, which
  *     catches such an edit but cannot guarantee durability. Durable immutability needs persistence
  *     that refuses changes (write-once rows, no update or delete path), which doesn't exist yet.
+ *   - References are enforced here when they are resolved: by exact identity, by owner, without
+ *     cycles, within the depth limit (checkFields, checkContract), against whatever resolver the
+ *     caller supplies. What only persistence can guarantee: that every referenced version stays
+ *     resolvable for as long as anything references it (deprecating or archiving must not remove
+ *     it, and a workspace's versions can't disappear while its own versions reference them); that a
+ *     version is stored only if its references resolved at that moment, atomically with the check,
+ *     so no reference ever points at nothing; that Orbit-provided versions are never stored with a
+ *     dependency on a workspace's; and that resolution is by exact identity only, with no "latest"
+ *     lookup anywhere on the path. Until then, references are only as durable as the in-memory lists
+ *     a caller resolves against.
  */
 
 /** The types of a value property: text, a number, or yes/no. */
 export type FieldType = 'string' | 'number' | 'boolean'
-/** Every type a property can have: a value, or a local object with properties of its own. */
-export type PropertyType = FieldType | 'object'
+/** What a property's value must be: a scalar, or an object (a local object's or a referenced Definition's). */
+export type ValueType = FieldType | 'object'
+/** Every type a property can have: a value, a local object, or a reference to a Definition version. */
+export type PropertyType = FieldType | 'object' | 'reference'
 export type Scalar = string | number | boolean
 /** Data: properties whose values are scalars or, for a local object, data of the same kind. */
 export type Data = { readonly [property: string]: Scalar | Data }
@@ -76,10 +89,31 @@ export interface ObjectField {
   readonly fields: readonly Field[]
 }
 
-export type Field = ScalarField | ObjectField
+/**
+ * A Definition reference: a property whose value is an object described by another published
+ * Definition version, pinned exactly (its id and version; never "the latest"). It describes the
+ * structure of a nested value, nothing more: it doesn't refer to a Record, create one or relate
+ * Records. The referenced version stays its own: it is never copied into the referencing version,
+ * and a newer version of it changes nothing here. Which version is referenced is part of the
+ * contract, so changing it means a new version. Only the identity is held: a reference never
+ * carries a name or appearance, and two Definitions that look alike are still different references.
+ * A reference is never the same contract as a local object, even one with the same properties.
+ */
+export interface ReferenceField {
+  readonly name: string
+  readonly type: 'reference'
+  readonly optional?: true
+  /** Exactly the version referenced: { id, version } and nothing else. */
+  readonly definition: DefinitionRef
+}
+
+export type Field = ScalarField | ObjectField | ReferenceField
 
 export const isOptional = (field: Pick<Field, 'optional'>) => field.optional === true
 export const isObjectField = (field: Field): field is ObjectField => field.type === 'object'
+export const isScalarField = (field: Field): field is ScalarField => field.type !== 'object' && field.type !== 'reference'
+/** What a property's value must be: a reference's value is an object, like a local object's. */
+export const valueTypeOf = (field: Field): ValueType => (field.type === 'reference' ? 'object' : field.type)
 
 /**
  * How deeply local objects may nest, in object levels. The data itself is level 1; each local object
@@ -88,6 +122,11 @@ export const isObjectField = (field: Field): field is ObjectField => field.type 
  * names, and the longest property path has 16. A Definition deeper than this is refused when it is
  * made, never cut short. Validation follows the Definition, never the data, so it never goes deeper
  * than the Definition it checks against, and refuses one deeper than this.
+ *
+ * References count the same way, across the complete resolved structure: a referenced Definition's
+ * data is one level deeper than the object containing the reference, like a local object, and its
+ * own levels count on from there, through every reference it makes in turn. Process (level 1) with a
+ * reference candidate puts Candidate's data at level 2; a local object inside Candidate is level 3.
  */
 export const MAX_OBJECT_LEVELS = 16
 
@@ -117,6 +156,31 @@ export interface Value {
 export const refOf = (d: DefinitionRef): DefinitionRef => ({ id: d.id, version: d.version })
 export const sameDefinition = (a: DefinitionRef, b: DefinitionRef) => a.id === b.id && a.version === b.version
 
+/**
+ * How references are resolved: exactly the version named, or null. Supplied by whoever holds
+ * versions (the boundary's catalog today, persistence later), never the Studio's own state and never
+ * "the latest". An answer that isn't exactly the version asked for counts as no answer: nothing ever
+ * falls back to another Definition or another version.
+ */
+export type Resolve = (ref: DefinitionRef) => DefinitionVersion | null
+
+/**
+ * Who may depend on whom. A workspace's version may reference its own workspace's versions and
+ * Orbit-provided ones; an Orbit-provided version only Orbit-provided ones; nothing references
+ * another workspace's versions. Ownership is the referencing version's, at every step, so a
+ * workspace can never reach another's versions through a chain of references.
+ */
+export const mayReference = (owner: string | null, referenced: { workspaceId: string | null }) =>
+  referenced.workspaceId === null || (owner !== null && referenced.workspaceId === owner)
+
+/** The version a reference names, if it resolves exactly here and `owner` may depend on it. */
+export function resolveReference(ref: DefinitionRef, owner: string | null, resolve?: Resolve): { readonly version: DefinitionVersion } | { readonly problem: 'unresolved_reference' | 'unavailable_reference' } {
+  const found = resolve?.(refOf(ref)) ?? null
+  if (!found || !sameDefinition(found, ref)) return { problem: 'unresolved_reference' }
+  if (!mayReference(owner, found)) return { problem: 'unavailable_reference' }
+  return { version: found }
+}
+
 /** Whether a workspace may use this Definition: its own, or one Orbit provides. */
 export const visibleIn = (d: { workspaceId: string | null }, workspaceId: string) =>
   d.workspaceId === null || d.workspaceId === workspaceId
@@ -144,6 +208,20 @@ export const frozenCopy = <T>(value: T): T => deepFreeze(structuredClone(value))
  * keys are never trimmed, folded or normalized: "Email" in data never satisfies a property "email".
  * The rule exists so that no Definition has two properties that people (or tools) could confuse.
  * Names are checked, never changed: a name that breaks the rule is refused, not tidied.
+ *
+ * Known limits of the case comparison (accepted: they only ever refuse more names, never fewer, and
+ * only when a version is made). It uses JavaScript's locale-independent upper- then lower-casing,
+ * not Unicode case folding (CaseFolding.txt) or any language's rules:
+ *   - "ß" and "SS" (and "ss") count as differing only by case: upper-casing "ß" gives "SS".
+ *   - Turkish dotless "ı" and "i" count as differing only by case (both upper-case to "I"), and so
+ *     do "İ" and "i̇" (i with a combining dot); a Turkish speaker would call these different letters.
+ *   - Some letters with several case forms, such as Greek final "ς" and "σ", meet in the same way.
+ *   - Ligatures that upper-case to several letters meet too: "ﬁ" (one character) and "fi" count as
+ *     differing only by case (both upper-case to "FI").
+ *   - Compatibility characters otherwise aren't equivalent: a full-width "Ａ" and "A" are different
+ *     names (NFC, not NFKC). Only canonical equivalence and case count.
+ *   - The comparison depends on the Unicode version of the JavaScript engine; a newer one may know
+ *     case pairs an older one didn't. A version once made is never re-judged, so this can't change it.
  */
 export type NamingIssue =
   | { readonly problem: 'empty_name'; readonly path: PropertyPath }
@@ -179,67 +257,167 @@ export function checkPropertyNames(names: readonly string[], parent: PropertyPat
 }
 
 /**
- * Why some properties can't be a Definition version: the naming rule within each object, and the
- * shape of each property. Each issue's path is the property it is about.
- *   too_deep      a local object below level MAX_OBJECT_LEVELS
- *   malformed     not a property Orbit knows: an unknown type, a value property with properties of
- *                 its own, an object without them, or anything more (such as an identity: a local
- *                 object has none)
+ * Why some properties can't be (or no longer resolve as) a Definition version. Each issue's path is
+ * the property it is about; inside a referenced version, the path runs on across the reference.
+ *   too_deep               the complete resolved structure goes below level MAX_OBJECT_LEVELS; level
+ *                          is the deepest level it would reach
+ *   malformed              not a property Orbit knows: an unknown type, a value property with
+ *                          properties of its own, an object without them, a reference that isn't
+ *                          exactly { id, version }, or anything more (such as an identity on a local
+ *                          object, which has none)
+ *   unresolved_reference   no such version where it is resolved (a missing identity or version alike)
+ *   unavailable_reference  it exists, but this version may not depend on it (mayReference)
+ *   cyclic_reference       it leads back to a version that contains it, so the contract has no end
  */
 export type DefinitionIssue =
   | NamingIssue
   | { readonly problem: 'too_deep'; readonly path: PropertyPath; readonly level: number }
   | { readonly problem: 'malformed'; readonly path: PropertyPath }
+  | { readonly problem: 'unresolved_reference' | 'unavailable_reference' | 'cyclic_reference'; readonly path: PropertyPath; readonly definition: DefinitionRef }
 
 const SCALAR_TYPES: readonly string[] = ['string', 'number', 'boolean'] satisfies FieldType[]
-const FIELD_KEYS = new Set(['name', 'type', 'optional', 'fields'])
+const KEYS = {
+  scalar: new Set(['name', 'type', 'optional']),
+  object: new Set(['name', 'type', 'optional', 'fields']),
+  reference: new Set(['name', 'type', 'optional', 'definition']),
+}
+const only = (value: object, keys: Set<string>) => Object.keys(value).every((key) => keys.has(key))
+/** Exactly an identity and a version: { id, version }, nothing else (no name, no structure). */
+const isExactRef = (ref: unknown): ref is DefinitionRef =>
+  !!ref && typeof ref === 'object' && !Array.isArray(ref) && only(ref, new Set(['id', 'version']))
+  && typeof (ref as DefinitionRef).id === 'string' && (ref as DefinitionRef).id !== ''
+  && Number.isInteger((ref as DefinitionRef).version) && (ref as DefinitionRef).version >= 1
+function wellFormed(field: Field): boolean {
+  if (!field || typeof field !== 'object') return false
+  if (field.type === 'object') return only(field, KEYS.object) && Array.isArray(field.fields)
+  if (field.type === 'reference') return only(field, KEYS.reference) && isExactRef(field.definition)
+  return SCALAR_TYPES.includes(field.type) && only(field, KEYS.scalar)
+}
 
-/** Every reason these properties (a Definition's, at level 1) can't be a version. None: they can. */
-export function checkFields(fields: readonly Field[]): DefinitionIssue[] {
-  const issues: DefinitionIssue[] = []
-  const visit = (list: readonly Field[], at: PropertyPath, level: number) => {
-    issues.push(...checkPropertyNames(list.map((f) => f.name), at))
-    for (const field of list) {
-      const path = [...at, field.name]
-      const extra = Object.keys(field).some((key) => !FIELD_KEYS.has(key))
-      if (field.type === 'object') {
-        if (extra || !Array.isArray(field.fields)) issues.push({ problem: 'malformed', path })
-        else if (level + 1 > MAX_OBJECT_LEVELS) issues.push({ problem: 'too_deep', path, level: level + 1 })
-        else visit(field.fields, path, level + 1)
-      } else if (extra || !SCALAR_TYPES.includes(field.type) || 'fields' in field) {
-        issues.push({ problem: 'malformed', path })
-      }
-    }
-  }
-  visit(fields, [], 1)
-  return issues
+/** What checkFields checks against. */
+export interface ContractContext {
+  /** The workspace owning the version these properties belong to; null when Orbit provides it. */
+  readonly owner: string | null
+  /** Resolves references. Without one, no reference resolves. */
+  readonly resolve?: Resolve
+  /** The version these properties are, when it has an identity: a reference back to it is a cycle. */
+  readonly self?: DefinitionRef
+  /** Apply the naming rule (making a version: the default) or not (resolving one already made). */
+  readonly naming?: boolean
 }
 
 /**
+ * Every reason these properties (a Definition's, at level 1) can't be a version, judged as the
+ * complete resolved contract: each object's names (the naming rule, unless context.naming is
+ * false), each property's shape, every reference resolved exactly and allowed for its owner, no
+ * cycles, and the depth limit across local objects and references together. None: they can.
+ *
+ * Each referenced version is checked once, however often it is referenced (so shared dependencies
+ * cost nothing extra), and a reference back to a version already being checked is a cycle. Cycles
+ * are about exact versions: Process v2 may reference Process v1 (a different, finite contract);
+ * only a version that leads back to itself is refused. The naming rule isn't reapplied inside a
+ * referenced version: it was applied when that version was made, and a reference never re-judges it.
+ */
+export function checkFields(fields: readonly Field[], context: ContractContext = { owner: null }): DefinitionIssue[] {
+  const key = (ref: DefinitionRef) => JSON.stringify([ref.id, ref.version])
+  const visiting = new Set<string>(context.self ? [key(context.self)] : [])
+  const checked = new Map<string, { issues: DefinitionIssue[]; levels: number }>()
+
+  /** One object's properties at `level`: their issues, and how many object levels they span (1: none nested). */
+  const visit = (list: readonly Field[], owner: string | null, at: PropertyPath, level: number, naming: boolean) => {
+    const issues: DefinitionIssue[] = []
+    let levels = 1
+    if (naming) issues.push(...checkPropertyNames(list.map((f) => f.name), at))
+    for (const field of list) {
+      const path = [...at, field.name]
+      if (!wellFormed(field)) {
+        issues.push({ problem: 'malformed', path })
+      } else if (field.type === 'object') {
+        if (level + 1 > MAX_OBJECT_LEVELS) {
+          issues.push({ problem: 'too_deep', path, level: level + 1 })
+          levels = Math.max(levels, MAX_OBJECT_LEVELS + 1)
+        } else {
+          const inner = visit(field.fields, owner, path, level + 1, naming)
+          issues.push(...inner.issues)
+          levels = Math.max(levels, inner.levels + 1)
+        }
+      } else if (field.type === 'reference') {
+        const definition = refOf(field.definition)
+        const resolved = resolveReference(definition, owner, context.resolve)
+        if ('problem' in resolved) {
+          issues.push({ problem: resolved.problem, path, definition })
+          continue
+        }
+        const k = key(definition)
+        if (visiting.has(k)) {
+          issues.push({ problem: 'cyclic_reference', path, definition })
+          continue
+        }
+        let summary = checked.get(k)
+        if (!summary) {
+          visiting.add(k)
+          summary = Array.isArray(resolved.version.fields)
+            ? visit(resolved.version.fields, resolved.version.workspaceId, [], 1, false)
+            : { issues: [{ problem: 'malformed', path: [] }], levels: 1 }
+          visiting.delete(k)
+          checked.set(k, summary)
+        }
+        // The referenced version's own issues, located from here (its levels counted from here too).
+        issues.push(...summary.issues.map((i): DefinitionIssue => (i.problem === 'too_deep' ? { ...i, path: [...path, ...i.path], level: i.level + level } : { ...i, path: [...path, ...i.path] })))
+        const reaches = level + summary.levels
+        if (reaches > MAX_OBJECT_LEVELS && !summary.issues.some((i) => i.problem === 'too_deep')) issues.push({ problem: 'too_deep', path, level: reaches })
+        levels = Math.max(levels, summary.levels + 1)
+      }
+    }
+    return { issues, levels }
+  }
+  return visit(fields, context.owner, [], 1, context.naming ?? true).issues
+}
+
+/**
+ * Whether a version already made resolves here as a whole contract: every reference exactly, each
+ * allowed for its owner, no cycles, within the depth limit. What the boundary asks before using a
+ * Definition. The naming rule isn't reapplied: it governs making versions, not reading them.
+ */
+export const checkContract = (definition: DefinitionVersion, resolve?: Resolve): DefinitionIssue[] =>
+  checkFields(definition.fields, { owner: definition.workspaceId, resolve, self: refOf(definition), naming: false })
+
+/**
  * The canonical form: required is the default and is never written down, so a value property is
- * { name, type } or { name, type, optional: true }, and a local object has its `fields` too. Two
- * versions that mean the same thing look the same. Only for fields checkFields accepted.
+ * { name, type } or { name, type, optional: true }; a local object has its `fields` too, and a
+ * reference its `definition`, exactly { id, version }. Two versions that mean the same thing look
+ * the same. Only for fields checkFields accepted.
  */
 const canonicalFields = (fields: readonly Field[]): Field[] => fields.map((f): Field => {
   const base = { name: f.name, ...(f.optional === true ? { optional: true as const } : {}) }
-  return f.type === 'object' ? { ...base, type: 'object', fields: canonicalFields(f.fields) } : { ...base, type: f.type }
+  if (f.type === 'object') return { ...base, type: 'object', fields: canonicalFields(f.fields) }
+  if (f.type === 'reference') return { ...base, type: 'reference', definition: refOf(f.definition) }
+  return { ...base, type: f.type }
 })
 
 /**
- * A new, immutable Definition version, frozen all the way down, local objects included. Refused,
- * never tidied or cut short, when checkFields finds anything wrong.
+ * A new, immutable Definition version, frozen all the way down, local objects and references
+ * included. Refused, never tidied, cut short or flattened, when checkFields finds anything wrong.
+ * References are resolved with `resolve`, as the version's own workspace sees them: without a
+ * resolver, a version with a reference can't be made. A reference is kept as a reference (only the
+ * exact { id, version }), never copied into the version as an anonymous local object.
  */
-export function defineVersion(definition: DefinitionVersion): DefinitionVersion {
-  const issues = checkFields(definition.fields)
+export function defineVersion(definition: DefinitionVersion, resolve?: Resolve): DefinitionVersion {
+  const issues = checkFields(definition.fields, { owner: definition.workspaceId, resolve, self: refOf(definition) })
   if (issues.length) {
     throw new Error(`Definition ${definition.id}@${definition.version} can’t be made (${issues.map((i) => `${i.problem} at ${propertyPathWords(i.path)}`).join('; ')})`)
   }
   return frozenCopy({ ...definition, fields: canonicalFields(definition.fields) })
 }
 
-/** The paths of every local object in these properties, outermost first. */
+/** The paths of every local object in these properties, outermost first (references aren't followed). */
 export function localObjectPaths(fields: readonly Field[], at: PropertyPath = []): PropertyPath[] {
   return fields.flatMap((f) => (f.type === 'object' ? [[...at, f.name], ...localObjectPaths(f.fields, [...at, f.name])] : []))
+}
+
+/** The paths of every reference in these properties, including inside local objects (not resolved). */
+export function referencePaths(fields: readonly Field[], at: PropertyPath = []): PropertyPath[] {
+  return fields.flatMap((f) => (f.type === 'reference' ? [[...at, f.name]] : f.type === 'object' ? referencePaths(f.fields, [...at, f.name]) : []))
 }
 
 /** What kind of thing a value is, in the words validation uses. Never the value itself. */
@@ -272,9 +450,9 @@ export type PropertyPath = readonly string[]
  */
 export type Issue =
   | { readonly problem: 'not_an_object'; readonly path: PropertyPath; readonly actual: Kind }
-  | { readonly problem: 'missing'; readonly path: PropertyPath; readonly expected: PropertyType }
+  | { readonly problem: 'missing'; readonly path: PropertyPath; readonly expected: ValueType }
   | { readonly problem: 'unexpected'; readonly path: PropertyPath }
-  | { readonly problem: 'wrong_type'; readonly path: PropertyPath; readonly expected: PropertyType; readonly actual: Kind }
+  | { readonly problem: 'wrong_type'; readonly path: PropertyPath; readonly expected: ValueType; readonly actual: Kind }
 
 /**
  * Whether `data` satisfies `definition` exactly. Returns every problem found; none means valid.
@@ -284,29 +462,41 @@ export type Issue =
  *   - Null is never absence: it is a value of the wrong type (for an object too).
  *   - Nothing unexpected, at any level.
  * Validation follows the Definition: it looks inside a value only where the Definition has a local
- * object, so data nested deeper than its Definition is a wrong type where the Definition ends, and
- * an unexpected property is reported as one, whatever it holds. Nothing is skipped or cut short.
+ * object or a reference, so data nested deeper than its Definition is a wrong type where the
+ * Definition ends, and an unexpected property is reported as one, whatever it holds. Nothing is
+ * skipped or cut short.
+ *
+ * A reference is validated by the same validator against exactly the referenced version, resolved
+ * by `resolve`; paths run straight across the boundary (['candidate', 'email']). A contract that
+ * doesn't resolve isn't a data problem, so it isn't reported as one: check the contract first
+ * (checkContract, as the boundary does). Validating against one that doesn't resolve throws.
  */
-export function validate(definition: DefinitionVersion, data: unknown): Issue[] {
+export function validate(definition: DefinitionVersion, data: unknown, resolve?: Resolve): Issue[] {
   const kind = kindOf(data)
   if (kind !== 'object') return [{ problem: 'not_an_object', path: [], actual: kind }]
   const issues: Issue[] = []
-  validateObject(definition.fields, data as Record<string, unknown>, [], 1, issues)
+  validateObject(definition.fields, data as Record<string, unknown>, [], 1, definition.workspaceId, resolve, issues)
   return issues
 }
 
-function validateObject(fields: readonly Field[], object: Record<string, unknown>, at: PropertyPath, level: number, issues: Issue[]): void {
-  // Only a Definition defineVersion refused could be this deep: refuse it here too, never guess.
+function validateObject(fields: readonly Field[], object: Record<string, unknown>, at: PropertyPath, level: number, owner: string | null, resolve: Resolve | undefined, issues: Issue[]): void {
+  // Only a contract checkFields refused could be this deep (a cycle included): refuse it here too, never guess.
   if (level > MAX_OBJECT_LEVELS) throw new Error(`A Definition can’t have more than ${MAX_OBJECT_LEVELS} object levels`)
   for (const field of fields) {
     const path = [...at, field.name]
     if (!Object.hasOwn(object, field.name)) {
-      if (field.optional !== true) issues.push({ problem: 'missing', path, expected: field.type })
+      if (field.optional !== true) issues.push({ problem: 'missing', path, expected: valueTypeOf(field) })
       continue
     }
     const actual = kindOf(object[field.name])
-    if (actual !== field.type) issues.push({ problem: 'wrong_type', path, expected: field.type, actual })
-    else if (field.type === 'object') validateObject(field.fields, object[field.name] as Record<string, unknown>, path, level + 1, issues)
+    const value = object[field.name] as Record<string, unknown>
+    if (actual !== valueTypeOf(field)) issues.push({ problem: 'wrong_type', path, expected: valueTypeOf(field), actual })
+    else if (field.type === 'object') validateObject(field.fields, value, path, level + 1, owner, resolve, issues)
+    else if (field.type === 'reference') {
+      const resolved = resolveReference(field.definition, owner, resolve)
+      if ('problem' in resolved) throw new Error(`The reference at ${propertyPathWords(path)} doesn’t resolve here (${resolved.problem}): check the contract before validating`)
+      validateObject(resolved.version.fields, value, path, level + 1, resolved.version.workspaceId, resolve, issues)
+    }
   }
   for (const name of Object.keys(object)) {
     if (!fields.some((f) => f.name === name)) issues.push({ problem: 'unexpected', path: [...at, name] })
@@ -321,7 +511,9 @@ export const propertyPathWords = (path: PropertyPath): string => (path.length ? 
 
 /**
  * Whether two lists of fields describe the same contract: the same names, each with the same type
- * and the same requiredness, and each local object with the same contract inside it. Order is
+ * and the same requiredness, each local object with the same contract inside it, and each reference
+ * to exactly the same Definition version (identity, not structure: a reference is never the same as
+ * a local object, or as a reference to another Definition that looks alike). Order is
  * presentation, never part of a contract, so it is ignored at every level. Names are compared
  * exactly, as validation matches them. The one comparison of structures: every "is this the same
  * version?" and "do these look alike?" question asks it.
@@ -333,7 +525,9 @@ export function sameFields(a: readonly Field[], b: readonly Field[]): boolean {
   return a.every((f) => {
     const other = byName.get(f.name)
     if (other === undefined || other.type !== f.type || (other.optional === true) !== (f.optional === true)) return false
-    return f.type !== 'object' || sameFields(f.fields, (other as ObjectField).fields)
+    if (f.type === 'object') return sameFields(f.fields, (other as ObjectField).fields)
+    if (f.type === 'reference') return sameDefinition(f.definition, (other as ReferenceField).definition)
+    return true
   })
 }
 

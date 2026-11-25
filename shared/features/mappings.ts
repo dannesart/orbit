@@ -24,8 +24,9 @@ import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, 
  * This is Orbit.Transform v2's behaviour; v1 predates optional properties and refuses such sources
  * (absence_unsupported), keeping exactly the behaviour it was published with.
  *
- * Local objects. A source reads only top-level value properties: never a local object, and nothing
- * inside one (object_property). Nested reads and nested output are future work.
+ * Local objects and references. A source reads only top-level value properties: never a local object
+ * or a referenced Definition, and nothing inside one (object_property). Nested reads and nested
+ * output are future work.
  */
 
 export type Expression =
@@ -89,7 +90,7 @@ export type MappingIssue =
   | { readonly problem: 'invalid_literal'; readonly path: Path }
   /** The source reads an optional input property, so it may have no value, but the output property is required. */
   | { readonly problem: 'may_be_absent'; readonly path: Path; readonly optional: readonly string[] }
-  /** The source reads a local object as if it were a value. Sources read text, numbers and yes/no only; there are no nested reads. */
+  /** The source reads a local object or a referenced Definition as if it were a value. Sources read text, numbers and yes/no only; there are no nested reads. */
   | { readonly problem: 'object_property'; readonly path: Path; readonly name: string }
   /** The source reads an optional input property, and the Feature version applying it has no behaviour for absence. */
   | { readonly problem: 'absence_unsupported'; readonly path: Path; readonly optional: readonly string[] }
@@ -108,7 +109,7 @@ function checkArgument(arg: Argument, input: DefinitionVersion, path: Path): Che
     case 'property': {
       const field = input.fields.find((f) => f.name === arg.name)
       if (!field) return { type: 'invalid', issues: [{ problem: 'unknown_property', path, name: arg.name }], reads: [] }
-      if (field.type === 'object') return { type: 'invalid', issues: [{ problem: 'object_property', path, name: arg.name }], reads: [] }
+      if (field.type === 'object' || field.type === 'reference') return { type: 'invalid', issues: [{ problem: 'object_property', path, name: arg.name }], reads: [] }
       return { type: field.type, issues: [], reads: field.optional === true ? [field.name] : [] }
     }
     case 'list': {

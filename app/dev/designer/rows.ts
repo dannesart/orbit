@@ -23,7 +23,7 @@ export interface PropertyRow {
   readonly opens: { readonly mode: 'mapping' | 'structure'; readonly property: string | null }
 }
 
-export const typeWords: Record<PropertyType, string> = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object' }
+export const typeWords: Record<PropertyType, string> = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object', reference: 'Definition' }
 export const stateWords: Record<RowState, string> = { not_set: 'Not mapped', left_out: 'Left out (optional)', problem: 'Needs attention', set: 'Mapped' }
 
 export function propertyRows(draft: TransformDraft, review: DraftReview): PropertyRow[] {

@@ -105,9 +105,10 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
       return { name: field.name, expected: field.type, optional, index, state: optional ? 'left_out' : 'not_set', problems: [] }
     }
     const own: string[] = []
-    // No nested output yet: a Mapping can't make a local object, so saying so beats a confusing type clash.
-    if (field.type === 'object') own.push(`${field.name} is an object. A Transform can’t make objects yet.`)
-    const type = field.type === 'object' ? null : checked[index]!.types[0]
+    // No nested output yet: a Mapping can't make a local object or a referenced Definition, so saying so beats a confusing type clash.
+    const nested = field.type === 'object' || field.type === 'reference'
+    if (nested) own.push(`${field.name} is an object. A Transform can’t make objects yet.`)
+    const type = nested ? null : checked[index]!.types[0]
     if (type && type !== field.type) own.push(`${targetLabel} needs ${typeWords[field.type]} here, but this makes ${typeWords[type]}.`)
     problems.push(...own.map((p) => `${field.name}: ${p}`), ...issues[index]!.map((i) => `${field.name}: ${friendlyIssue(i)}`))
     return { name: field.name, expected: field.type, optional, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }

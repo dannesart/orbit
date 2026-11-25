@@ -349,12 +349,12 @@ describe('Existing Feature versions: nested contracts are refused explicitly, ne
 
   it('says so in plain words', () => {
     const result = invoke(catalog(), { workspaceId: W, feature: orbitConsole, input: { record: 'cand' } })
-    expect(describeOutcome(outcome(result))).toBe('This version of the Feature doesn’t accept candidate · v1: it has objects inside it (contact, address). The Feature didn’t run.')
+    expect(describeOutcome(outcome(result))).toBe('This version of the Feature doesn’t accept candidate · v1: it has objects or other Definitions inside it (contact, address). The Feature didn’t run.')
   })
 })
 
 describe('The Studio and the Designer stay flat, and say so rather than flattening', () => {
   it('the Studio refuses to open a version with local objects as a draft', () => {
-    expect(() => draftFrom(CANDIDATE)).toThrow(/has local objects, which the Studio can’t edit yet/)
+    expect(() => draftFrom(CANDIDATE)).toThrow(/has local objects or references, which the Studio can’t edit yet/)
   })
 })

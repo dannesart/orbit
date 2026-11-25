@@ -1,6 +1,6 @@
 import {
-  type Data, type DefinitionRef, type DefinitionVersion, type Issue, type PropertyPath, type Value, type WorkspaceRecord,
-  frozenCopy, localObjectPaths, refOf, sameData, sameDefinition, validate, visibleIn,
+  type Data, type DefinitionIssue, type DefinitionRef, type DefinitionVersion, type Issue, type PropertyPath, type Resolve, type Value, type WorkspaceRecord,
+  checkContract, frozenCopy, localObjectPaths, refOf, referencePaths, sameData, sameDefinition, validate, visibleIn,
 } from './definitions'
 import { type Mapping, type MappingIssue, checkMapping, evaluate, evaluatePresent } from './mappings'
 
@@ -54,6 +54,12 @@ interface FeatureVersion extends FeatureRef {
    * them would change what the version accepts, so it would be a new version.
    */
   readonly localObjects: 'unsupported'
+  /**
+   * Whether it accepts Definitions that contain references to other Definitions. Likewise none
+   * does: a Definition with a reference (anywhere, local objects included) on either side is refused
+   * before it runs (unsupported_contract). Accepting them would be a new version.
+   */
+  readonly references: 'unsupported'
 }
 
 export interface PassThroughFeature extends FeatureVersion {
@@ -83,6 +89,7 @@ export const orbitConsole: PassThroughFeature = {
   version: 1,
   contract: 'pass-through',
   localObjects: 'unsupported',
+  references: 'unsupported',
   run(input, { inspect }) {
     inspect(input)
     return input
@@ -100,6 +107,7 @@ export const orbitTransformV1: MappingFeature = Object.freeze<MappingFeature>({
   contract: 'mapping',
   absence: 'unsupported',
   localObjects: 'unsupported',
+  references: 'unsupported',
   run: (input, mapping) => Object.fromEntries(mapping.properties.map((p) => [p.name, evaluate(p.source, input)])),
 })
 
@@ -115,6 +123,7 @@ export const orbitTransformV2: MappingFeature = Object.freeze<MappingFeature>({
   contract: 'mapping',
   absence: 'omitted',
   localObjects: 'unsupported',
+  references: 'unsupported',
   run: (input, mapping) => Object.fromEntries(mapping.properties.flatMap((p) => {
     const result = evaluatePresent(p.source, input)
     return result.present ? [[p.name, result.value]] : []
@@ -122,11 +131,15 @@ export const orbitTransformV2: MappingFeature = Object.freeze<MappingFeature>({
 })
 
 /**
- * Whether this Feature version accepts a Definition as one of its contracts: the local objects it
- * can't take (none: it can). Decided from the Definition alone, never calling run.
+ * Whether this Feature version accepts a Definition as one of its contracts: the local objects and
+ * references it can't take (none: it can), local objects first. Decided from the Definition alone,
+ * never calling run and never resolving a reference: a reference is refused for what it is.
  */
 export function contractCompatibility(feature: Feature, definition: DefinitionVersion): readonly PropertyPath[] {
-  return feature.localObjects === 'unsupported' ? localObjectPaths(definition.fields) : []
+  return [
+    ...(feature.localObjects === 'unsupported' ? localObjectPaths(definition.fields) : []),
+    ...(feature.references === 'unsupported' ? referencePaths(definition.fields) : []),
+  ]
 }
 
 /**
@@ -168,7 +181,9 @@ export type Outcome =
   | { readonly kind: 'not_attempted'; readonly reason: 'invalid_input'; readonly issues: readonly Issue[] }
   | { readonly kind: 'not_attempted'; readonly reason: 'contract_mismatch'; readonly expected: DefinitionRef; readonly actual: DefinitionRef }
   | { readonly kind: 'not_attempted'; readonly reason: 'invalid_mapping'; readonly issues: readonly MappingIssue[] }
-  /** The Feature version doesn't accept this Definition at all: `paths` are the local objects it has no behaviour for. */
+  /** The Definition doesn't resolve here as a contract (a reference missing, unavailable or cyclic, or too deep): nothing was checked against it. */
+  | { readonly kind: 'not_attempted'; readonly reason: 'invalid_contract'; readonly definition: DefinitionRef; readonly issues: readonly DefinitionIssue[] }
+  /** The Feature version doesn't accept this Definition at all: `paths` are the local objects and references it has no behaviour for. */
   | { readonly kind: 'not_attempted'; readonly reason: 'unsupported_contract'; readonly definition: DefinitionRef; readonly paths: readonly PropertyPath[] }
   /** Only the error's name: messages can quote the data that caused them. */
   | { readonly kind: 'failed'; readonly reason: 'threw'; readonly error: string }
@@ -212,7 +227,9 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
     ...rest,
     evidence: frozenCopy({ ...evidence, ...(output ? { output: { definition: refOf(output) } } : {}), outcome }),
   })
-  const definition = (ref: DefinitionRef) =>
+  // The one resolver: exact identity, only what this workspace may see. References resolve through
+  // it too, so another workspace's versions can't be reached through a reference either.
+  const definition: Resolve = (ref) =>
     catalog.definitions.find((d) => sameDefinition(d, ref) && visibleIn(d, workspaceId)) ?? null
 
   // 1. Resolve the input, only within this workspace. Another workspace's Record or Definition is
@@ -228,17 +245,19 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
   }
   const inputDefinition = definition(value.definition)
   if (!inputDefinition) return end({ kind: 'not_attempted', reason: 'not_found' })
-  const unsupported = (d: DefinitionVersion) => {
+  // The whole contract must resolve here (every reference exactly, allowed, acyclic, within the
+  // depth limit) and be one this Feature version accepts, before any data is looked at.
+  const unusable = (d: DefinitionVersion) => {
+    const issues = checkContract(d, definition)
+    if (issues.length) return end({ kind: 'not_attempted', reason: 'invalid_contract', definition: refOf(d), issues })
     const paths = contractCompatibility(feature, d)
     return paths.length ? end({ kind: 'not_attempted', reason: 'unsupported_contract', definition: refOf(d), paths }) : null
   }
-  // Compatibility, before anything else: a contract this Feature version doesn't accept is refused
-  // whatever the data, so nothing is validated against it on the Feature's behalf.
-  const inputUnsupported = unsupported(inputDefinition)
-  if (inputUnsupported) return inputUnsupported
+  const inputUnusable = unusable(inputDefinition)
+  if (inputUnusable) return inputUnusable
 
   // 2. The input must be what it claims to be, whoever made it.
-  const inputIssues = validate(inputDefinition, value.data)
+  const inputIssues = validate(inputDefinition, value.data, definition)
   if (inputIssues.length) return end({ kind: 'not_attempted', reason: 'invalid_input', issues: inputIssues })
 
   // From here on, the Feature only ever sees a private, frozen copy.
@@ -268,8 +287,8 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
   if (!sameDefinition(mapping.from, value.definition)) {
     return end({ kind: 'not_attempted', reason: 'contract_mismatch', expected: refOf(mapping.from), actual: refOf(value.definition) })
   }
-  const outputUnsupported = unsupported(outputDefinition)
-  if (outputUnsupported) return outputUnsupported
+  const outputUnusable = unusable(outputDefinition)
+  if (outputUnusable) return outputUnusable
   // Compatibility, before execution: does this Feature version accept this Mapping at all?
   const mappingIssues = mappingCompatibility(invocation.feature, mapping, inputDefinition, outputDefinition)
   if (mappingIssues.length) return end({ kind: 'not_attempted', reason: 'invalid_mapping', issues: mappingIssues })
@@ -281,7 +300,7 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
     return end({ kind: 'failed', reason: 'threw', error: errorName(error) })
   }
   // 4. Nothing leaves unless it satisfies the output contract.
-  const outputIssues = validate(outputDefinition, produced)
+  const outputIssues = validate(outputDefinition, produced, definition)
   if (outputIssues.length) return end({ kind: 'failed', reason: 'invalid_output', issues: outputIssues })
   const output: Value = frozenCopy({ definition: refOf(outputDefinition), data: produced as Data })
   return end({ kind: 'succeeded' }, { output }, output.definition)

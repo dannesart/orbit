@@ -42,8 +42,8 @@ const single = computed(() => piece.value?.kind === 'field' || piece.value?.kind
       </template>
     </div>
 
-    <!-- A local object: no nested Mapping editor yet, so nothing to edit (its problem says why, below). -->
-    <template v-if="field.expected === 'object'" />
+    <!-- A local object or a reference: no nested Mapping editor yet, so nothing to edit (its problem says why, below). -->
+    <template v-if="field.expected === 'object' || field.expected === 'reference'" />
     <ScalarEditor
       v-else-if="field.expected !== 'string'"
       :piece="piece"
