@@ -8,9 +8,13 @@
  *   A Value is data together with the Definition version it satisfies. It has no identity and is
  *   never stored: it is what Features receive and produce.
  *
- * In this first experiment a Definition is a flat object of required fields, each a string, a
- * number or a boolean, and nothing else is allowed (no missing fields, no extra ones). Matching is
- * by exact identity: the same id and the same version. Two Definitions that happen to look alike
+ * In this first experiment a Definition is a flat object of fields, each a string, a number or a
+ * boolean, and nothing else is allowed (no extra fields). A field is required unless it is marked
+ * optional. An optional field may be absent; when present, it must be of its type. Optional never
+ * means nullable: null is not a string, a number or a boolean, so it is never accepted, and absence
+ * is never turned into an empty string, zero, false or null. Whether a field is required is part of
+ * a version: changing it means a new version. Matching is by exact identity: the same id and the
+ * same version. Two Definitions that happen to look alike
  * are still different Definitions. Pure and in memory: nothing here reads or writes storage.
  */
 
@@ -26,14 +30,21 @@ export interface DefinitionRef {
 export interface Field {
   readonly name: string
   readonly type: FieldType
+  /**
+   * May be absent. Only ever `true` when set (defineVersion drops anything else), so a required
+   * field reads exactly as every field did before optional fields existed.
+   */
+  readonly optional?: true
 }
+
+export const isOptional = (field: Pick<Field, 'optional'>) => field.optional === true
 
 export interface DefinitionVersion extends DefinitionRef {
   /** For people to read. Never identity: two Definitions may share a name. */
   readonly name: string
   /** The workspace it belongs to, or null when Orbit provides it (visible to every workspace). */
   readonly workspaceId: string | null
-  /** Every field is required; no others are allowed. */
+  /** Each required unless marked optional; no others are allowed. Their order has no meaning. */
   readonly fields: readonly Field[]
 }
 
@@ -76,7 +87,10 @@ export function defineVersion(definition: DefinitionVersion): DefinitionVersion 
   if (names.some((n) => !n) || new Set(names).size !== names.length) {
     throw new Error(`Definition ${definition.id}@${definition.version} needs distinct, non-empty field names`)
   }
-  return frozenCopy(definition)
+  // Required is the default and is never written down, so a field is either { name, type } or
+  // { name, type, optional: true }: two versions that mean the same thing look the same.
+  const fields = definition.fields.map((f): Field => (f.optional === true ? { name: f.name, type: f.type, optional: true } : { name: f.name, type: f.type }))
+  return frozenCopy({ ...definition, fields })
 }
 
 /** What kind of thing a value is, in the words validation uses. Never the value itself. */
@@ -110,9 +124,10 @@ export function validate(definition: DefinitionVersion, data: unknown): Issue[] 
   if (kind !== 'object') return [{ problem: 'not_an_object', actual: kind }]
   const object = data as Record<string, unknown>
   const issues: Issue[] = []
-  for (const { name, type } of definition.fields) {
-    if (!Object.hasOwn(object, name)) issues.push({ problem: 'missing', field: name, expected: type })
-    else if (kindOf(object[name]) !== type) issues.push({ problem: 'wrong_type', field: name, expected: type, actual: kindOf(object[name]) })
+  for (const { name, type, optional } of definition.fields) {
+    if (!Object.hasOwn(object, name)) {
+      if (optional !== true) issues.push({ problem: 'missing', field: name, expected: type })
+    } else if (kindOf(object[name]) !== type) issues.push({ problem: 'wrong_type', field: name, expected: type, actual: kindOf(object[name]) })
   }
   for (const name of Object.keys(object)) {
     if (!definition.fields.some((f) => f.name === name)) issues.push({ problem: 'unexpected', field: name })

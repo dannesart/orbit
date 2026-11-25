@@ -12,6 +12,9 @@
 //     1, 2, 3… with no gaps or repeats, an identity is never reused, and a version is never made
 //     that is exactly like one that already exists.
 //   - Drafts. Orbit has no drafts: only versions. A draft here is just what someone is editing.
+//   - The order of properties is for people: Orbit's validation ignores it, so two versions with
+//     the same properties in another order are the same (versionLike), and reordering alone never
+//     makes a version.
 import {
   type DefinitionVersion, type Field, type FieldType, type Issue,
   deepFreeze, defineVersion, sameData, validate,
@@ -35,6 +38,8 @@ export interface DraftField {
   readonly key: number
   readonly name: string
   readonly type: FieldType
+  /** May be absent. New properties are required. */
+  readonly optional: boolean
 }
 
 /** What someone is editing: a first version, or the next one, started from an existing version. */
@@ -90,22 +95,31 @@ export function newIdentity(taken: (id: string) => boolean, random: () => string
 
 // --- Drafts ---
 
-export const blankDraft = (): Draft => ({ basedOn: null, fields: [{ key: 0, name: '', type: 'string' }], nextKey: 1 })
+export const blankDraft = (): Draft => ({ basedOn: null, fields: [{ key: 0, name: '', type: 'string', optional: false }], nextKey: 1 })
 
 /** A draft that starts as an exact copy of a version. */
 export function draftFrom(version: DefinitionVersion): Draft {
-  return { basedOn: version.version, fields: version.fields.map((f, key) => ({ key, name: f.name, type: f.type })), nextKey: version.fields.length }
+  return { basedOn: version.version, fields: version.fields.map((f, key) => ({ key, name: f.name, type: f.type, optional: f.optional === true })), nextKey: version.fields.length }
 }
 
-export function addField(draft: Draft): Draft {
-  return { ...draft, fields: [...draft.fields, { key: draft.nextKey, name: '', type: 'string' }], nextKey: draft.nextKey + 1 }
+export function addField(draft: Draft, type: FieldType = 'string'): Draft {
+  return { ...draft, fields: [...draft.fields, { key: draft.nextKey, name: '', type, optional: false }], nextKey: draft.nextKey + 1 }
 }
 export const updateField = (draft: Draft, key: number, change: Partial<Omit<DraftField, 'key'>>): Draft =>
   ({ ...draft, fields: draft.fields.map((f) => (f.key === key ? { ...f, ...change } : f)) })
 export const removeField = (draft: Draft, key: number): Draft => ({ ...draft, fields: draft.fields.filter((f) => f.key !== key) })
+/** The same properties in another order: for people only (see versionLike). */
+export function moveField(draft: Draft, key: number, to: number): Draft {
+  const from = draft.fields.findIndex((f) => f.key === key)
+  if (from < 0) return draft
+  const fields = [...draft.fields]
+  const [moved] = fields.splice(from, 1)
+  fields.splice(Math.max(0, Math.min(to, fields.length)), 0, moved!)
+  return { ...draft, fields }
+}
 
 /** The properties a draft describes, as Orbit's model has them. Stray spaces around names don't count. */
-export const fieldsOf = (draft: Draft): Field[] => draft.fields.map((f) => ({ name: f.name.trim(), type: f.type }))
+export const fieldsOf = (draft: Draft): Field[] => draft.fields.map((f) => (f.optional ? { name: f.name.trim(), type: f.type, optional: true } : { name: f.name.trim(), type: f.type }))
 
 /** Why a draft can't become a version yet, in plain words. None means it can. */
 export function draftProblems(draft: Draft): string[] {
@@ -149,6 +163,7 @@ export type Change =
   | { readonly kind: 'removed'; readonly name: string }
   | { readonly kind: 'renamed'; readonly from: string; readonly to: string }
   | { readonly kind: 'retyped'; readonly name: string; readonly from: FieldType; readonly to: FieldType }
+  | { readonly kind: 'requirement'; readonly name: string; readonly optional: boolean }
 
 /** How a draft differs from the version it started from, row by row. */
 export function changesFrom(base: DefinitionVersion, draft: Draft): Change[] {
@@ -159,14 +174,16 @@ export function changesFrom(base: DefinitionVersion, draft: Draft): Change[] {
     const name = now.name.trim()
     if (name && name !== field.name) changes.push({ kind: 'renamed', from: field.name, to: name })
     if (now.type !== field.type) changes.push({ kind: 'retyped', name: name || field.name, from: field.type, to: now.type })
+    if (now.optional !== (field.optional === true)) changes.push({ kind: 'requirement', name: name || field.name, optional: now.optional })
   })
   for (const f of draft.fields) if (f.key >= base.fields.length) changes.push({ kind: 'added', name: f.name.trim(), type: f.type })
   return changes
 }
 
-/** The existing version with exactly these properties, if there is one. */
+/** The existing version with exactly these properties (in any order), if there is one. */
 export const versionLike = (made: MadeDefinition, fields: readonly Field[]): DefinitionVersion | null =>
-  made.versions.find((v) => sameData(v.fields, fields)) ?? null
+  made.versions.find((v) => sameData(byName(v.fields), byName(fields))) ?? null
+const byName = (fields: readonly Field[]) => Object.fromEntries(fields.map((f) => [f.name, f]))
 
 // --- Versions ---
 
@@ -257,7 +274,7 @@ const kindWords: Record<string, string> = {
 export function issueWords(issue: Issue): string {
   switch (issue.problem) {
     case 'not_an_object': return 'This isn’t a set of properties at all.'
-    case 'missing': return `${issue.field} is missing. Every property is required.`
+    case 'missing': return `${issue.field} is missing, and it’s required.`
     case 'unexpected': return `${issue.field} isn’t one of its properties, so it isn’t accepted.`
     case 'wrong_type': return `${issue.field} should be ${kindWords[issue.expected]}, not ${kindWords[issue.actual] ?? 'something else'}.`
   }
@@ -269,5 +286,6 @@ export function changeWords(change: Change): string {
     case 'removed': return `Removes ${change.name}`
     case 'renamed': return `Renames ${change.from} to ${change.to}`
     case 'retyped': return `Changes ${change.name} from ${typeWords[change.from].toLowerCase()} to ${typeWords[change.to].toLowerCase()}`
+    case 'requirement': return `Makes ${change.name} ${change.optional ? 'optional' : 'required'}`
   }
 }

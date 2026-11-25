@@ -2,7 +2,7 @@ import {
   type Data, type DefinitionRef, type DefinitionVersion, type Issue, type Value, type WorkspaceRecord,
   frozenCopy, refOf, sameData, sameDefinition, validate, visibleIn,
 } from './definitions'
-import { type Mapping, type MappingIssue, checkMapping, evaluate } from './mappings'
+import { type Mapping, type MappingIssue, checkMapping, evaluatePresent } from './mappings'
 
 /**
  * Features perform work; Orbit's execution boundary (invoke) does everything around them.
@@ -55,12 +55,19 @@ export const orbitConsole: PassThroughFeature = {
   },
 }
 
-/** Orbit.Transform: builds an object, property by property, as its Mapping describes. */
+/**
+ * Orbit.Transform: builds an object, property by property, as its Mapping describes. A property
+ * whose source reads an absent (optional) input property is left out, never filled in; the
+ * boundary then checks the result against the output Definition, so a required one can't go missing.
+ */
 export const orbitTransform: MappingFeature = {
   id: 'orbit.transform',
   version: 1,
   contract: 'mapping',
-  run: (input, mapping) => Object.fromEntries(mapping.properties.map((p) => [p.name, evaluate(p.source, input)])),
+  run: (input, mapping) => Object.fromEntries(mapping.properties.flatMap((p) => {
+    const result = evaluatePresent(p.source, input)
+    return result.present ? [[p.name, result.value]] : []
+  })),
 }
 
 /** What the boundary can resolve references against. In this experiment, plain in-memory lists. */
@@ -181,7 +188,8 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
   if (!sameDefinition(mapping.from, value.definition)) {
     return end({ kind: 'not_attempted', reason: 'contract_mismatch', expected: refOf(mapping.from), actual: refOf(value.definition) })
   }
-  const mappingIssues = checkMapping(mapping, inputDefinition).issues
+  // Including: a required output can't be fed by a source that may have no value.
+  const mappingIssues = checkMapping(mapping, inputDefinition, outputDefinition).issues
   if (mappingIssues.length) return end({ kind: 'not_attempted', reason: 'invalid_mapping', issues: mappingIssues })
 
   let produced: unknown

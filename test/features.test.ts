@@ -110,7 +110,7 @@ describe('Mappings: a closed, declarative expression tree', () => {
     const checked = checkMapping({ properties: [
       { name: 'fullName', source: FULL_NAME }, { name: 'n', source: lit(1) }, { name: 'ok', source: lit(false) }, { name: 'first', source: prop('firstName') },
     ] }, A1)
-    expect(checked).toEqual({ issues: [], types: ['string', 'number', 'boolean', 'string'] })
+    expect(checked).toEqual({ issues: [], types: ['string', 'number', 'boolean', 'string'], absent: [[], [], [], []] })
   })
 
   it('refuses what it can’t do before anything runs: unknown names, wrong arguments, lists where values belong', () => {

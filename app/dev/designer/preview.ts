@@ -52,6 +52,8 @@ export function previewSource(source: Expression, input: DefinitionVersion, exam
 export interface FieldReview {
   readonly name: string
   readonly expected: FieldType
+  /** The target may go without it: left unmapped, it's simply left out of the output. */
+  readonly optional: boolean
   /** Index in the draft, or -1 when nothing makes this field yet. */
   readonly index: number
   readonly state: 'not_set' | 'problem' | 'set'
@@ -71,7 +73,7 @@ export interface DraftReview {
   readonly issues: readonly (readonly MappingIssue[])[]
   /** Everything that keeps the draft from being a sound Mapping for the target, in words. */
   readonly problems: readonly string[]
-  /** The target's properties nothing makes yet: incomplete, not wrong. */
+  /** The target's required properties nothing makes yet: incomplete, not wrong. (Optional ones may stay unmapped.) */
   readonly missing: readonly string[]
   /** The problems that are actual errors: everything except what's still missing. */
   readonly errors: readonly string[]
@@ -86,15 +88,16 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
 
   const fields = target.fields.map((field): FieldReview => {
     const index = firstIndex(field.name)
+    const optional = field.optional === true
     if (index < 0) {
-      problems.push(`${field.name} isn’t set yet. ${targetLabel} needs it.`)
-      return { name: field.name, expected: field.type, index, state: 'not_set', problems: [] }
+      if (!optional) problems.push(`${field.name} isn’t set yet. ${targetLabel} needs it.`)
+      return { name: field.name, expected: field.type, optional, index, state: 'not_set', problems: [] }
     }
     const own: string[] = []
     const type = checked[index]!.types[0]
     if (type && type !== field.type) own.push(`${targetLabel} needs ${typeWords[field.type]} here, but this makes ${typeWords[type]}.`)
     problems.push(...own.map((p) => `${field.name}: ${p}`), ...issues[index]!.map((i) => `${field.name}: ${friendlyIssue(i)}`))
-    return { name: field.name, expected: field.type, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }
+    return { name: field.name, expected: field.type, optional, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }
   })
 
   const extras: ExtraReview[] = []
@@ -109,7 +112,7 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
     problems.push(`${p.name || 'An unnamed value'}: ${reason}`)
   })
 
-  const missing = fields.filter((f) => f.state === 'not_set').map((f) => f.name)
+  const missing = fields.filter((f) => f.state === 'not_set' && !f.optional).map((f) => f.name)
   const unset = new Set(missing.map((name) => `${name} isn’t set yet. ${targetLabel} needs it.`))
   return { fields, extras, issues, problems, missing, errors: problems.filter((p) => !unset.has(p)) }
 }

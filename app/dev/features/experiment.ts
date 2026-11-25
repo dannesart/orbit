@@ -146,6 +146,7 @@ export function describeMappingIssue(issue: MappingIssue): string {
     case 'list_item_type': return `Only strings can be joined; this is ${kindWords[issue.actual]}.`
     case 'list_not_allowed': return 'A property can’t be a list.'
     case 'invalid_literal': return 'That isn’t a usable number.'
+    case 'may_be_absent': return `${issue.optional.join(', ')} may be missing, but this property is required. Orbit won’t invent a value.`
   }
 }
 

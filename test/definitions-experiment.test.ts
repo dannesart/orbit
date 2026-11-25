@@ -86,7 +86,7 @@ describe('Checking an example, with Orbit’s own validation', () => {
   it('shows what a missing property, a wrong type and something extra do, in plain words', () => {
     const data = exampleData(fields, { values: { age: { kind: 'text', text: 'thirty' }, subscribed: { kind: 'no' } }, extra: { name: 'nickname', text: 'A' } })
     expect(checkExample(fields, data).map(issueWords)).toEqual([
-      'full name is missing. Every property is required.',
+      'full name is missing, and it’s required.',
       'age should be a number, not text.',
       'nickname isn’t one of its properties, so it isn’t accepted.',
     ])
