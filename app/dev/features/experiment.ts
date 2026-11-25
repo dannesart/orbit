@@ -110,7 +110,8 @@ export const definitionLabel = (ref: DefinitionRef) => {
   return `${d?.name ?? ref.id} · v${ref.version}`
 }
 
-export const shapeOf = (d: DefinitionVersion) => `{ ${d.fields.map((f) => `${f.name}: ${f.type}`).join(', ')} }`
+/** A version's structure in one line: `{ fullName: string, alias?: string }` (`?`: optional). */
+export const shapeOf = (d: DefinitionVersion) => `{ ${d.fields.map((f) => `${f.name}${f.optional === true ? '?' : ''}: ${f.type}`).join(', ')} }`
 
 const kindWords: Record<Kind | ArgumentType | 'invalid', string> = {
   string: 'text', number: 'a number', boolean: 'yes or no', 'string[]': 'a list of text', null: 'null',

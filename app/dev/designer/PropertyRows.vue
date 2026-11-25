@@ -36,7 +36,8 @@ const icon = {
             <span class="text-xs text-slate-400">{{ r.type }}</span>
           </span>
           <span class="mt-1.5 flex items-center gap-2 pl-5 text-sm" :class="r.state === 'not_set' ? 'text-amber-700' : 'text-slate-700'">
-            <span aria-hidden="true" class="text-slate-400">←</span>
+            <!-- The arrow reads "made from"; an optional property left out is made from nothing. -->
+            <span v-if="r.state !== 'left_out'" aria-hidden="true" class="text-slate-400">←</span>
             <span class="min-w-0 truncate">{{ r.summary }}</span>
           </span>
           <span v-if="r.problem" class="mt-1 block pl-5 text-xs text-red-700">{{ r.problem }}</span>

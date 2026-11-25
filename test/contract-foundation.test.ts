@@ -8,7 +8,7 @@ import { type Expression, type Mapping, sameMappingProperties } from '../shared/
 import { type MappingFeature, invoke, mappingCompatibility, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
 import { mappingWork, previewOutput, previewSource, reviewDraft } from '../app/dev/designer/preview'
 import { propertyRows } from '../app/dev/designer/rows'
-import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
+import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment, shapeOf } from '../app/dev/features/experiment'
 import { ORBIT_PROVIDED, addVersion, createDefinition, draftFrom, moveField } from '../app/dev/definitions/model'
 import { applyConfiguration, draftFrom as designerDraft, initialConfiguration, planApply } from '../app/dev/designer/config'
 import { toDraft } from '../app/dev/designer/parts'
@@ -314,6 +314,18 @@ describe('Validation locates problems by structured property paths', () => {
 
   it('words a path for people without ever parsing it back', () => {
     expect([propertyPathWords([]), propertyPathWords(['a.b']), propertyPathWords(['a', 'b'])]).toEqual(['the data', 'a.b', 'a › b'])
+  })
+})
+
+describe('The Designer marks optional properties', () => {
+  it('in the structure summary', () => {
+    const card = defineVersion({ id: 'card', version: 1, name: 'Card', workspaceId: 'w', fields: [f('fullName'), f('alias', 'string', true)] })
+    expect(shapeOf(card)).toBe('{ fullName: string, alias?: string }')
+  })
+
+  it('without a source arrow on rows that are left out', () => {
+    const source = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/PropertyRows.vue'), 'utf8')
+    expect(source).toContain(`<span v-if="r.state !== 'left_out'" aria-hidden="true" class="text-slate-400">←</span>`)
   })
 })
 
