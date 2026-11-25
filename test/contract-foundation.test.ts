@@ -4,13 +4,14 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { type Field, defineVersion, propertyPathWords, refOf, sameFields, validate } from '../shared/features/definitions'
-import type { Mapping } from '../shared/features/mappings'
+import { type Expression, type Mapping, sameMappingProperties } from '../shared/features/mappings'
 import { type MappingFeature, invoke, mappingCompatibility, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
 import { mappingWork, previewOutput, previewSource, reviewDraft } from '../app/dev/designer/preview'
 import { propertyRows } from '../app/dev/designer/rows'
 import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
 import { ORBIT_PROVIDED, addVersion, createDefinition, draftFrom, moveField } from '../app/dev/definitions/model'
 import { applyConfiguration, draftFrom as designerDraft, initialConfiguration, planApply } from '../app/dev/designer/config'
+import { toDraft } from '../app/dev/designer/parts'
 
 const f = (name: string, type: Field['type'] = 'string', optional = false): Field => (optional ? { name, type, optional: true } : { name, type })
 
@@ -110,6 +111,45 @@ describe('Reordering alone never makes a contract version', () => {
     const reordered = { ...local, local: { name: 'Out', fields: [f('note', 'string', true), f('fullName')] } }
     expect(planApply(once, reordered).output.isNew).toBe(false)
     expect(applyConfiguration(once, reordered)).toBe(once)
+  })
+})
+
+describe('Mapping property order is presentation, not meaning', () => {
+  const prop = (name: string): Expression => ({ kind: 'property', name })
+  const text = (value: string): Expression => ({ kind: 'literal', value })
+  const join = (items: Expression[], separator: string): Expression => ({ kind: 'call', fn: 'join', args: [{ kind: 'list', items }, text(separator)] })
+  const full = { name: 'fullName', source: join([prop('firstName'), text(' '), prop('lastName')], '') }
+  const last = { name: 'last', source: prop('lastName') }
+
+  it('compares output properties by name, in any order', () => {
+    expect(sameMappingProperties([full, last], [last, full])).toBe(true)
+    expect(sameMappingProperties([full, last], [full, { ...last, source: prop('firstName') }])).toBe(false)
+    expect(sameMappingProperties([full, last], [full])).toBe(false)
+    expect(sameMappingProperties([full, last], [full, { ...last, name: 'surname' }])).toBe(false)
+  })
+
+  it('keeps order inside a source meaningful: arguments and list items', () => {
+    const swapped = { name: 'fullName', source: join([prop('lastName'), text(' '), prop('firstName')], '') }
+    expect(sameMappingProperties([full], [swapped])).toBe(false)
+    const separatorFirst: Expression = { kind: 'call', fn: 'join', args: [text(''), { kind: 'list', items: [prop('firstName')] }] }
+    expect(sameMappingProperties([{ name: 'x', source: join([prop('firstName')], '') }], [{ name: 'x', source: separatorFirst }])).toBe(false)
+  })
+
+  it('guesses nothing when a name repeats: only identical lists are the same', () => {
+    expect(sameMappingProperties([full, full, last], [full, full, last])).toBe(true)
+    expect(sameMappingProperties([full, last, full], [full, full, last])).toBe(false)
+  })
+
+  it('in the Designer: reordering the Transform’s properties makes no Mapping version', () => {
+    const start = initialConfiguration()
+    const draft = { ...designerDraft(start), use: 'local' as const, local: { name: 'Out', fields: [f('fullName'), f('last')] }, properties: toDraft([full, last]) }
+    const once = applyConfiguration(start, draft)
+    const reordered = { ...draft, properties: [...draft.properties].reverse() }
+    expect(planApply(once, reordered)).toMatchObject({ mapping: { isNew: false }, changes: false })
+    expect(applyConfiguration(once, reordered)).toBe(once)
+    // A change inside a source still does.
+    const changed = { ...draft, properties: toDraft([full, { ...last, source: prop('firstName') }]) }
+    expect(planApply(once, changed).mapping).toMatchObject({ isNew: true, version: 2 })
   })
 })
 

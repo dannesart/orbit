@@ -12,9 +12,9 @@
 //   version, with its own versions. A new output version therefore starts a new Mapping (v1).
 //   Nothing here changes the domain; it only decides which immutable versions to make.
 import {
-  type DefinitionRef, type DefinitionVersion, type Field, checkPropertyNames, deepFreeze, defineVersion, frozenCopy, refOf, sameData, sameDefinition, sameFields, visibleIn,
+  type DefinitionRef, type DefinitionVersion, type Field, checkPropertyNames, deepFreeze, defineVersion, frozenCopy, refOf, sameDefinition, sameFields, visibleIn,
 } from '#shared/features/definitions'
-import { type Mapping, type MappingProperty, reviseMapping } from '#shared/features/mappings'
+import { type Mapping, type MappingProperty, reviseMapping, sameMappingProperties } from '#shared/features/mappings'
 import type { FeatureRef, Outcome } from '#shared/features/features'
 import type { StepId } from './flow'
 
@@ -173,7 +173,8 @@ export function planApply(config: Configuration, draft: TransformDraft): Plan {
   const id = mappingIdFor(ref)
   const latest = config.mappings.filter((m) => m.id === id).at(-1)
   const properties = fromDraft(draft.properties)
-  const reuse = !output.isNew && latest && sameData(latest.properties, properties)
+  // The same Mapping when each property has the same source, in any order (order is presentation).
+  const reuse = !output.isNew && latest && sameMappingProperties(latest.properties, properties)
   const version = reuse ? latest!.version : (latest?.version ?? 0) + 1
   const changes = output.isNew || !reuse || !sameDefinition(config.output, ref) || config.mapping.id !== id || config.mapping.version !== version
   return { output: { ref, label: output.label, isNew: output.isNew }, mapping: { id, version, isNew: !reuse }, changes }

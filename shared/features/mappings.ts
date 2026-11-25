@@ -1,4 +1,4 @@
-import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, type Scalar, deepFreeze, frozenCopy, kindOf } from './definitions'
+import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, type Scalar, deepFreeze, frozenCopy, kindOf, sameData } from './definitions'
 
 /**
  * Mappings: how Orbit.Transform builds one object from another.
@@ -11,7 +11,10 @@ import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, 
  * as they are.
  *
  * A Mapping belongs to a workspace, names exact input and output Definition versions, and is
- * immutable once made: changing it makes a new version (reviseMapping).
+ * immutable once made: changing it makes a new version (reviseMapping). The order of its output
+ * properties is presentation, like the order of a Definition's properties: each is built
+ * independently of the others, so reordering them never makes a version (sameMappingProperties).
+ * Order inside a source is meaning: a function's arguments and a list's items stay in order.
  *
  * Absence. An optional input property may be absent, and nothing here invents a value for it: a
  * source that reads an absent property has no value at all, so its output property is left out
@@ -205,6 +208,19 @@ function propertiesRead(arg: Argument): string[] {
 export function evaluatePresent(source: Expression, input: Data): { readonly present: true; readonly value: Scalar } | { readonly present: false } {
   if (propertiesRead(source).some((name) => !Object.hasOwn(input, name))) return { present: false }
   return { present: true, value: evaluate(source, input) }
+}
+
+/**
+ * Whether two lists of output properties say the same thing: each name built from exactly the same
+ * source. Their order is ignored (presentation); everything inside a source is compared exactly,
+ * argument order and list order included. Lists with a repeated name (which checkMapping refuses)
+ * are only the same when identical, in order: nothing is guessed about which is which.
+ */
+export function sameMappingProperties(a: readonly MappingProperty[], b: readonly MappingProperty[]): boolean {
+  if (a.length !== b.length) return false
+  const byName = new Map(b.map((p) => [p.name, p]))
+  if (byName.size !== b.length || new Set(a.map((p) => p.name)).size !== a.length) return sameData(a, b)
+  return a.every((p) => byName.has(p.name) && sameData(p.source, byName.get(p.name)!.source))
 }
 
 /** A Mapping's next version: same identity and contracts, new properties, frozen. */
