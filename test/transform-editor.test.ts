@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { type Data, deepFreeze } from '../shared/features/definitions'
 import { type Argument, type Expression, type Mapping, type MappingProperty, checkMapping } from '../shared/features/mappings'
-import { invoke, orbitConsole, orbitTransform } from '../shared/features/features'
+import { invoke, orbitConsole, orbitTransformV2 } from '../shared/features/features'
 import { A1, B1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
 import {
   type DraftProperty, type Piece, combineWith, fromDraft, fromPiece, insertAt, move, ownIssues, partPaths, removeAt, replaceAt,
@@ -198,7 +198,7 @@ describe('The preview: the Transform’s own evaluation, without a run', () => {
       const mapping: Mapping = deepFreeze({ ...INITIAL_MAPPING, properties })
       const result = invoke(
         { definitions: DEFINITIONS, records: [], mappings: [mapping] },
-        { workspaceId: WORKSPACE, feature: orbitTransform, input: { definition: A1, data: INITIAL_DATA }, mapping: { id: mapping.id, version: mapping.version } },
+        { workspaceId: WORKSPACE, feature: orbitTransformV2, input: { definition: A1, data: INITIAL_DATA }, mapping: { id: mapping.id, version: mapping.version } },
       )
       expect(result.evidence.outcome.kind).toBe('succeeded')
       const preview = previewOutput(properties, A1, B1, example)
@@ -240,7 +240,7 @@ describe('The preview: the Transform’s own evaluation, without a run', () => {
     const preview = readFileSync(join(import.meta.dirname, '../app/dev/designer/preview.ts'), 'utf8')
     const imports = [...preview.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1])
     expect(imports).toEqual(['#shared/features/definitions', '#shared/features/mappings', '../features/experiment'])
-    expect(preview).not.toMatch(/\binvoke\s*\(|runExperiment|orbitTransform|evidence\s*:/)
+    expect(preview).not.toMatch(/\binvoke\s*\(|runExperiment|orbitTransformV2|evidence\s*:/)
   })
 
   it('makes whitespace visible where it matters, and says it in words', () => {

@@ -12,7 +12,7 @@
 // The boundary (shared/features, invoke) still checks every invocation; this only says ahead of
 // time what it would say. Nothing here changes a contract, a Mapping or a Definition.
 import { type DefinitionRef, type DefinitionVersion, sameDefinition, sameFields } from '#shared/features/definitions'
-import { type Catalog, type FeatureRef, type Input, type InvocationResult, type PassThroughFeature, invoke, orbitConsole, orbitTransform } from '#shared/features/features'
+import { type Catalog, type FeatureRef, type Input, type InvocationResult, type PassThroughFeature, invoke, orbitConsole, orbitTransformV2 } from '#shared/features/features'
 import { RECORD_ID } from '../features/experiment'
 
 export const STEPS = ['record', 'console-in', 'transform', 'console-out'] as const
@@ -150,7 +150,7 @@ export function runFlow(
   for (const step of path.slice(1) as FeatureStep[]) {
     const { workspaceId } = options
     const result: InvocationResult = step === 'transform'
-      ? invoke(catalog, { workspaceId, feature: orbitTransform, input, mapping: options.mapping })
+      ? invoke(catalog, { workspaceId, feature: orbitTransformV2, input, mapping: options.mapping })
       : invoke(catalog, { workspaceId, feature: step === 'console-in' ? options.console : orbitConsole, input })
     steps[step] = result
     if (!result.output) break

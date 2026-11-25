@@ -7,7 +7,7 @@ import {
 } from '../shared/features/definitions'
 import { type Expression, type Mapping, FUNCTIONS, checkMapping, evaluate, formatSource, reviseMapping } from '../shared/features/mappings'
 import {
-  type Catalog, type InvocationResult, type MappingFeature, type PassThroughFeature, invoke, orbitConsole, orbitTransform,
+  type Catalog, type InvocationResult, type MappingFeature, type PassThroughFeature, invoke, orbitConsole, orbitTransformV2,
 } from '../shared/features/features'
 
 const W = 'ws-1'
@@ -45,7 +45,7 @@ function counted<F extends PassThroughFeature | MappingFeature>(feature: F) {
   const run = (...args: unknown[]) => { calls.n++; return (feature.run as (...a: unknown[]) => Data)(...args) }
   return { feature: { ...feature, run } as F, calls }
 }
-const transform = (c: Catalog, input: Catalog['records'][number] | Value | { record: string }, m: { id: string; version: number } = M1, feature: MappingFeature = orbitTransform) =>
+const transform = (c: Catalog, input: Catalog['records'][number] | Value | { record: string }, m: { id: string; version: number } = M1, feature: MappingFeature = orbitTransformV2) =>
   invoke(c, { workspaceId: W, feature, input: 'workspaceId' in input ? { record: input.id } : input, mapping: m })
 const show = (c: Catalog, input: Value | { record: string }, feature: PassThroughFeature = orbitConsole, workspaceId = W) =>
   invoke(c, { workspaceId, feature, input })
@@ -200,7 +200,7 @@ describe('Orbit.Transform: exact contracts, validated output', () => {
     expect(c).toEqual(before) // nothing added, nothing changed
     expect(r.evidence).toEqual({
       workspaceId: W,
-      feature: { id: 'orbit.transform', version: 1 },
+      feature: { id: 'orbit.transform', version: 2 },
       mapping: { id: 'm', version: 1 },
       input: { record: 'rec-a', definition: { id: 'person', version: 1 } },
       output: { definition: { id: 'full-name', version: 1 } },
@@ -213,7 +213,7 @@ describe('Orbit.Transform: exact contracts, validated output', () => {
   })
 
   it('matches by exact identity: another version, or a look-alike Definition, is refused and nothing runs', () => {
-    const { feature, calls } = counted(orbitTransform)
+    const { feature, calls } = counted(orbitTransformV2)
     const a2 = transform(catalog(), { definition: { id: 'person', version: 2 }, data: { ...ADA, age: 36 } }, M1, feature)
     expect(a2.evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'contract_mismatch', expected: { id: 'person', version: 1 }, actual: { id: 'person', version: 2 } })
     const lookalike = transform(catalog(), { definition: { id: 'person-copy', version: 1 }, data: ADA }, M1, feature)
@@ -223,7 +223,7 @@ describe('Orbit.Transform: exact contracts, validated output', () => {
   })
 
   it('refuses input that isn’t what it claims to be, from a Record or from a caller, and nothing runs', () => {
-    const { feature, calls } = counted(orbitTransform)
+    const { feature, calls } = counted(orbitTransformV2)
     const badRecord = catalog({ records: [recordA({ data: { firstName: 'Ada' } })] })
     const fromRecord = transform(badRecord, recordA(), M1, feature)
     expect(fromRecord.evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'invalid_input', issues: [{ problem: 'missing', field: 'lastName', expected: 'string' }] })
@@ -234,7 +234,7 @@ describe('Orbit.Transform: exact contracts, validated output', () => {
   })
 
   it('refuses a Mapping that can’t be applied, and nothing runs', () => {
-    const { feature, calls } = counted(orbitTransform)
+    const { feature, calls } = counted(orbitTransformV2)
     const broken = mapping([{ name: 'fullName', source: trim(prop('middleName')) }], { id: 'broken' })
     const r = transform(catalog({ mappings: [broken] }), recordA(), broken, feature)
     expect(r.evidence.outcome).toMatchObject({ kind: 'not_attempted', reason: 'invalid_mapping', issues: [{ problem: 'unknown_property' }] })
@@ -259,7 +259,7 @@ describe('Orbit.Transform: exact contracts, validated output', () => {
   })
 
   it('reports a Feature that throws as failed, by the error’s name only (its message could quote data)', () => {
-    const leaky: MappingFeature = { ...orbitTransform, id: 'test.leaky', run: (input) => { throw new RangeError(`bad ${input.lastName}`) } }
+    const leaky: MappingFeature = { ...orbitTransformV2, id: 'test.leaky', run: (input) => { throw new RangeError(`bad ${input.lastName}`) } }
     const r = transform(catalog(), recordA(), M1, leaky)
     expect(r.evidence.outcome).toEqual({ kind: 'failed', reason: 'threw', error: 'RangeError' })
     expect(r.output).toBeUndefined()
@@ -267,7 +267,7 @@ describe('Orbit.Transform: exact contracts, validated output', () => {
   })
 
   it('validates output whatever the Feature claims: a Feature that ignores its Mapping is caught', () => {
-    const rogue: MappingFeature = { ...orbitTransform, id: 'test.rogue', run: () => ({ fullName: 42 }) as unknown as Data }
+    const rogue: MappingFeature = { ...orbitTransformV2, id: 'test.rogue', run: () => ({ fullName: 42 }) as unknown as Data }
     expect(transform(catalog(), recordA(), M1, rogue).evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output' })
   })
 })

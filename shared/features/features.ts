@@ -2,7 +2,7 @@ import {
   type Data, type DefinitionRef, type DefinitionVersion, type Issue, type Value, type WorkspaceRecord,
   frozenCopy, refOf, sameData, sameDefinition, validate, visibleIn,
 } from './definitions'
-import { type Mapping, type MappingIssue, checkMapping, evaluatePresent } from './mappings'
+import { type Mapping, type MappingIssue, checkMapping, evaluate, evaluatePresent } from './mappings'
 
 /**
  * Features perform work; Orbit's execution boundary (invoke) does everything around them.
@@ -18,6 +18,13 @@ import { type Mapping, type MappingIssue, checkMapping, evaluatePresent } from '
  *                   The boundary verifies it rather than trusting the Feature.
  *   'mapping'       a Mapping gives the contracts: its `from` is the input, its `to` the output
  *                   (Orbit.Transform). The boundary validates the output against `to`.
+ *
+ * Feature versions guarantee behaviour. A Feature version (id + version) names one fixed
+ * behaviour: the contracts it accepts and what it does with them. Changing either, including
+ * accepting something it used to refuse, makes a new version; the earlier version stays exactly as
+ * it was, under its own identity, for as long as anything may invoke it or name it. Evidence names
+ * the version that actually ran (the Feature object invoked, never a "current" alias), so earlier
+ * evidence is never relabelled.
  *
  * Nothing here persists or logs anything.
  */
@@ -39,6 +46,15 @@ export interface PassThroughFeature extends FeatureRef {
 
 export interface MappingFeature extends FeatureRef {
   readonly contract: 'mapping'
+  /**
+   * What it does when a source reads an optional input property that is absent, which decides the
+   * Mappings it accepts (checkMapping):
+   *   'unsupported'  it has no behaviour for absence, so a Mapping that reads an optional input
+   *                  property is refused before it runs (absence_unsupported)
+   *   'omitted'      the output property is left out; a required one fed that way is refused
+   *                  before it runs (may_be_absent)
+   */
+  readonly absence: 'unsupported' | 'omitted'
   readonly run: (input: Data, mapping: Mapping) => Data
 }
 
@@ -56,19 +72,34 @@ export const orbitConsole: PassThroughFeature = {
 }
 
 /**
- * Orbit.Transform: builds an object, property by property, as its Mapping describes. A property
- * whose source reads an absent (optional) input property is left out, never filled in; the
- * boundary then checks the result against the output Definition, so a required one can't go missing.
+ * Orbit.Transform v1: builds an object, property by property, as its Mapping describes. Its
+ * original behaviour, kept exactly: it was made when every property was required, so it has no
+ * behaviour for absence, and Mappings that read optional input properties aren't accepted for it.
  */
-export const orbitTransform: MappingFeature = {
+export const orbitTransformV1: MappingFeature = Object.freeze<MappingFeature>({
   id: 'orbit.transform',
   version: 1,
   contract: 'mapping',
+  absence: 'unsupported',
+  run: (input, mapping) => Object.fromEntries(mapping.properties.map((p) => [p.name, evaluate(p.source, input)])),
+})
+
+/**
+ * Orbit.Transform v2: v1, plus optional properties. A property whose source reads an absent
+ * (optional) input property is left out, never filled in; a required output property can't be fed
+ * that way (refused before running), and the boundary checks the result against the output
+ * Definition. With every property present it makes exactly what v1 makes.
+ */
+export const orbitTransformV2: MappingFeature = Object.freeze<MappingFeature>({
+  id: 'orbit.transform',
+  version: 2,
+  contract: 'mapping',
+  absence: 'omitted',
   run: (input, mapping) => Object.fromEntries(mapping.properties.flatMap((p) => {
     const result = evaluatePresent(p.source, input)
     return result.present ? [[p.name, result.value]] : []
   })),
-}
+})
 
 /** What the boundary can resolve references against. In this experiment, plain in-memory lists. */
 export interface Catalog {
@@ -188,8 +219,10 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
   if (!sameDefinition(mapping.from, value.definition)) {
     return end({ kind: 'not_attempted', reason: 'contract_mismatch', expected: refOf(mapping.from), actual: refOf(value.definition) })
   }
-  // Including: a required output can't be fed by a source that may have no value.
-  const mappingIssues = checkMapping(mapping, inputDefinition, outputDefinition).issues
+  // Including what this Feature version does with absence: v1 has no behaviour for it, so it can't
+  // take a Mapping that reads an optional property; for v2 a required output can't be fed by a
+  // source that may have no value.
+  const mappingIssues = checkMapping(mapping, inputDefinition, outputDefinition, invocation.feature.absence).issues
   if (mappingIssues.length) return end({ kind: 'not_attempted', reason: 'invalid_mapping', issues: mappingIssues })
 
   let produced: unknown

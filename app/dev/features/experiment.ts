@@ -10,7 +10,7 @@ import {
   type ArgumentType, type Expression, type Mapping, type MappingIssue, type MappingProperty, type Path, checkMapping,
 } from '#shared/features/mappings'
 import {
-  type Catalog, type FeatureRef, type InvocationResult, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitTransform,
+  type Catalog, type FeatureRef, type InvocationResult, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitTransformV2,
 } from '#shared/features/features'
 
 export const WORKSPACE = 'ws-playground'
@@ -89,7 +89,7 @@ export type Step = InvocationResult | null
 export function runExperiment(catalog: Catalog, options: { console: PassThroughFeature; mapping: FeatureRef; workspaceId?: string }): [Step, Step, Step] {
   const workspaceId = options.workspaceId ?? WORKSPACE
   const first = invoke(catalog, { workspaceId, feature: options.console, input: { record: RECORD_ID } })
-  const second = first.output ? invoke(catalog, { workspaceId, feature: orbitTransform, input: first.output, mapping: options.mapping }) : null
+  const second = first.output ? invoke(catalog, { workspaceId, feature: orbitTransformV2, input: first.output, mapping: options.mapping }) : null
   const third = second?.output ? invoke(catalog, { workspaceId, feature: orbitConsole, input: second.output }) : null
   return [first, second, third]
 }
@@ -147,6 +147,7 @@ export function describeMappingIssue(issue: MappingIssue): string {
     case 'list_not_allowed': return 'A property can’t be a list.'
     case 'invalid_literal': return 'That isn’t a usable number.'
     case 'may_be_absent': return `${issue.optional.join(', ')} may be missing, but this property is required. Orbit won’t invent a value.`
+    case 'absence_unsupported': return `${issue.optional.join(', ')} may be missing, and this version of the Transform has no behaviour for that.`
   }
 }
 

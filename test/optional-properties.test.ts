@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { type Data, type DefinitionVersion, defineVersion, validate } from '../shared/features/definitions'
 import { type Expression, type Mapping, checkMapping, evaluatePresent } from '../shared/features/mappings'
-import { type Catalog, invoke, orbitTransform } from '../shared/features/features'
+import { type Catalog, invoke, orbitTransformV2 } from '../shared/features/features'
 import { addField, addVersion, changesFrom, createDefinition, draftFrom, fieldsOf, moveField, updateField, versionLike } from '../app/dev/definitions/model'
 
 const W = 'ws-1'
@@ -98,7 +98,7 @@ describe('Versions when requiredness changes', () => {
 describe('Transforms with optional properties', () => {
   const mapping = (properties: Mapping['properties'], to = CARD): Mapping => ({ id: 'm', version: 1, workspaceId: W, from: { id: 'contact', version: 1 }, to: { id: to.id, version: to.version }, properties })
   const catalog = (m: Mapping, data: Data): Catalog => ({ definitions: [CONTACT, CARD], records: [{ id: 'r', workspaceId: W, definition: { id: 'contact', version: 1 }, data }], mappings: [m] })
-  const run = (m: Mapping, data: Data) => invoke(catalog(m, data), { workspaceId: W, feature: orbitTransform, input: { record: 'r' }, mapping: { id: 'm', version: 1 } })
+  const run = (m: Mapping, data: Data) => invoke(catalog(m, data), { workspaceId: W, feature: orbitTransformV2, input: { record: 'r' }, mapping: { id: 'm', version: 1 } })
 
   it('needs every required output, and may leave an optional one unmapped: it is simply left out', () => {
     const result = run(mapping([{ name: 'greeting', source: prop('name') }]), { name: 'Ada', age: 36 })
@@ -136,15 +136,15 @@ describe('Transforms with optional properties', () => {
   it('keeps false and zero from an optional input as values', () => {
     const FLAGS = defineVersion({ id: 'flags', version: 1, name: 'Flags', workspaceId: W, fields: [{ name: 'on', type: 'boolean', optional: true }, { name: 'n', type: 'number', optional: true }] })
     const m: Mapping = { id: 'm', version: 1, workspaceId: W, from: { id: 'contact', version: 1 }, to: { id: 'flags', version: 1 }, properties: [{ name: 'on', source: prop('subscribed') }, { name: 'n', source: prop('age') }] }
-    const result = invoke({ definitions: [CONTACT, FLAGS], records: [{ id: 'r', workspaceId: W, definition: { id: 'contact', version: 1 }, data: { name: 'Ada', age: 0, subscribed: false } }], mappings: [m] }, { workspaceId: W, feature: orbitTransform, input: { record: 'r' }, mapping: { id: 'm', version: 1 } })
+    const result = invoke({ definitions: [CONTACT, FLAGS], records: [{ id: 'r', workspaceId: W, definition: { id: 'contact', version: 1 }, data: { name: 'Ada', age: 0, subscribed: false } }], mappings: [m] }, { workspaceId: W, feature: orbitTransformV2, input: { record: 'r' }, mapping: { id: 'm', version: 1 } })
     expect(result.output!.data).toEqual({ on: false, n: 0 })
   })
 
-  it('writes evidence exactly as before: references and outcomes only, nothing about absence', () => {
+  it('writes evidence in the same shape: references and outcomes only, naming Transform v2, nothing about absence', () => {
     const result = run(mapping([{ name: 'greeting', source: prop('name') }]), { name: 'Ada', age: 36 })
     expect(result.evidence).toEqual({
       workspaceId: W,
-      feature: { id: 'orbit.transform', version: 1 },
+      feature: { id: 'orbit.transform', version: 2 },
       mapping: { id: 'm', version: 1 },
       input: { record: 'r', definition: { id: 'contact', version: 1 } },
       output: { definition: { id: 'card', version: 1 } },

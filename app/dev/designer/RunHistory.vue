@@ -25,7 +25,7 @@ const mappingIds = computed(() => [...new Set(props.config.mappings.map((m) => m
       <p class="mt-0.5 text-xs text-slate-500">Each names the exact versions it used. Later changes don’t rewrite them.</p>
       <ol class="mt-2 flex flex-col gap-1 text-sm text-slate-700">
         <li v-for="r in [...runs].reverse().slice(1)" :key="r.number">
-          Run {{ r.number }} · {{ r.outcome ? outcomeLabel(r.outcome) : 'Transform not invoked' }}<template v-if="r.output"> · {{ label(r.output) }}</template><template v-if="r.mapping"> · Mapping v{{ r.mapping.version }}</template>
+          Run {{ r.number }} · {{ r.outcome ? outcomeLabel(r.outcome) : 'Transform not invoked' }}<template v-if="r.output"> · {{ label(r.output) }}</template><template v-if="r.mapping"> · Mapping v{{ r.mapping.version }}</template><template v-if="r.feature"> · Transform v{{ r.feature.version }}</template>
           <span class="block text-xs text-slate-500">{{ pathWords(r.path) }}</span>
         </li>
       </ol>

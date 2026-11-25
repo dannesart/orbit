@@ -18,6 +18,8 @@ import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, 
  * (evaluatePresent). That is only allowed where the output property is optional too: a required
  * output fed by a source that may be absent is refused before anything runs (may_be_absent),
  * because Orbit can't promise a value it might not have. There is no fallback in the language yet.
+ * This is Orbit.Transform v2's behaviour; v1 predates optional properties and refuses such sources
+ * (absence_unsupported), keeping exactly the behaviour it was published with.
  */
 
 export type Expression =
@@ -81,6 +83,8 @@ export type MappingIssue =
   | { readonly problem: 'invalid_literal'; readonly path: Path }
   /** The source reads an optional input property, so it may have no value, but the output property is required. */
   | { readonly problem: 'may_be_absent'; readonly path: Path; readonly optional: readonly string[] }
+  /** The source reads an optional input property, and the Feature version applying it has no behaviour for absence. */
+  | { readonly problem: 'absence_unsupported'; readonly path: Path; readonly optional: readonly string[] }
 
 /** `reads`: the optional input properties the argument depends on (absent if any of them is). */
 type Checked = { type: ArgumentType | 'invalid'; issues: MappingIssue[]; reads: string[] }
@@ -138,10 +142,12 @@ function checkSource(source: Expression, input: DefinitionVersion, path: Path): 
  * Whether a Mapping can be applied to values of `input`, the type each property will have, and
  * which may be absent (`absent`: the optional input properties each one reads). Checked before
  * Transform runs. Given the `output` Definition, a required output property that may be absent is
- * refused too. Whether the result satisfies the target is a separate question, answered by
- * validating the output (the boundary never trusts a Feature's result).
+ * refused too. `absence` is what the Feature version applying it does with an absent input
+ * (MappingFeature['absence']): one without behaviour for it ('unsupported') can't take a source
+ * that reads an optional property at all. Whether the result satisfies the target is a separate
+ * question, answered by validating the output (the boundary never trusts a Feature's result).
  */
-export function checkMapping(mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output?: DefinitionVersion) {
+export function checkMapping(mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output?: DefinitionVersion, absence: 'unsupported' | 'omitted' = 'omitted') {
   const issues: MappingIssue[] = []
   const types: (FieldType | null)[] = []
   const absent: string[][] = []
@@ -156,7 +162,8 @@ export function checkMapping(mapping: Pick<Mapping, 'properties'>, input: Defini
     types.push(checked.type)
     absent.push(checked.reads)
     const target = output?.fields.find((f) => f.name === name)
-    if (checked.reads.length && target && target.optional !== true) issues.push({ problem: 'may_be_absent', path, optional: checked.reads })
+    if (checked.reads.length && absence === 'unsupported') issues.push({ problem: 'absence_unsupported', path, optional: checked.reads })
+    else if (checked.reads.length && target && target.optional !== true) issues.push({ problem: 'may_be_absent', path, optional: checked.reads })
   }
   return { issues, types, absent }
 }

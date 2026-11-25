@@ -1,7 +1,12 @@
 // Experiment #9, Phase 0: the foundation composition will stand on. These test the domain's own
 // guarantees (shared/features) and that the Studio and the Designer ask the domain, not themselves.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { type Field, defineVersion, sameFields } from '../shared/features/definitions'
+import { type Field, defineVersion, refOf, sameFields } from '../shared/features/definitions'
+import type { Mapping } from '../shared/features/mappings'
+import { type MappingFeature, invoke, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
+import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
 import { ORBIT_PROVIDED, addVersion, createDefinition, draftFrom, moveField } from '../app/dev/definitions/model'
 import { applyConfiguration, draftFrom as designerDraft, initialConfiguration, planApply } from '../app/dev/designer/config'
 
@@ -103,5 +108,76 @@ describe('Reordering alone never makes a contract version', () => {
     const reordered = { ...local, local: { name: 'Out', fields: [f('note', 'string', true), f('fullName')] } }
     expect(planApply(once, reordered).output.isNew).toBe(false)
     expect(applyConfiguration(once, reordered)).toBe(once)
+  })
+})
+
+describe('Feature versions guarantee behaviour: Orbit.Transform v1 and v2', () => {
+  const W = 'w'
+  const CONTACT = defineVersion({ id: 'contact', version: 1, name: 'Contact', workspaceId: W, fields: [f('name'), f('nickname', 'string', true)] })
+  const CARD = defineVersion({ id: 'card', version: 1, name: 'Card', workspaceId: W, fields: [f('title'), f('alias', 'string', true)] })
+  const prop = (name: string) => ({ kind: 'property' as const, name })
+  const mapping = (properties: Mapping['properties']): Mapping => ({ id: 'm', version: 1, workspaceId: W, from: refOf(CONTACT), to: refOf(CARD), properties })
+  const run = (feature: MappingFeature, m: Mapping, data: Record<string, unknown>) =>
+    invoke({ definitions: [CONTACT, CARD], records: [{ id: 'r', workspaceId: W, definition: refOf(CONTACT), data: data as never }], mappings: [m] }, { workspaceId: W, feature, input: { record: 'r' }, mapping: { id: 'm', version: 1 } })
+
+  it('keeps v1’s exact identity, and gives optional-property support its own', () => {
+    expect([orbitTransformV1, orbitTransformV2].map(({ id, version, contract, absence }) => ({ id, version, contract, absence }))).toEqual([
+      { id: 'orbit.transform', version: 1, contract: 'mapping', absence: 'unsupported' },
+      { id: 'orbit.transform', version: 2, contract: 'mapping', absence: 'omitted' },
+    ])
+    expect(Object.isFrozen(orbitTransformV1) && Object.isFrozen(orbitTransformV2)).toBe(true)
+  })
+
+  it('keeps v1’s original behaviour: no behaviour for absence (it throws, as published)', () => {
+    const m = mapping([{ name: 'title', source: prop('name') }, { name: 'alias', source: prop('nickname') }])
+    expect(orbitTransformV1.run({ name: 'Ada', nickname: 'A' }, m)).toEqual({ title: 'Ada', alias: 'A' })
+    expect(() => orbitTransformV1.run({ name: 'Ada' }, m)).toThrow()
+  })
+
+  it('makes exactly what v1 makes whenever every property is present', () => {
+    const catalog = { definitions: DEFINITIONS, records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: refOf(A1), data: INITIAL_DATA }], mappings: [INITIAL_MAPPING] }
+    const invocation = { workspaceId: WORKSPACE, input: { record: RECORD_ID }, mapping: { id: INITIAL_MAPPING.id, version: INITIAL_MAPPING.version } }
+    const v1 = invoke(catalog, { ...invocation, feature: orbitTransformV1 })
+    const v2 = invoke(catalog, { ...invocation, feature: orbitTransformV2 })
+    expect(v2.output).toEqual(v1.output)
+    expect({ ...v2.evidence, feature: null }).toEqual({ ...v1.evidence, feature: null })
+  })
+
+  it('refuses, before running, a Mapping v1 has no behaviour for: evidence names v1', () => {
+    const result = run(orbitTransformV1, mapping([{ name: 'title', source: prop('name') }, { name: 'alias', source: prop('nickname') }]), { name: 'Ada', nickname: 'A' })
+    expect(result.evidence.feature).toEqual({ id: 'orbit.transform', version: 1 })
+    expect(result.evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'invalid_mapping', issues: [{ problem: 'absence_unsupported', path: ['alias'], optional: ['nickname'] }] })
+    expect(result.output).toBeUndefined()
+  })
+
+  it('still runs v1 on a Definition with optional properties it doesn’t read', () => {
+    const result = run(orbitTransformV1, mapping([{ name: 'title', source: prop('name') }]), { name: 'Ada' })
+    expect(result.evidence.outcome).toEqual({ kind: 'succeeded' })
+    expect(result.output!.data).toEqual({ title: 'Ada' })
+  })
+
+  it('runs the same Mapping with v2, leaving the absent property out: evidence names v2', () => {
+    const m = mapping([{ name: 'title', source: prop('name') }, { name: 'alias', source: prop('nickname') }])
+    const result = run(orbitTransformV2, m, { name: 'Ada' })
+    expect(result.evidence.feature).toEqual({ id: 'orbit.transform', version: 2 })
+    expect(result.evidence.outcome).toEqual({ kind: 'succeeded' })
+    expect(result.output!.data).toEqual({ title: 'Ada' })
+  })
+
+  it('never relabels earlier evidence: a v1 run still names v1 after v2 runs', () => {
+    const m = mapping([{ name: 'title', source: prop('name') }])
+    const earlier = run(orbitTransformV1, m, { name: 'Ada' })
+    run(orbitTransformV2, m, { name: 'Ada' })
+    expect(earlier.evidence.feature).toEqual({ id: 'orbit.transform', version: 1 })
+    expect(Object.isFrozen(earlier.evidence)).toBe(true)
+  })
+
+  it('is what the playground and the Designer run: v2, named explicitly', () => {
+    const [, transform] = runExperiment({ definitions: DEFINITIONS, records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: refOf(A1), data: INITIAL_DATA }], mappings: [INITIAL_MAPPING] }, { console: orbitConsole, mapping: { id: INITIAL_MAPPING.id, version: 1 } })
+    expect(transform!.evidence.feature).toEqual({ id: 'orbit.transform', version: 2 })
+    const root = join(import.meta.dirname, '..')
+    for (const file of ['app/dev/features/experiment.ts', 'app/dev/designer/flow.ts']) {
+      expect(readFileSync(join(root, file), 'utf8')).toMatch(/feature: orbitTransformV2\b/)
+    }
   })
 })

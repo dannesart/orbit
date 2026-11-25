@@ -170,7 +170,7 @@ function run() {
   runNumber.value++
   const evidence = shown.value.steps.transform?.evidence
   const used = evidence?.mapping ? findMapping(applied, evidence.mapping) : null
-  runs.value = [...runs.value, Object.freeze({ number: runNumber.value, outcome: evidence?.outcome ?? null, mapping: evidence?.mapping ?? null, output: used?.to ?? null, path: shown.value.path })]
+  runs.value = [...runs.value, Object.freeze({ number: runNumber.value, outcome: evidence?.outcome ?? null, feature: evidence?.feature ?? null, mapping: evidence?.mapping ?? null, output: used?.to ?? null, path: shown.value.path })]
 }
 
 const connectionsChanged = computed(() => connections.value.map(connectionKey).join() !== INITIAL_CONNECTIONS.map(connectionKey).join())

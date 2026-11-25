@@ -23,6 +23,8 @@ export interface RunRecord {
   readonly number: number
   /** null when the Transform wasn't invoked in that run. */
   readonly outcome: Outcome | null
+  /** The Transform version that ran, as its evidence names it; null when it wasn't invoked. */
+  readonly feature: FeatureRef | null
   readonly mapping: FeatureRef | null
   /** The output Definition that Mapping version names (immutable, so this can't drift). */
   readonly output: DefinitionRef | null
