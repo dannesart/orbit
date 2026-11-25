@@ -16,6 +16,23 @@
  * a version: changing it means a new version. Matching is by exact identity: the same id and the
  * same version. Two Definitions that happen to look alike
  * are still different Definitions. Pure and in memory: nothing here reads or writes storage.
+ *
+ * Versions are forever. A published version (one defineVersion has made) is never modified and
+ * never deleted, by anyone, for any reason. Deprecating or archiving a Definition may hide it
+ * from new choices, but every version must stay resolvable by its exact identity, so historical
+ * Records, Mappings and evidence keep meaning exactly what they meant. The order of fields is
+ * presentation, never part of a contract: two versions are the same contract when sameFields says
+ * so, and reordering alone never makes a version.
+ *
+ * What this module enforces, and what it can't:
+ *   - Enforced here: a version is a deep-frozen private copy (defineVersion), so nothing holding
+ *     it can change it in memory, and every comparison of contracts is one function (sameFields).
+ *   - Not enforceable here: that a version survives. This module holds no versions; whoever keeps
+ *     them (today, a browser tab's memory or source code; later, storage) must refuse to update or
+ *     delete one, and must resolve every version ever published. Orbit-provided versions live in
+ *     source code, where a later edit could change them; regression tests pin their content, which
+ *     catches such an edit but cannot guarantee durability. Durable immutability needs persistence
+ *     that refuses changes (write-once rows, no update or delete path), which doesn't exist yet.
  */
 
 export type FieldType = 'string' | 'number' | 'boolean'

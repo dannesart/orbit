@@ -64,6 +64,8 @@ export interface NewDefinition {
 /**
  * What this preview shows as provided by Orbit: samples, visible to every workspace, read-only.
  * Orbit doesn't actually provide any Definitions; these exist only in builds with the experiment.
+ * Published versions are never edited or removed (shared/features/definitions.ts): to change one,
+ * add its next version. test/contract-foundation.test.ts pins each published version's content.
  */
 export const ORBIT_PROVIDED: readonly DefinitionVersion[] = deepFreeze([
   defineVersion({ id: 'orbit.contact-name', version: 1, name: 'Contact name', workspaceId: null, fields: [{ name: 'name', type: 'string' }] }),
