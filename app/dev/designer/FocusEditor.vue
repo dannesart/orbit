@@ -51,6 +51,7 @@ function continueToMapping() {
 const typeWords = { string: 'text', number: 'number', boolean: 'yes or no' } as const
 const status = {
   not_set: { icon: '○', label: 'Not mapped', tone: 'text-amber-600' },
+  left_out: { icon: '–', label: 'Left out (optional)', tone: 'text-slate-400' },
   problem: { icon: '!', label: 'Needs attention', tone: 'text-red-600' },
   set: { icon: '✓', label: 'Mapped', tone: 'text-accent-600' },
 }

@@ -19,9 +19,9 @@ const rows = computed(() => {
   const names = props.draft.properties.map((p) => p.name)
   const required = props.target.definition.fields.map((f) => {
     const index = names.indexOf(f.name)
-    return { name: f.name, value: index >= 0 ? props.output.values[index]! : null, extra: false }
+    return { name: f.name, value: index >= 0 ? props.output.values[index]! : null, optional: f.optional === true, extra: false }
   })
-  const extras = props.review.extras.map((x) => ({ name: props.draft.properties[x.index]!.name || 'unnamed', value: props.output.values[x.index]!, extra: true }))
+  const extras = props.review.extras.map((x) => ({ name: props.draft.properties[x.index]!.name || 'unnamed', value: props.output.values[x.index]!, optional: false, extra: true }))
   return [...required, ...extras]
 })
 const about = ref(false)
@@ -46,6 +46,8 @@ const fit = computed(() => (!props.output.fits || 'problem' in props.example || 
         <span class="shrink-0" :class="r.extra ? 'text-amber-800 line-through' : 'text-slate-600'">{{ r.name }}:</span>
         <ShownText v-if="r.value && 'value' in r.value" :value="r.value.value" />
         <span v-else-if="r.value && 'problems' in r.value" class="font-sans text-red-700">can’t be made: {{ r.value.problems[0] }}</span>
+        <span v-else-if="r.value && 'absent' in r.value" class="font-sans text-slate-500">left out: the example has no {{ r.value.absent.join(', ') }}</span>
+        <span v-else-if="!r.value && r.optional" class="font-sans text-slate-500">left out (optional)</span>
         <span v-else class="font-sans text-amber-700">not mapped</span>
         <span v-if="r.extra" class="font-sans text-amber-800">not part of the output</span>
       </div>

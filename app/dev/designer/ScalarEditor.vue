@@ -66,6 +66,7 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
         <span class="text-xs text-slate-500">The same for every input.</span>
       </div>
       <p v-if="result && 'value' in result && mode === 'field'" class="mt-2 flex items-center gap-1.5 text-xs text-slate-500">Example <ShownText :value="result.value" /></p>
+      <p v-if="result && 'absent' in result" class="mt-2 text-xs text-slate-500">No value in the example: it has no {{ result.absent.join(', ') }}, so this is left out.</p>
       <ul v-if="result && 'problems' in result" class="mt-2 flex flex-col gap-0.5 text-sm text-red-700">
         <li v-for="p in result.problems" :key="p">{{ p }}</li>
       </ul>

@@ -13,7 +13,7 @@ export interface PropertyRow {
   readonly name: string
   readonly type: string
   readonly state: RowState
-  /** What makes the value, in words; "Not mapped" when nothing does yet. */
+  /** What makes the value, in words; "Not mapped" when nothing does yet, "Left out" for an optional one. */
   readonly summary: string
   /** The first actual error, in words; '' when there is none. */
   readonly problem: string
@@ -24,12 +24,12 @@ export interface PropertyRow {
 }
 
 export const typeWords: Record<FieldType, string> = { string: 'text', number: 'number', boolean: 'yes or no' }
-export const stateWords: Record<RowState, string> = { not_set: 'Not mapped', problem: 'Needs attention', set: 'Mapped' }
+export const stateWords: Record<RowState, string> = { not_set: 'Not mapped', left_out: 'Left out (optional)', problem: 'Needs attention', set: 'Mapped' }
 
 export function propertyRows(draft: TransformDraft, review: DraftReview): PropertyRow[] {
   return review.fields.map((f) => {
     const piece = f.index >= 0 ? draft.properties[f.index]!.piece : null
-    const summary = piece ? describeSource(fromPiece(piece)) : 'Not mapped'
+    const summary = piece ? describeSource(fromPiece(piece)) : stateWords[f.state]
     const inside = f.index >= 0 ? review.issues[f.index]?.[0] : undefined
     const problem = f.state === 'problem' ? (f.problems[0] ?? (inside ? friendlyIssue(inside) : '')) : ''
     const type = typeWords[f.expected]

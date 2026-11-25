@@ -13,6 +13,7 @@ const emit = defineEmits<{ open: [PropertyRow['opens']] }>()
 const rows = computed(() => propertyRows(props.draft, props.review))
 const icon = {
   not_set: { mark: '○', tone: 'text-amber-600' },
+  left_out: { mark: '–', tone: 'text-slate-400' },
   problem: { mark: '!', tone: 'text-red-600' },
   set: { mark: '✓', tone: 'text-accent-600' },
 }

@@ -1,8 +1,10 @@
 // What a draft Mapping would make from the example input (Experiment #3). Preview only: it uses
-// the very functions the Transform runs with (checkMapping, evaluate, validate), and never
-// invokes a Feature, so there is no outcome and no evidence. Nothing here mutates its input.
+// the very functions Orbit.Transform v2 runs with (checkMapping, evaluatePresent, validate), and
+// never invokes a Feature, so there is no outcome and no evidence. Nothing here mutates its input.
+// Absence follows the domain's rule: a source reading an absent optional property has no value,
+// and that property is left out of the object, never filled in.
 import { type Data, type DefinitionVersion, type FieldType, type Scalar, frozenCopy, validate } from '#shared/features/definitions'
-import { type Expression, type MappingIssue, type MappingProperty, checkMapping, evaluate } from '#shared/features/mappings'
+import { type Expression, type MappingIssue, type MappingProperty, checkMapping, evaluatePresent } from '#shared/features/mappings'
 import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData } from '../features/experiment'
 
 // --- The example input ---
@@ -36,15 +38,18 @@ export function friendlyIssue(issue: MappingIssue): string {
 
 export type ValuePreview =
   | { readonly value: Scalar }
+  /** No value: it reads optional properties the example doesn't have, so it's left out. */
+  | { readonly absent: readonly string[] }
   | { readonly problems: readonly string[] }
   | { readonly noExample: true }
 
 /** What one source makes from the example, or why that can't be shown. */
 export function previewSource(source: Expression, input: DefinitionVersion, example: Example): ValuePreview {
-  const { issues } = checkMapping({ properties: [{ name: 'preview', source }] }, input)
+  const { issues, absent } = checkMapping({ properties: [{ name: 'preview', source }] }, input)
   if (issues.length) return { problems: issues.map(friendlyIssue) }
   if (!('data' in example)) return { noExample: true }
-  return { value: evaluate(source, example.data) }
+  const result = evaluatePresent(source, example.data)
+  return result.present ? { value: result.value } : { absent: absent[0]!.filter((name) => !Object.hasOwn(example.data, name)) }
 }
 
 // --- The whole draft, against the target Definition ---
@@ -56,7 +61,11 @@ export interface FieldReview {
   readonly optional: boolean
   /** Index in the draft, or -1 when nothing makes this field yet. */
   readonly index: number
-  readonly state: 'not_set' | 'problem' | 'set'
+  /**
+   * not_set   required, and nothing makes it yet: unfinished work
+   * left_out  optional, and nothing makes it: allowed, it's left out of the output (not work)
+   */
+  readonly state: 'not_set' | 'left_out' | 'problem' | 'set'
   /** Problems with the property as a whole (its issues inside are shown where they are). */
   readonly problems: readonly string[]
 }
@@ -81,7 +90,9 @@ export interface DraftReview {
 
 /** The draft's properties checked against the input Definition and the target Definition. */
 export function reviewDraft(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, targetLabel = definitionLabel(target)): DraftReview {
-  const checked = properties.map((p) => checkMapping({ properties: [p] }, input))
+  // Checked against the target too, as the boundary checks it: a required property fed by an
+  // optional input is refused (may_be_absent).
+  const checked = properties.map((p) => checkMapping({ properties: [p] }, input, target))
   const issues = checked.map((c) => c.issues)
   const firstIndex = (name: string) => properties.findIndex((p) => p.name === name)
   const problems: string[] = []
@@ -91,7 +102,7 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
     const optional = field.optional === true
     if (index < 0) {
       if (!optional) problems.push(`${field.name} isn’t set yet. ${targetLabel} needs it.`)
-      return { name: field.name, expected: field.type, optional, index, state: 'not_set', problems: [] }
+      return { name: field.name, expected: field.type, optional, index, state: optional ? 'left_out' : 'not_set', problems: [] }
     }
     const own: string[] = []
     const type = checked[index]!.types[0]
@@ -112,17 +123,18 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
     problems.push(`${p.name || 'An unnamed value'}: ${reason}`)
   })
 
-  const missing = fields.filter((f) => f.state === 'not_set' && !f.optional).map((f) => f.name)
+  const missing = fields.filter((f) => f.state === 'not_set').map((f) => f.name)
   const unset = new Set(missing.map((name) => `${name} isn’t set yet. ${targetLabel} needs it.`))
   return { fields, extras, issues, problems, missing, errors: problems.filter((p) => !unset.has(p)) }
 }
 
 /**
- * The properties Mapping still has work for (no value yet, or one with a problem), once the
- * structure is sound: what "Continue to Mapping" offers. Empty when there's nothing to do there.
+ * The properties Mapping still has work for (a required one with no value yet, or one with a
+ * problem), once the structure is sound: what "Continue to Mapping" offers. An optional property
+ * left unmapped isn't work: it's allowed to be left out. Empty when there's nothing to do there.
  */
 export const mappingWork = (review: DraftReview, structure: readonly string[]): string[] =>
-  structure.length ? [] : review.fields.filter((f) => f.name && f.state !== 'set').map((f) => f.name)
+  structure.length ? [] : review.fields.filter((f) => f.name && (f.state === 'not_set' || f.state === 'problem')).map((f) => f.name)
 
 export interface OutputPreview {
   /** Each property's value from the example, or why it has none. */
@@ -131,11 +143,11 @@ export interface OutputPreview {
   readonly fits: { readonly issues: readonly string[] } | null
 }
 
-/** The object the draft would make from the example, property by property. */
+/** The object the draft would make from the example, property by property, absent ones left out. */
 export function previewOutput(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, example: Example): OutputPreview {
   const values = properties.map((p) => previewSource(p.source, input, example))
-  if (!values.every((v) => 'value' in v) || new Set(properties.map((p) => p.name)).size !== properties.length) return { values, fits: null }
-  const output = Object.fromEntries(properties.map((p, i) => [p.name, (values[i] as { value: Scalar }).value]))
+  if (!values.every((v) => 'value' in v || 'absent' in v) || new Set(properties.map((p) => p.name)).size !== properties.length) return { values, fits: null }
+  const output = Object.fromEntries(properties.flatMap((p, i) => ('value' in values[i]! ? [[p.name, (values[i] as { value: Scalar }).value]] : [])))
   return { values, fits: { issues: validate(target, output).map(describeIssue) } }
 }
 

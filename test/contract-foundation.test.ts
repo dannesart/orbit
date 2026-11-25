@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { type Field, defineVersion, refOf, sameFields } from '../shared/features/definitions'
 import type { Mapping } from '../shared/features/mappings'
 import { type MappingFeature, invoke, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
+import { mappingWork, previewOutput, previewSource, reviewDraft } from '../app/dev/designer/preview'
+import { propertyRows } from '../app/dev/designer/rows'
 import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
 import { ORBIT_PROVIDED, addVersion, createDefinition, draftFrom, moveField } from '../app/dev/definitions/model'
 import { applyConfiguration, draftFrom as designerDraft, initialConfiguration, planApply } from '../app/dev/designer/config'
@@ -179,5 +181,50 @@ describe('Feature versions guarantee behaviour: Orbit.Transform v1 and v2', () =
     for (const file of ['app/dev/features/experiment.ts', 'app/dev/designer/flow.ts']) {
       expect(readFileSync(join(root, file), 'utf8')).toMatch(/feature: orbitTransformV2\b/)
     }
+  })
+})
+
+describe('The Designer previews absence by the domain’s own rules', () => {
+  const W = 'w'
+  const CONTACT = defineVersion({ id: 'contact', version: 1, name: 'Contact', workspaceId: W, fields: [f('name'), f('nickname', 'string', true)] })
+  const CARD = defineVersion({ id: 'card', version: 1, name: 'Card', workspaceId: W, fields: [f('title'), f('alias', 'string', true), f('note', 'string', true)] })
+  const prop = (name: string) => ({ kind: 'property' as const, name })
+  const ada = { data: { name: 'Ada' } }
+
+  it('shows an absent optional value as left out, instead of failing', () => {
+    expect(previewSource(prop('nickname'), CONTACT, ada)).toEqual({ absent: ['nickname'] })
+    expect(previewSource({ kind: 'call', fn: 'trim', args: [prop('nickname')] }, CONTACT, ada)).toEqual({ absent: ['nickname'] })
+    expect(previewSource(prop('nickname'), CONTACT, { data: { name: 'Ada', nickname: '' } })).toEqual({ value: '' })
+  })
+
+  it('previews the object Transform v2 would make, absent properties left out, judged by validate', () => {
+    const properties = [{ name: 'title', source: prop('name') }, { name: 'alias', source: prop('nickname') }]
+    const preview = previewOutput(properties, CONTACT, CARD, ada)
+    expect(preview.fits).toEqual({ issues: [] })
+    const m: Mapping = { id: 'm', version: 1, workspaceId: W, from: refOf(CONTACT), to: refOf(CARD), properties }
+    const ran = invoke({ definitions: [CONTACT, CARD], records: [{ id: 'r', workspaceId: W, definition: refOf(CONTACT), data: ada.data }], mappings: [m] }, { workspaceId: W, feature: orbitTransformV2, input: { record: 'r' }, mapping: { id: 'm', version: 1 } })
+    expect(ran.output!.data).toEqual({ title: 'Ada' })
+    expect(preview.values).toEqual([{ value: 'Ada' }, { absent: ['nickname'] }])
+  })
+
+  it('flags, as the boundary would, a required output fed by an optional input', () => {
+    const review = reviewDraft([{ name: 'title', source: prop('nickname') }], CONTACT, CARD, 'Card · v1')
+    expect(review.issues[0]).toEqual([{ problem: 'may_be_absent', path: ['title'], optional: ['nickname'] }])
+    expect(review.fields.find((x) => x.name === 'title')!.state).toBe('problem')
+  })
+
+  it('never presents optional unmapped outputs as unfinished required work', () => {
+    const review = reviewDraft([{ name: 'title', source: prop('name') }], CONTACT, CARD, 'Card · v1')
+    expect(review.fields.map((x) => [x.name, x.state])).toEqual([['title', 'set'], ['alias', 'left_out'], ['note', 'left_out']])
+    expect(review.missing).toEqual([])
+    expect(mappingWork(review, [])).toEqual([])
+    expect(propertyRows({ properties: [] } as never, reviewDraft([], CONTACT, CARD)).map((r) => r.summary)).toEqual(['Not mapped', 'Left out (optional)', 'Left out (optional)'])
+    expect(mappingWork(reviewDraft([], CONTACT, CARD), [])).toEqual(['title'])
+  })
+
+  it('uses the domain’s evaluation, not its own', () => {
+    const source = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/preview.ts'), 'utf8')
+    expect(source).toMatch(/evaluatePresent\(source, example\.data\)/)
+    expect(source).not.toMatch(/\bevaluate\(/)
   })
 })

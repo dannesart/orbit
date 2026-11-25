@@ -160,7 +160,7 @@ describe('The Designer’s review of a Transform agrees', () => {
     const review = reviewDraft([{ name: 'greeting', source: prop('name') }], CONTACT, CARD, 'Card · v1')
     expect(review.missing).toEqual([])
     expect(review.problems).toEqual([])
-    expect(review.fields.find((f) => f.name === 'alias')).toMatchObject({ state: 'not_set', optional: true })
+    expect(review.fields.find((f) => f.name === 'alias')).toMatchObject({ state: 'left_out', optional: true })
     expect(reviewDraft([], CONTACT, CARD, 'Card · v1').missing).toEqual(['greeting'])
   })
 })
