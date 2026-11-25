@@ -398,7 +398,7 @@ describe('The Definitions Studio: a catalogue, an inspector, and editing on purp
   })
 
   it('edits nothing in the inspector: a new version and a new name each open their own view', () => {
-    expect(inspector).not.toMatch(/<input|<textarea|PropertiesEditor|redescribe|versionFromDraft/)
+    expect(inspector).not.toMatch(/<input|<textarea|ModelBuilder|redescribe|versionFromDraft/)
     expect(inspector).toContain("navigateTo({ query: { d: props.id, next: null } })")
     expect(inspector).toContain(":to=\"{ query: { d: id, about: null } }\"")
     // Only for Definitions made here: Orbit's are read-only.
@@ -446,5 +446,43 @@ describe('The Definitions Studio: a catalogue, an inspector, and editing on purp
   it('offers an invitation to make the first Definition when there are none', () => {
     expect(place).toMatch(/<ul v-else :class="grid">[\s\S]*data-first-definition[\s\S]*Create \{\{ ws\.name \}\}’s first Definition/)
     expect(place).not.toContain('Nothing is made in')
+  })
+})
+
+describe('The model builder: a palette, compact rows, and editing in place', () => {
+  const builder = source('app/dev/definitions/ModelBuilder.vue')
+  const rows = builder.slice(builder.indexOf('<!-- The model -->'))
+
+  it('adds a type by click or by drag, with one result: a required property whose name has focus', () => {
+    expect(builder).toMatch(/@click="add\(t\)"\s*@dragstart="startType\(\$event, t\)"/)
+    expect(builder).toMatch(/if \(type && TYPES\.includes\(type\)\) add\(type, index\)/)
+    const add = builder.slice(builder.indexOf('function add('), builder.indexOf('function remove('))
+    expect(add).toContain('addField(props.draft, type)')
+    expect(add).toContain('nextTick(() => nameInput(key)?.focus())')
+    expect(addField(blankDraft(), 'number').fields.at(-1)).toMatchObject({ type: 'number', optional: false })
+  })
+
+  it('shows each property as a row: type icon, name, type, required or optional, and a chevron; the row opens its editor', () => {
+    const row = rows.slice(rows.indexOf('data-row-toggle'), rows.indexOf('<!-- The row\'s own editor -->'))
+    expect(row).toMatch(/:aria-expanded="open === f\.key"[\s\S]*@click="toggle\(f\.key\)"/)
+    expect(row).toMatch(/<DefinitionsIcon :name="f\.type"[\s\S]*f\.name\.trim\(\) \|\| 'unnamed'[\s\S]*typeWords\[f\.type\][\s\S]*'Optional' : 'Required'[\s\S]*name="chevron"/)
+    // No type selector, requiredness switch or remove button on a closed row.
+    expect(row).not.toMatch(/type="radio"|Remove/)
+    const editor = rows.slice(rows.indexOf('<!-- The row\'s own editor -->'))
+    expect(editor).toMatch(/v-if="open === f\.key"/)
+    expect(editor).toMatch(/updateField\(draft, f\.key, \{ name:[\s\S]*updateField\(draft, f\.key, \{ type: t \}\)[\s\S]*updateField\(draft, f\.key, \{ optional: o \}\)[\s\S]*@click="remove\(f\.key\)"/)
+  })
+
+  it('reorders with a handle (drag or arrow keys) or Move up and down, never by accident changing the contract', () => {
+    expect(builder).toMatch(/data-handle\s+draggable="true"[\s\S]*@dragstart="startRow\(\$event, f\.key\)"[\s\S]*@keydown="handleKey\(\$event, f\.key\)"/)
+    expect(builder).toMatch(/if \(event\.key === 'ArrowUp'\) \{ event\.preventDefault\(\); move\(key, -1, 'handle'\) \}/)
+    expect(builder).toMatch(/data-move="up"[\s\S]*data-move="down"/)
+    // Order is presentation: a reordered draft is the same version (test/optional-properties.test.ts).
+    expect(builder).toContain('moveField(props.draft, key, index > from ? index - 1 : index)')
+  })
+
+  it('never needs dragging: the palette is buttons, and a drop target is always shown', () => {
+    expect(builder).toMatch(/<button\s+type="button"\s+draggable="true"\s+:data-add-type="t"/)
+    expect(builder).toContain("'Drag a type here, or choose one, to add the first property'")
   })
 })

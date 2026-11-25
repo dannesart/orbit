@@ -93,7 +93,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-full text-sl
           <ul class="divide-y divide-slate-100">
             <li v-for="f in shown.fields" :key="f.name" class="flex items-center justify-between gap-3 py-2 text-sm">
               <span class="min-w-0 truncate font-medium text-slate-900">{{ f.name }}</span>
-              <span class="shrink-0 text-xs text-slate-500">{{ typeWords[f.type] }}</span>
+              <span class="shrink-0 text-xs text-slate-500">{{ typeWords[f.type] }}<template v-if="f.optional"> · optional</template></span>
             </li>
           </ul>
           <p v-if="made && shown.name !== name" class="mt-2 text-xs text-slate-500">Made when it was called {{ shown.name }}.</p>

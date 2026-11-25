@@ -19,14 +19,14 @@ import type { DefinitionVersion } from '#shared/features/definitions'
 import LeaveDialog from '../designer/LeaveDialog.vue'
 import { type Appearance, DEFAULT_APPEARANCE, sameAppearance } from './appearance'
 import {
-  type Draft, type NewDefinition, blankDraft, changeWords, changesFrom, draftFrom, draftProblems, fieldsOf, nameNotes, nameProblem, typeWords, versionLike,
+  type Draft, type NewDefinition, blankDraft, changeWords, changesFrom, draftFrom, draftProblems, fieldsOf, nameNotes, nameProblem, versionLike,
 } from './model'
 import { createFromDraft, findMade, redescribe, setCreating, setEvolving, shelfOf, startCreating, versionFromDraft } from './store'
 import AppearancePicker from './AppearancePicker.vue'
 import DefinitionTile from './DefinitionTile.vue'
 import DefinitionsIcon from './DefinitionsIcon.vue'
 import ExampleCheck from './ExampleCheck.vue'
-import PropertiesEditor from './PropertiesEditor.vue'
+import ModelBuilder from './ModelBuilder.vue'
 
 type Part = 'new' | 'next' | 'about'
 type Segment = 'general' | 'model' | 'preview'
@@ -266,12 +266,11 @@ onMounted(() => heading.value?.focus())
         />
       </div>
 
-      <!-- Model: the properties, and how the result reads -->
-      <div v-else-if="segment === 'model' && draft" class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
-        <div class="min-w-0">
-          <p class="mb-3 text-sm text-slate-600">Every property is required. Each holds text, a number, or yes or no.</p>
-          <PropertiesEditor :draft="draft" :id-prefix="part" @update:draft="part === 'new' ? updateNew({ draft: $event }) : setEvolving(workspace.id, id, $event)" />
-          <div v-if="part === 'next' && evolving" class="mt-5 rounded-2xl bg-slate-50 p-4 text-sm ring-1 ring-slate-200/70" aria-live="polite">
+      <!-- Model: building it from property types; its rows are how it reads -->
+      <div v-else-if="segment === 'model' && draft">
+        <ModelBuilder :draft="draft" :id-prefix="part" @update:draft="part === 'new' ? updateNew({ draft: $event }) : setEvolving(workspace.id, id, $event)" />
+        <div class="lg:pl-[12.5rem]">
+          <div v-if="part === 'next' && evolving" class="mt-6 rounded-2xl bg-slate-50 p-4 text-sm ring-1 ring-slate-200/70" aria-live="polite">
             <h2 class="font-semibold text-slate-900">What changes from version {{ evolving.basedOn }}</h2>
             <p v-if="!changes.length" class="mt-1 text-slate-500">Nothing yet.</p>
             <ul v-else class="mt-1 list-disc pl-5 text-slate-700">
@@ -284,20 +283,6 @@ onMounted(() => heading.value?.focus())
             </p>
           </div>
         </div>
-        <section aria-labelledby="structure-heading" class="self-start rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200/70 lg:sticky lg:top-6">
-          <h2 id="structure-heading" class="text-xs font-medium text-slate-500">{{ part === 'new' ? 'Version 1' : `Version ${nextNumber}` }} reads</h2>
-          <div class="mt-2 flex items-center gap-2">
-            <DefinitionTile :appearance="appearance" size="sm" />
-            <span class="truncate font-semibold text-slate-900">{{ name || 'New Definition' }}</span>
-          </div>
-          <ul class="mt-3 flex flex-col gap-1 border-l-2 border-slate-200 pl-3" data-structure-preview>
-            <li v-for="(f, i) in fields" :key="i" class="flex items-baseline justify-between gap-3 text-sm">
-              <span class="min-w-0 truncate font-mono" :class="f.name ? 'text-slate-900' : 'text-slate-400 italic'">{{ f.name || 'unnamed' }}</span>
-              <span class="shrink-0 text-xs text-slate-500">{{ typeWords[f.type] }}</span>
-            </li>
-            <li v-if="!fields.length" class="text-sm text-slate-400">No properties yet</li>
-          </ul>
-        </section>
       </div>
 
       <!-- Preview: optional -->
