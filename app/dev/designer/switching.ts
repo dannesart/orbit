@@ -10,7 +10,7 @@
 //
 // Only the draft's lists change. Mappings, Definition versions and run evidence are untouched;
 // Apply still makes versions only from the active properties.
-import type { DefinitionVersion, FieldType } from '#shared/features/definitions'
+import type { DefinitionVersion, Field, FieldType } from '#shared/features/definitions'
 import { checkMapping } from '#shared/features/mappings'
 import type { TransformDraft } from './config'
 import { type DraftProperty, fromPiece } from './parts'
@@ -22,8 +22,9 @@ function typeOf(property: DraftProperty, input: DefinitionVersion): FieldType | 
 }
 
 /** Whether this property's mapping can fill the target's property of the same name. */
-function fits(property: DraftProperty, field: { name: string; type: FieldType }, input: DefinitionVersion): boolean {
-  if (property.name !== field.name) return false
+function fits(property: DraftProperty, field: Field, input: DefinitionVersion): boolean {
+  // A local object can't be made by a Mapping (no nested output yet), so nothing fits one.
+  if (property.name !== field.name || field.type === 'object') return false
   const type = typeOf(property, input)
   return type === null || type === field.type
 }

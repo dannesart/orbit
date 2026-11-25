@@ -37,7 +37,7 @@ describe('The naming rule', () => {
 
   it('is applied when a version is made: refused, never tidied', () => {
     const make = (...names: string[]) => () => defineVersion({ id: 'd', version: 1, name: 'D', workspaceId: 'w', fields: names.map((name) => ({ name, type: 'string' as const })) })
-    for (const bad of [[''], [' a'], ['a', 'a'], ['Email', 'email'], [NFC, NFD]]) expect(make(...bad)).toThrow(/can’t be used/)
+    for (const bad of [[''], [' a'], ['a', 'a'], ['Email', 'email'], [NFC, NFD]]) expect(make(...bad)).toThrow(/can’t be made/)
     expect(make('first name', 'a.b', 'Straße')().fields.map((f) => f.name)).toEqual(['first name', 'a.b', 'Straße'])
   })
 

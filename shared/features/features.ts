@@ -1,6 +1,6 @@
 import {
-  type Data, type DefinitionRef, type DefinitionVersion, type Issue, type Value, type WorkspaceRecord,
-  frozenCopy, refOf, sameData, sameDefinition, validate, visibleIn,
+  type Data, type DefinitionRef, type DefinitionVersion, type Issue, type PropertyPath, type Value, type WorkspaceRecord,
+  frozenCopy, localObjectPaths, refOf, sameData, sameDefinition, validate, visibleIn,
 } from './definitions'
 import { type Mapping, type MappingIssue, checkMapping, evaluate, evaluatePresent } from './mappings'
 
@@ -45,12 +45,23 @@ export interface InspectContext {
   readonly inspect: (data: Data) => void
 }
 
-export interface PassThroughFeature extends FeatureRef {
+/** What every Feature version declares, whatever its kind of contract. */
+interface FeatureVersion extends FeatureRef {
+  /**
+   * Whether it accepts Definitions that contain local objects. Every Feature version so far was
+   * made when Definitions were flat and has never been handed one, so none does: a Definition with
+   * a local object, on either side, is refused before it runs (unsupported_contract). Accepting
+   * them would change what the version accepts, so it would be a new version.
+   */
+  readonly localObjects: 'unsupported'
+}
+
+export interface PassThroughFeature extends FeatureVersion {
   readonly contract: 'pass-through'
   readonly run: (input: Data, context: InspectContext) => Data
 }
 
-export interface MappingFeature extends FeatureRef {
+export interface MappingFeature extends FeatureVersion {
   readonly contract: 'mapping'
   /**
    * What it does when a source reads an optional input property that is absent, which decides the
@@ -71,6 +82,7 @@ export const orbitConsole: PassThroughFeature = {
   id: 'orbit.console',
   version: 1,
   contract: 'pass-through',
+  localObjects: 'unsupported',
   run(input, { inspect }) {
     inspect(input)
     return input
@@ -87,6 +99,7 @@ export const orbitTransformV1: MappingFeature = Object.freeze<MappingFeature>({
   version: 1,
   contract: 'mapping',
   absence: 'unsupported',
+  localObjects: 'unsupported',
   run: (input, mapping) => Object.fromEntries(mapping.properties.map((p) => [p.name, evaluate(p.source, input)])),
 })
 
@@ -101,11 +114,20 @@ export const orbitTransformV2: MappingFeature = Object.freeze<MappingFeature>({
   version: 2,
   contract: 'mapping',
   absence: 'omitted',
+  localObjects: 'unsupported',
   run: (input, mapping) => Object.fromEntries(mapping.properties.flatMap((p) => {
     const result = evaluatePresent(p.source, input)
     return result.present ? [[p.name, result.value]] : []
   })),
 })
+
+/**
+ * Whether this Feature version accepts a Definition as one of its contracts: the local objects it
+ * can't take (none: it can). Decided from the Definition alone, never calling run.
+ */
+export function contractCompatibility(feature: Feature, definition: DefinitionVersion): readonly PropertyPath[] {
+  return feature.localObjects === 'unsupported' ? localObjectPaths(definition.fields) : []
+}
 
 /**
  * Whether this Feature version accepts this Mapping between these Definitions: the problems that
@@ -146,6 +168,8 @@ export type Outcome =
   | { readonly kind: 'not_attempted'; readonly reason: 'invalid_input'; readonly issues: readonly Issue[] }
   | { readonly kind: 'not_attempted'; readonly reason: 'contract_mismatch'; readonly expected: DefinitionRef; readonly actual: DefinitionRef }
   | { readonly kind: 'not_attempted'; readonly reason: 'invalid_mapping'; readonly issues: readonly MappingIssue[] }
+  /** The Feature version doesn't accept this Definition at all: `paths` are the local objects it has no behaviour for. */
+  | { readonly kind: 'not_attempted'; readonly reason: 'unsupported_contract'; readonly definition: DefinitionRef; readonly paths: readonly PropertyPath[] }
   /** Only the error's name: messages can quote the data that caused them. */
   | { readonly kind: 'failed'; readonly reason: 'threw'; readonly error: string }
   | { readonly kind: 'failed'; readonly reason: 'invalid_output'; readonly issues: readonly Issue[] }
@@ -204,6 +228,14 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
   }
   const inputDefinition = definition(value.definition)
   if (!inputDefinition) return end({ kind: 'not_attempted', reason: 'not_found' })
+  const unsupported = (d: DefinitionVersion) => {
+    const paths = contractCompatibility(feature, d)
+    return paths.length ? end({ kind: 'not_attempted', reason: 'unsupported_contract', definition: refOf(d), paths }) : null
+  }
+  // Compatibility, before anything else: a contract this Feature version doesn't accept is refused
+  // whatever the data, so nothing is validated against it on the Feature's behalf.
+  const inputUnsupported = unsupported(inputDefinition)
+  if (inputUnsupported) return inputUnsupported
 
   // 2. The input must be what it claims to be, whoever made it.
   const inputIssues = validate(inputDefinition, value.data)
@@ -236,6 +268,8 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
   if (!sameDefinition(mapping.from, value.definition)) {
     return end({ kind: 'not_attempted', reason: 'contract_mismatch', expected: refOf(mapping.from), actual: refOf(value.definition) })
   }
+  const outputUnsupported = unsupported(outputDefinition)
+  if (outputUnsupported) return outputUnsupported
   // Compatibility, before execution: does this Feature version accept this Mapping at all?
   const mappingIssues = mappingCompatibility(invocation.feature, mapping, inputDefinition, outputDefinition)
   if (mappingIssues.length) return end({ kind: 'not_attempted', reason: 'invalid_mapping', issues: mappingIssues })

@@ -3,7 +3,7 @@
 // used as it is, or the Transform's own output, whose properties are added, renamed, retyped and
 // removed here. Changing it changes a contract (Apply freezes a new Definition version and gives
 // it a new Mapping), so it lives apart from mapping values and says so.
-import type { DefinitionRef, DefinitionVersion, FieldType } from '#shared/features/definitions'
+import type { DefinitionRef, DefinitionVersion, FieldType, PropertyType } from '#shared/features/definitions'
 import { A1, DEFINITIONS, WORKSPACE, definitionLabel, shapeOf } from '../features/experiment'
 import { type Configuration, type TransformDraft, catalogue, labelOf, outputOf } from './config'
 import { asideReason, reconcile } from './switching'
@@ -79,7 +79,7 @@ const mappingOf = (name: string) => {
   const p = properties.value.find((x) => x.name === name)
   return p ? describeSource(fromPiece(p.piece)) : null
 }
-const typeWords: Record<FieldType, string> = { string: 'text', number: 'number', boolean: 'yes or no' }
+const typeWords: Record<PropertyType, string> = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object' }
 const card = 'flex w-full cursor-pointer items-start gap-2.5 rounded-2xl p-3 text-left ring-1 transition'
 const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100'
 </script>

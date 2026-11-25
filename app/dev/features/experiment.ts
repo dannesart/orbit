@@ -3,7 +3,7 @@
 // not a reusable orchestration abstraction), and plain words for outcomes and issues.
 // Development only: the page that uses this is registered only by `nuxt dev` (nuxt.config.ts).
 import {
-  type Data, type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type Kind, type NamingIssue,
+  type Data, type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type Kind, type NamingIssue, type PropertyType,
   deepFreeze, defineVersion, propertyPathWords, sameDefinition,
 } from '#shared/features/definitions'
 import {
@@ -63,7 +63,7 @@ export const CONSOLES: readonly { feature: PassThroughFeature; label: string }[]
   { feature: orbitConsole, label: 'Orbit.Console' },
   {
     label: 'A Console that tries to change the value',
-    feature: { id: 'playground.console-that-edits', version: 1, contract: 'pass-through', run(input, { inspect }) {
+    feature: { id: 'playground.console-that-edits', version: 1, contract: 'pass-through', localObjects: 'unsupported', run(input, { inspect }) {
       inspect(input)
       ;(input as Record<string, unknown>).firstName = 'Grace' // the input is frozen: this throws
       return input
@@ -71,7 +71,7 @@ export const CONSOLES: readonly { feature: PassThroughFeature; label: string }[]
   },
   {
     label: 'A Console that hands on something else',
-    feature: { id: 'playground.console-that-swaps', version: 1, contract: 'pass-through', run(input, { inspect }) {
+    feature: { id: 'playground.console-that-swaps', version: 1, contract: 'pass-through', localObjects: 'unsupported', run(input, { inspect }) {
       inspect(input)
       return { ...input, firstName: 'Grace' }
     } },
@@ -166,6 +166,7 @@ export function describeMappingIssue(issue: MappingIssue): string {
     case 'list_not_allowed': return 'A property can’t be a list.'
     case 'invalid_literal': return 'That isn’t a usable number.'
     case 'may_be_absent': return `${issue.optional.join(', ')} may be missing, but this property is required. Orbit won’t invent a value.`
+    case 'object_property': return `${issue.name} is an object. A source can read text, numbers and yes or no, not a whole object.`
     case 'absence_unsupported': return `${issue.optional.join(', ')} may be missing, and this version of the Transform has no behaviour for that.`
   }
 }
@@ -180,6 +181,7 @@ export function describeOutcome(outcome: Outcome): string {
     case 'invalid_input': return 'The input doesn’t match its own Definition, so the Feature didn’t run.'
     case 'contract_mismatch': return `It reads ${definitionLabel(outcome.expected)}, but received ${definitionLabel(outcome.actual)}. Exact versions only, so the Feature didn’t run.`
     case 'invalid_mapping': return 'The Mapping can’t be applied to this input, so the Feature didn’t run.'
+    case 'unsupported_contract': return `This version of the Feature doesn’t accept ${definitionLabel(outcome.definition)}: it has objects inside it (${outcome.paths.map(propertyPathWords).join(', ')}). The Feature didn’t run.`
     case 'threw': return `The Feature stopped with an error (${outcome.error}). Nothing was handed on.`
     case 'invalid_output': return 'Its output doesn’t satisfy the target Definition, so it went no further.'
     case 'pass_through_broken': return 'It handed on something different from what it received. The boundary stopped it there.'
@@ -204,7 +206,7 @@ export function mappingHints(properties: readonly MappingProperty[], input: Defi
     const { issues, types } = checkMapping({ properties: [property] }, input)
     const own = [...issues]
     if (property.name && names.filter((n) => n === property.name).length > 1) own.push({ problem: 'duplicate_name', path: [property.name] })
-    const expected: FieldType | null = target.fields.find((f) => f.name === property.name)?.type ?? null
+    const expected: PropertyType | null = target.fields.find((f) => f.name === property.name)?.type ?? null
     const where = (i: MappingIssue) => (i.path.length > 1 ? `${formatPath(i.path.slice(1))}: ` : '')
     return { type: types[0] ?? null, expected, issues: own.map((i) => where(i) + describeMappingIssue(i)) }
   })

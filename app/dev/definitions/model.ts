@@ -16,7 +16,7 @@
 //     the same properties in another order are the same (versionLike), and reordering alone never
 //     makes a version.
 import {
-  type DefinitionVersion, type Field, type FieldType, type Issue,
+  type DefinitionVersion, type Field, type FieldType, type Issue, type PropertyType, type ScalarField,
   checkPropertyNames, deepFreeze, defineVersion, propertyPathWords, sameFields, validate,
 } from '#shared/features/definitions'
 import { describeNamingIssues } from '../features/experiment'
@@ -100,9 +100,19 @@ export function newIdentity(taken: (id: string) => boolean, random: () => string
 
 export const blankDraft = (): Draft => ({ basedOn: null, fields: [{ key: 0, name: '', type: 'string', optional: false }], nextKey: 1 })
 
+/**
+ * A version's properties as the Studio edits them: value properties only. The Studio has no editor
+ * for local objects (Orbit's model has them; this experiment doesn't build them), so a version
+ * with one is refused here, never shown flattened or with its objects dropped.
+ */
+function editableFields(version: DefinitionVersion): readonly ScalarField[] {
+  if (version.fields.some((f) => f.type === 'object')) throw new Error(`${version.id}@${version.version} has local objects, which the Studio can’t edit yet`)
+  return version.fields as readonly ScalarField[]
+}
+
 /** A draft that starts as an exact copy of a version. */
 export function draftFrom(version: DefinitionVersion): Draft {
-  return { basedOn: version.version, fields: version.fields.map((f, key) => ({ key, name: f.name, type: f.type, optional: f.optional === true })), nextKey: version.fields.length }
+  return { basedOn: version.version, fields: editableFields(version).map((f, key) => ({ key, name: f.name, type: f.type, optional: f.optional === true })), nextKey: version.fields.length }
 }
 
 export function addField(draft: Draft, type: FieldType = 'string'): Draft {
@@ -168,7 +178,7 @@ export type Change =
 /** How a draft differs from the version it started from, row by row. */
 export function changesFrom(base: DefinitionVersion, draft: Draft): Change[] {
   const changes: Change[] = []
-  base.fields.forEach((field, key) => {
+  editableFields(base).forEach((field, key) => {
     const now = draft.fields.find((f) => f.key === key)
     if (!now) return changes.push({ kind: 'removed', name: field.name })
     const name = now.name.trim()
@@ -265,7 +275,7 @@ export const checkExample = (fields: readonly Field[], data: unknown): Issue[] =
 
 // --- Words ---
 
-export const typeWords: Record<FieldType, string> = { string: 'Text', number: 'Number', boolean: 'Yes or no' }
+export const typeWords: Record<PropertyType, string> = { string: 'Text', number: 'Number', boolean: 'Yes or no', object: 'Object' }
 const kindWords: Record<string, string> = {
   string: 'text', number: 'a number', boolean: 'yes or no', undefined: 'missing', null: 'empty', array: 'a list', object: 'a group', other: 'something else',
 }

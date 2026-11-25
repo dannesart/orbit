@@ -1,7 +1,7 @@
 // The output's properties as the inspector lists them: every property the same way, whatever makes
 // its value (a field, a fixed value, a composition, nothing yet, or something wrong). Each row says
 // what it shows and where activating it goes; nothing is edited in the inspector.
-import type { FieldType } from '#shared/features/definitions'
+import type { PropertyType } from '#shared/features/definitions'
 import type { TransformDraft } from './config'
 import { fromPiece } from './parts'
 import { type DraftReview, friendlyIssue } from './preview'
@@ -23,7 +23,7 @@ export interface PropertyRow {
   readonly opens: { readonly mode: 'mapping' | 'structure'; readonly property: string | null }
 }
 
-export const typeWords: Record<FieldType, string> = { string: 'text', number: 'number', boolean: 'yes or no' }
+export const typeWords: Record<PropertyType, string> = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object' }
 export const stateWords: Record<RowState, string> = { not_set: 'Not mapped', left_out: 'Left out (optional)', problem: 'Needs attention', set: 'Mapped' }
 
 export function propertyRows(draft: TransformDraft, review: DraftReview): PropertyRow[] {

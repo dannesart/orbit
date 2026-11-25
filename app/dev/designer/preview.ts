@@ -3,7 +3,7 @@
 // never invokes a Feature, so there is no outcome and no evidence. Nothing here mutates its input.
 // Absence follows the domain's rule: a source reading an absent optional property has no value,
 // and that property is left out of the object, never filled in.
-import { type Data, type DefinitionVersion, type FieldType, type Scalar, frozenCopy, validate } from '#shared/features/definitions'
+import { type Data, type DefinitionVersion, type FieldType, type PropertyType, type Scalar, frozenCopy, validate } from '#shared/features/definitions'
 import { type Expression, type MappingIssue, type MappingProperty, checkMapping, evaluatePresent } from '#shared/features/mappings'
 import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData } from '../features/experiment'
 
@@ -22,7 +22,7 @@ export function exampleFrom(recordText: string, input: DefinitionVersion): Examp
 
 // --- Problems, in the parts editor's words ---
 
-const typeWords: Record<string, string> = { string: 'text', number: 'a number', boolean: 'yes or no', 'string[]': 'a list', invalid: 'something invalid' }
+const typeWords: Record<string, string> = { string: 'text', number: 'a number', boolean: 'yes or no', object: 'an object', 'string[]': 'a list', invalid: 'something invalid' }
 
 /** A Mapping problem in plain words. Where it is comes from where it's shown, not from a path. */
 export function friendlyIssue(issue: MappingIssue): string {
@@ -56,7 +56,7 @@ export function previewSource(source: Expression, input: DefinitionVersion, exam
 
 export interface FieldReview {
   readonly name: string
-  readonly expected: FieldType
+  readonly expected: PropertyType
   /** The target may go without it: left unmapped, it's simply left out of the output. */
   readonly optional: boolean
   /** Index in the draft, or -1 when nothing makes this field yet. */
@@ -105,7 +105,9 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
       return { name: field.name, expected: field.type, optional, index, state: optional ? 'left_out' : 'not_set', problems: [] }
     }
     const own: string[] = []
-    const type = checked[index]!.types[0]
+    // No nested output yet: a Mapping can't make a local object, so saying so beats a confusing type clash.
+    if (field.type === 'object') own.push(`${field.name} is an object. A Transform can’t make objects yet.`)
+    const type = field.type === 'object' ? null : checked[index]!.types[0]
     if (type && type !== field.type) own.push(`${targetLabel} needs ${typeWords[field.type]} here, but this makes ${typeWords[type]}.`)
     problems.push(...own.map((p) => `${field.name}: ${p}`), ...issues[index]!.map((i) => `${field.name}: ${friendlyIssue(i)}`))
     return { name: field.name, expected: field.type, optional, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }

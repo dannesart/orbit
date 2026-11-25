@@ -48,7 +48,7 @@ function continueToMapping() {
   emit('update:mode', 'mapping')
   nextTick(() => heading.value?.focus())
 }
-const typeWords = { string: 'text', number: 'number', boolean: 'yes or no' } as const
+const typeWords = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object' } as const
 const status = {
   not_set: { icon: '○', label: 'Not mapped', tone: 'text-amber-600' },
   left_out: { icon: '–', label: 'Left out (optional)', tone: 'text-slate-400' },
