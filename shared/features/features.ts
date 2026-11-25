@@ -19,6 +19,12 @@ import { type Mapping, type MappingIssue, checkMapping, evaluate, evaluatePresen
  *   'mapping'       a Mapping gives the contracts: its `from` is the input, its `to` the output
  *                   (Orbit.Transform). The boundary validates the output against `to`.
  *
+ * Compatibility is not execution. Whether a Feature version accepts what it is about to be handed
+ * is decided first, from contracts alone (Definitions and the Mapping, never data), without
+ * calling the Feature (mappingCompatibility). Execution (run) is the version's original behaviour,
+ * unchanged, and is only reached for what compatibility accepted. So refusing something a version
+ * has no behaviour for never means changing how that version behaves.
+ *
  * Feature versions guarantee behaviour. A Feature version (id + version) names one fixed
  * behaviour: the contracts it accepts and what it does with them. Changing either, including
  * accepting something it used to refuse, makes a new version; the earlier version stays exactly as
@@ -100,6 +106,17 @@ export const orbitTransformV2: MappingFeature = Object.freeze<MappingFeature>({
     return result.present ? [[p.name, result.value]] : []
   })),
 })
+
+/**
+ * Whether this Feature version accepts this Mapping between these Definitions: the problems that
+ * mean it must not run (none: it may). Decided from contracts alone, never calling run, so it can
+ * be asked before running, or without running at all. It includes what the version does with
+ * absence (MappingFeature['absence']): v1 can't take a Mapping that reads an optional property;
+ * for v2 a required output can't be fed by a source that may have no value.
+ */
+export function mappingCompatibility(feature: MappingFeature, mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output: DefinitionVersion): readonly MappingIssue[] {
+  return checkMapping(mapping, input, output, feature.absence).issues
+}
 
 /** What the boundary can resolve references against. In this experiment, plain in-memory lists. */
 export interface Catalog {
@@ -219,10 +236,8 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
   if (!sameDefinition(mapping.from, value.definition)) {
     return end({ kind: 'not_attempted', reason: 'contract_mismatch', expected: refOf(mapping.from), actual: refOf(value.definition) })
   }
-  // Including what this Feature version does with absence: v1 has no behaviour for it, so it can't
-  // take a Mapping that reads an optional property; for v2 a required output can't be fed by a
-  // source that may have no value.
-  const mappingIssues = checkMapping(mapping, inputDefinition, outputDefinition, invocation.feature.absence).issues
+  // Compatibility, before execution: does this Feature version accept this Mapping at all?
+  const mappingIssues = mappingCompatibility(invocation.feature, mapping, inputDefinition, outputDefinition)
   if (mappingIssues.length) return end({ kind: 'not_attempted', reason: 'invalid_mapping', issues: mappingIssues })
 
   let produced: unknown

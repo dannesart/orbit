@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { type Field, defineVersion, propertyPathWords, refOf, sameFields, validate } from '../shared/features/definitions'
 import type { Mapping } from '../shared/features/mappings'
-import { type MappingFeature, invoke, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
+import { type MappingFeature, invoke, mappingCompatibility, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
 import { mappingWork, previewOutput, previewSource, reviewDraft } from '../app/dev/designer/preview'
 import { propertyRows } from '../app/dev/designer/rows'
 import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
@@ -150,6 +150,20 @@ describe('Feature versions guarantee behaviour: Orbit.Transform v1 and v2', () =
     expect(result.evidence.feature).toEqual({ id: 'orbit.transform', version: 1 })
     expect(result.evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'invalid_mapping', issues: [{ problem: 'absence_unsupported', path: ['alias'], optional: ['nickname'] }] })
     expect(result.output).toBeUndefined()
+  })
+
+  it('decides compatibility from contracts alone, apart from execution: run is never called', () => {
+    const m = mapping([{ name: 'title', source: prop('name') }, { name: 'alias', source: prop('nickname') }])
+    let calls = 0
+    const counting = (base: MappingFeature): MappingFeature => ({ ...base, run: (...args) => { calls++; return base.run(...args) } })
+    expect(mappingCompatibility(counting(orbitTransformV1), m, CONTACT, CARD)).toEqual([{ problem: 'absence_unsupported', path: ['alias'], optional: ['nickname'] }])
+    expect(mappingCompatibility(counting(orbitTransformV2), m, CONTACT, CARD)).toEqual([])
+    // The boundary asks the same question and, refused, never executes.
+    expect(run(counting(orbitTransformV1), m, { name: 'Ada', nickname: 'A' }).evidence.outcome.kind).toBe('not_attempted')
+    expect(calls).toBe(0)
+    // Compatible, it executes exactly once.
+    expect(run(counting(orbitTransformV2), m, { name: 'Ada' }).evidence.outcome.kind).toBe('succeeded')
+    expect(calls).toBe(1)
   })
 
   it('still runs v1 on a Definition with optional properties it doesn’t read', () => {
