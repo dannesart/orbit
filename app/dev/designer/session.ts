@@ -2,7 +2,7 @@
 // versions included (Apply makes immutable versions for this session's runs, not saved ones), so
 // leaving loses whatever differs from how the playground started. Running, moving nodes and
 // opening panels aren't work: an untouched playground can be left without a question.
-import { sameData, sameDefinition } from '#shared/features/definitions'
+import { sameData, sameDefinition, sameFields } from '#shared/features/definitions'
 import { INITIAL_MAPPING } from '../features/experiment'
 import { type Configuration, type TransformDraft, initialConfiguration, labelOf } from './config'
 import { type DraftProperty, fromPiece } from './parts'
@@ -22,7 +22,7 @@ export function draftLoses(draft: TransformDraft, to: TransformDraft): string[] 
   const at: string[] = []
   if (written) at.push(`${count(written, 'mapping', 'mappings')} you haven’t applied`)
   if (aside) at.push(`${count(aside, 'mapping', 'mappings')} set aside when you switched Definitions`)
-  if (draft.local.name !== to.local.name || !sameData(draft.local.fields, to.local.fields)) at.push('Changes to the Transform’s own output')
+  if (draft.local.name !== to.local.name || !sameFields(draft.local.fields, to.local.fields)) at.push('Changes to the Transform’s own output')
   return at
 }
 

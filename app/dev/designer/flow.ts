@@ -11,7 +11,7 @@
 //   Transform  'mapping': reads exactly its Mapping's `from` (identity and version), makes its `to`.
 // The boundary (shared/features, invoke) still checks every invocation; this only says ahead of
 // time what it would say. Nothing here changes a contract, a Mapping or a Definition.
-import { type DefinitionRef, type DefinitionVersion, sameData, sameDefinition } from '#shared/features/definitions'
+import { type DefinitionRef, type DefinitionVersion, sameDefinition, sameFields } from '#shared/features/definitions'
 import { type Catalog, type FeatureRef, type Input, type InvocationResult, type PassThroughFeature, invoke, orbitConsole, orbitTransform } from '#shared/features/features'
 import { RECORD_ID } from '../features/experiment'
 
@@ -81,7 +81,7 @@ function contractProblem(source: StepId, target: StepId, ref: DefinitionRef | un
   const find = (r: DefinitionRef) => contracts.definitions.find((d) => sameDefinition(d, r))
   const a = find(reads)
   const b = find(ref)
-  const lookalike = a && b && a.id !== b.id && sameData(a.fields, b.fields) ? ' Same properties, but a different Definition.' : ''
+  const lookalike = a && b && a.id !== b.id && sameFields(a.fields, b.fields) ? ' Same properties, but a different Definition.' : ''
   // Trying to connect: what each side has. Already connected: what Transform gets.
   return attempt
     ? `Transform reads ${contracts.label(reads)}. ${subject(source)} hands on ${contracts.label(ref)}.${lookalike}`

@@ -135,6 +135,22 @@ export function validate(definition: DefinitionVersion, data: unknown): Issue[] 
   return issues
 }
 
+/**
+ * Whether two lists of fields describe the same contract: the same names, each with the same type
+ * and the same requiredness. Order is presentation, never part of a contract, so it is ignored.
+ * Names are compared exactly, as validation matches them. The one comparison of structures: every
+ * "is this the same version?" and "do these look alike?" question asks it.
+ */
+export function sameFields(a: readonly Pick<Field, 'name' | 'type' | 'optional'>[], b: readonly Pick<Field, 'name' | 'type' | 'optional'>[]): boolean {
+  if (a.length !== b.length) return false
+  const byName = new Map(b.map((f) => [f.name, f]))
+  if (byName.size !== b.length || new Set(a.map((f) => f.name)).size !== a.length) return false
+  return a.every((f) => {
+    const other = byName.get(f.name)
+    return other !== undefined && other.type === f.type && (other.optional === true) === (f.optional === true)
+  })
+}
+
 /** Whether two pieces of data are the same, field for field (for JSON-like data). */
 export function sameData(a: unknown, b: unknown): boolean {
   if (a === b) return true

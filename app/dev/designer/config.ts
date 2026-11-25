@@ -12,7 +12,7 @@
 //   version, with its own versions. A new output version therefore starts a new Mapping (v1).
 //   Nothing here changes the domain; it only decides which immutable versions to make.
 import {
-  type DefinitionRef, type DefinitionVersion, type Field, deepFreeze, defineVersion, frozenCopy, refOf, sameData, sameDefinition, visibleIn,
+  type DefinitionRef, type DefinitionVersion, type Field, deepFreeze, defineVersion, frozenCopy, refOf, sameData, sameDefinition, sameFields, visibleIn,
 } from '#shared/features/definitions'
 import { type Mapping, type MappingProperty, reviseMapping } from '#shared/features/mappings'
 import type { FeatureRef, Outcome } from '#shared/features/features'
@@ -126,7 +126,8 @@ export function draftFrom(config: Configuration): TransformDraft {
   }
 }
 
-const sameStructure = (d: DefinitionVersion, local: LocalDraft) => d.name === local.name && sameData(d.fields, local.fields)
+/** Whether the local draft is that version: the same name and the same contract (order is presentation). */
+const sameStructure = (d: DefinitionVersion, local: LocalDraft) => d.name === local.name && sameFields(d.fields, local.fields)
 
 /** What the draft's output is: an existing version, or the next local version Apply would freeze. */
 export function outputOf(config: Configuration, draft: TransformDraft): { definition: DefinitionVersion; label: string; isNew: boolean } {

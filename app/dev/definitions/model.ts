@@ -17,7 +17,7 @@
 //     makes a version.
 import {
   type DefinitionVersion, type Field, type FieldType, type Issue,
-  deepFreeze, defineVersion, sameData, validate,
+  deepFreeze, defineVersion, sameFields, validate,
 } from '#shared/features/definitions'
 import { type Appearance, DEFAULT_APPEARANCE, checkAppearance } from './appearance'
 
@@ -180,10 +180,9 @@ export function changesFrom(base: DefinitionVersion, draft: Draft): Change[] {
   return changes
 }
 
-/** The existing version with exactly these properties (in any order), if there is one. */
+/** The existing version with exactly these properties (in any order), if there is one: Orbit's own comparison. */
 export const versionLike = (made: MadeDefinition, fields: readonly Field[]): DefinitionVersion | null =>
-  made.versions.find((v) => sameData(byName(v.fields), byName(fields))) ?? null
-const byName = (fields: readonly Field[]) => Object.fromEntries(fields.map((f) => [f.name, f]))
+  made.versions.find((v) => sameFields(v.fields, fields)) ?? null
 
 // --- Versions ---
 
