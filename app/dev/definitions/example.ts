@@ -53,9 +53,9 @@ export const resetEntries = (fields: readonly DraftField[]): ExampleEntries => r
 export function exampleOf(fields: readonly DraftField[], entries: ExampleEntries, extra: Example['extra']): Example {
   const values: Record<string, ExampleValue> = {}
   for (const f of fields) {
-    const name = f.name.trim()
+    const name = f.name
     const entry = entries[f.key]
-    if (!name || !entry) continue
+    if (!name.trim() || !entry) continue
     if (!entry.given) values[name] = { kind: 'empty' }
     else if (typeof entry.value === 'boolean' && !entry.raw) values[name] = { kind: entry.value ? 'yes' : 'no' }
     else values[name] = { kind: 'text', text: String(entry.value) }
@@ -89,7 +89,7 @@ export function previewResult(fields: readonly DraftField[], entries: ExampleEnt
     data,
     issues: issues.map(issueWords),
     byProperty,
-    left: named.filter((f) => entries[f.key] && !entries[f.key]!.given).map((f) => f.name.trim()),
+    left: named.filter((f) => entries[f.key] && !entries[f.key]!.given).map((f) => f.name),
   }
 }
 

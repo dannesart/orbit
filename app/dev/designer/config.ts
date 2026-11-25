@@ -12,7 +12,7 @@
 //   version, with its own versions. A new output version therefore starts a new Mapping (v1).
 //   Nothing here changes the domain; it only decides which immutable versions to make.
 import {
-  type DefinitionRef, type DefinitionVersion, type Field, deepFreeze, defineVersion, frozenCopy, refOf, sameData, sameDefinition, sameFields, visibleIn,
+  type DefinitionRef, type DefinitionVersion, type Field, checkPropertyNames, deepFreeze, defineVersion, frozenCopy, refOf, sameData, sameDefinition, sameFields, visibleIn,
 } from '#shared/features/definitions'
 import { type Mapping, type MappingProperty, reviseMapping } from '#shared/features/mappings'
 import type { FeatureRef, Outcome } from '#shared/features/features'
@@ -34,7 +34,7 @@ export interface RunRecord {
    */
   readonly path: readonly StepId[]
 }
-import { A1, B1, DEFINITIONS, INITIAL_MAPPING, WORKSPACE, definitionLabel } from '../features/experiment'
+import { A1, B1, DEFINITIONS, INITIAL_MAPPING, WORKSPACE, definitionLabel, describeNamingIssues } from '../features/experiment'
 import { type DraftProperty, fromDraft, toDraft } from './parts'
 
 /** The one Definition identity this Transform may define for itself. */
@@ -151,10 +151,8 @@ export function structureProblems(draft: TransformDraft): string[] {
   const problems: string[] = []
   if (!name.trim()) problems.push('Give the output a name.')
   if (!fields.length) problems.push('Add at least one property.')
-  const names = fields.map((f) => f.name)
-  if (names.some((n) => !n)) problems.push('Every property needs a name.')
-  if (names.some((n) => n && n !== n.trim())) problems.push('Property names can’t start or end with a space.')
-  for (const n of new Set(names.filter((n, i) => n && names.indexOf(n) !== i))) problems.push(`Two properties are called ${n}.`)
+  // Orbit's naming rule, the one the Studio uses too.
+  problems.push(...describeNamingIssues(checkPropertyNames(fields.map((f) => f.name))))
   return problems
 }
 

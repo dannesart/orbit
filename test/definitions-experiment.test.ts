@@ -54,8 +54,12 @@ describe('Creating a Definition', () => {
     expect(() => createDefinition({ id: 'd', workspaceId: 'w', name: '  ', description: '', draft: draftOf(['a', 'string']) })).toThrow()
     expect(draftProblems(draftOf())).toEqual(['Add at least one property.'])
     expect(draftProblems(draftOf(['', 'string']))).toEqual(['Every property needs a name.'])
-    expect(draftProblems(draftOf(['Email', 'string'], ['email ', 'string']))).toEqual(['Two properties are called “Email”.'])
-    expect(fieldsOf(draftOf([' First name ', 'string']))).toEqual([{ name: 'First name', type: 'string' }])
+    // Orbit's one naming rule (shared with the Designer): refused, never tidied.
+    expect(draftProblems(draftOf(['Email', 'string'], ['email', 'string']))).toEqual(['“Email” and “email” differ only in capital letters. Use one name, or two clearly different ones.'])
+    expect(draftProblems(draftOf(['Email', 'string'], ['email ', 'string']))).toEqual(['Property names can’t start or end with a space.'])
+    expect(draftProblems(draftOf(['a', 'string'], ['a', 'number']))).toEqual(['Two properties are called “a”.'])
+    expect(fieldsOf(draftOf([' First name ', 'string']))).toEqual([{ name: ' First name ', type: 'string' }])
+    expect(draftProblems(draftOf([' First name ', 'string']))).toEqual(['Property names can’t start or end with a space.'])
   })
 
   it('generates identities nobody types, and never reuses one', () => {

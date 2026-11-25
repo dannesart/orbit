@@ -3,7 +3,7 @@
 // not a reusable orchestration abstraction), and plain words for outcomes and issues.
 // Development only: the page that uses this is registered only by `nuxt dev` (nuxt.config.ts).
 import {
-  type Data, type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type Kind,
+  type Data, type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type Kind, type NamingIssue,
   deepFreeze, defineVersion, propertyPathWords, sameDefinition,
 } from '#shared/features/definitions'
 import {
@@ -124,6 +124,24 @@ export function describeIssue(issue: Issue): string {
     case 'unexpected': return `${propertyPathWords(issue.path)} isn’t part of this Definition.`
     case 'wrong_type': return `${propertyPathWords(issue.path)} should be ${kindWords[issue.expected]}, not ${kindWords[issue.actual]}.`
   }
+}
+
+/**
+ * The naming rule (checkPropertyNames) in words, the same in the Studio and the Designer. Deduplicated:
+ * several names with surrounding spaces make one sentence.
+ */
+export function describeNamingIssues(issues: readonly NamingIssue[]): string[] {
+  return [...new Set(issues.map((issue) => {
+    const name = issue.path.at(-1) ?? ''
+    const within = issue.path.length > 1 ? `In ${propertyPathWords(issue.path.slice(0, -1))}: ` : ''
+    switch (issue.problem) {
+      case 'empty_name': return `${within}Every property needs a name.`
+      case 'surrounding_whitespace': return `${within}Property names can’t start or end with a space.`
+      case 'duplicate_name': return `${within}Two properties are called “${name}”.`
+      case 'differs_only_by_case': return `${within}“${issue.other}” and “${name}” differ only in capital letters. Use one name, or two clearly different ones.`
+      case 'equivalent_unicode': return `${within}“${issue.other}” and “${name}” are the same name, written with different characters.`
+    }
+  }))]
 }
 
 /** Where in a property's source: "fullName › join › argument 1 › item 2 › trim". */

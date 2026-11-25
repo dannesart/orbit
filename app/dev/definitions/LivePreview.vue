@@ -162,9 +162,9 @@ const iconButton = 'grid size-8 place-items-center rounded-lg text-slate-500 tra
           <li v-for="f in named.filter((x) => valueOf(x).given)" :key="f.key" class="py-2">
             <div class="flex items-baseline justify-between gap-3 text-sm">
               <span class="min-w-0 truncate font-mono text-slate-600">{{ f.name.trim() }}</span>
-              <span class="min-w-0 truncate font-medium" :class="result.byProperty[f.name.trim()] ? 'text-red-700' : 'text-slate-900'">{{ shown(result.data[f.name.trim()]) }}</span>
+              <span class="min-w-0 truncate font-medium" :class="result.byProperty[f.name] ? 'text-red-700' : 'text-slate-900'">{{ shown(result.data[f.name]) }}</span>
             </div>
-            <p v-if="result.byProperty[f.name.trim()]" class="mt-0.5 text-xs text-red-700">{{ result.byProperty[f.name.trim()] }}</p>
+            <p v-if="result.byProperty[f.name]" class="mt-0.5 text-xs text-red-700">{{ result.byProperty[f.name] }}</p>
           </li>
           <li v-if="extra?.name.trim()" class="py-2">
             <div class="flex items-baseline justify-between gap-3 text-sm">

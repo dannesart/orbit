@@ -98,11 +98,56 @@ export function deepFreeze<T>(value: T): T {
 /** A private, frozen copy: what a Feature receives, so it can't touch the original. */
 export const frozenCopy = <T>(value: T): T => deepFreeze(structuredClone(value))
 
-/** A new, immutable Definition version. */
+/**
+ * The rule for naming properties when a version is made, the same wherever one is made (the
+ * Studio, the Designer, Orbit-provided samples): a name isn't empty and doesn't start or end with
+ * whitespace, and no two siblings are the same name, differ only by letter case, or are the same
+ * text written with different Unicode characters (canonically equivalent, such as "é" as one
+ * character or as "e" and a combining accent). Spaces inside a name, dots and any script are fine.
+ *
+ * This is only about making versions. Data is always matched exactly and case-sensitively, and its
+ * keys are never trimmed, folded or normalized: "Email" in data never satisfies a property "email".
+ * The rule exists so that no Definition has two properties that people (or tools) could confuse.
+ * Names are checked, never changed: a name that breaks the rule is refused, not tidied.
+ */
+export type NamingIssue =
+  | { readonly problem: 'empty_name'; readonly path: PropertyPath }
+  | { readonly problem: 'surrounding_whitespace'; readonly path: PropertyPath }
+  | { readonly problem: 'duplicate_name'; readonly path: PropertyPath }
+  | { readonly problem: 'differs_only_by_case'; readonly path: PropertyPath; readonly other: string }
+  | { readonly problem: 'equivalent_unicode'; readonly path: PropertyPath; readonly other: string }
+
+/** Canonical Unicode form (NFC): canonically equivalent texts have the same one. */
+const canonical = (name: string) => name.normalize('NFC')
+/** Canonical form without letter case: locale-independent, upper then lower, so "ß" and "SS" meet. */
+const caseless = (name: string) => canonical(canonical(name).toUpperCase().toLowerCase())
+
+/**
+ * Whether sibling property names (one object's) follow the naming rule. `parent` is where they
+ * are; each issue's path ends with the name it is about (an empty name: ''). Each name is compared
+ * with the names before it, and reports the first it conflicts with.
+ */
+export function checkPropertyNames(names: readonly string[], parent: PropertyPath = []): NamingIssue[] {
+  const issues: NamingIssue[] = []
+  names.forEach((name, i) => {
+    const path = [...parent, name]
+    if (!name) return issues.push({ problem: 'empty_name', path })
+    if (/^\s|\s$/u.test(name)) issues.push({ problem: 'surrounding_whitespace', path })
+    const earlier = names.slice(0, i).filter(Boolean)
+    if (earlier.includes(name)) return issues.push({ problem: 'duplicate_name', path })
+    const equivalent = earlier.find((other) => canonical(other) === canonical(name))
+    if (equivalent !== undefined) return issues.push({ problem: 'equivalent_unicode', path, other: equivalent })
+    const cased = earlier.find((other) => caseless(other) === caseless(name))
+    if (cased !== undefined) issues.push({ problem: 'differs_only_by_case', path, other: cased })
+  })
+  return issues
+}
+
+/** A new, immutable Definition version. Refused, never tidied, when its names break the naming rule. */
 export function defineVersion(definition: DefinitionVersion): DefinitionVersion {
-  const names = definition.fields.map((f) => f.name)
-  if (names.some((n) => !n) || new Set(names).size !== names.length) {
-    throw new Error(`Definition ${definition.id}@${definition.version} needs distinct, non-empty field names`)
+  const naming = checkPropertyNames(definition.fields.map((f) => f.name))
+  if (naming.length) {
+    throw new Error(`Definition ${definition.id}@${definition.version} has property names that can’t be used (${naming.map((i) => i.problem).join(', ')})`)
   }
   // Required is the default and is never written down, so a field is either { name, type } or
   // { name, type, optional: true }: two versions that mean the same thing look the same.

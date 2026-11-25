@@ -17,8 +17,9 @@
 //     makes a version.
 import {
   type DefinitionVersion, type Field, type FieldType, type Issue,
-  deepFreeze, defineVersion, propertyPathWords, sameFields, validate,
+  checkPropertyNames, deepFreeze, defineVersion, propertyPathWords, sameFields, validate,
 } from '#shared/features/definitions'
+import { describeNamingIssues } from '../features/experiment'
 import { type Appearance, DEFAULT_APPEARANCE, checkAppearance } from './appearance'
 
 /** A Definition made in one workspace, with every version it has had (oldest first). */
@@ -120,22 +121,19 @@ export function moveField(draft: Draft, key: number, to: number): Draft {
   return { ...draft, fields }
 }
 
-/** The properties a draft describes, as Orbit's model has them. Stray spaces around names don't count. */
-export const fieldsOf = (draft: Draft): Field[] => draft.fields.map((f) => (f.optional ? { name: f.name.trim(), type: f.type, optional: true } : { name: f.name.trim(), type: f.type }))
+/**
+ * The properties a draft describes, as Orbit's model has them: names exactly as typed. A name with
+ * spaces around it isn't tidied but refused (draftProblems), by Orbit's one naming rule.
+ */
+export const fieldsOf = (draft: Draft): Field[] => draft.fields.map((f) => (f.optional ? { name: f.name, type: f.type, optional: true } : { name: f.name, type: f.type }))
 
 /** Why a draft can't become a version yet, in plain words. None means it can. */
 export function draftProblems(draft: Draft): string[] {
   const fields = fieldsOf(draft)
   const problems: string[] = []
   if (!fields.length) problems.push('Add at least one property.')
-  if (fields.some((f) => !f.name)) problems.push('Every property needs a name.')
-  const seen = new Map<string, string>()
-  for (const f of fields) {
-    const lower = f.name.toLowerCase()
-    if (!f.name) continue
-    if (seen.has(lower)) problems.push(`Two properties are called “${seen.get(lower)}”.`)
-    else seen.set(lower, f.name)
-  }
+  // Orbit's naming rule, the one the Designer uses too (a name of only spaces is no name).
+  problems.push(...describeNamingIssues(checkPropertyNames(fields.map((f) => (f.name.trim() ? f.name : '')))))
   return [...new Set(problems)]
 }
 

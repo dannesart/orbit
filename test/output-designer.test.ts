@@ -203,7 +203,14 @@ describe('A structure must be a valid Definition before it can be frozen', () =>
   it('names what is missing or clashing', () => {
     expect(structureProblems(local('', []))).toEqual(['Give the output a name.', 'Add at least one property.'])
     expect(structureProblems(local('X', [{ name: '', type: 'string' }, { name: 'a ', type: 'string' }, { name: 'b', type: 'number' }, { name: 'b', type: 'string' }]))).toEqual([
-      'Every property needs a name.', 'Property names can’t start or end with a space.', 'Two properties are called b.',
+      'Every property needs a name.', 'Property names can’t start or end with a space.', 'Two properties are called “b”.',
+    ])
+    // The Studio's rule too: names differing only by case, or only by Unicode encoding, are one name twice.
+    expect(structureProblems(local('X', [{ name: 'Email', type: 'string' }, { name: 'email', type: 'string' }]))).toEqual([
+      '“Email” and “email” differ only in capital letters. Use one name, or two clearly different ones.',
+    ])
+    expect(structureProblems(local('X', [{ name: 'café', type: 'string' }, { name: 'café', type: 'string' }]))).toEqual([
+      '“café” and “café” are the same name, written with different characters.',
     ])
     expect(structureProblems({ ...local('', []), use: 'catalogue' })).toEqual([])
   })
