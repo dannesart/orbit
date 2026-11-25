@@ -25,8 +25,9 @@ import { createFromDraft, findMade, redescribe, setCreating, setEvolving, shelfO
 import AppearancePicker from './AppearancePicker.vue'
 import DefinitionTile from './DefinitionTile.vue'
 import DefinitionsIcon from './DefinitionsIcon.vue'
-import ExampleCheck from './ExampleCheck.vue'
+import LivePreview from './LivePreview.vue'
 import ModelBuilder from './ModelBuilder.vue'
+import { type ExampleEntries, reconcile, resetEntries } from './example'
 
 type Part = 'new' | 'next' | 'about'
 type Segment = 'general' | 'model' | 'preview'
@@ -70,6 +71,13 @@ const description = computed(() => (props.part === 'new' ? creating.value!.descr
 const appearance = computed<Appearance>(() => (props.part === 'new' ? creating.value!.appearance ?? DEFAULT_APPEARANCE : props.part === 'about' ? about.value.appearance : made.value?.appearance ?? DEFAULT_APPEARANCE))
 const draft = computed<Draft | null>(() => (props.part === 'new' ? creating.value!.draft : evolving.value))
 const fields = computed(() => (draft.value ? fieldsOf(draft.value) : []))
+
+// The Preview's example: held here, so moving between segments keeps what was typed, and kept in
+// step with the model as properties come, go and change (example.ts). Never kept beyond this view.
+const example = ref<ExampleEntries>({})
+const extra = ref<{ name: string; text: string } | null>(null)
+const advanced = ref(false)
+watch(() => draft.value?.fields, (now) => (example.value = reconcile(example.value, now ?? [])), { immediate: true, deep: true })
 const nextNumber = computed(() => versions.value.length + 1)
 const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
 const cardMeta = computed(() => {
@@ -285,11 +293,18 @@ onMounted(() => heading.value?.focus())
         </div>
       </div>
 
-      <!-- Preview: optional -->
-      <div v-else-if="segment === 'preview'" class="max-w-2xl">
-        <p class="mb-4 text-sm text-slate-600">Optional. Try some information against it, the way Orbit would judge it. Nothing typed here is kept.</p>
-        <ExampleCheck :fields="fields" :name="part === 'new' ? name : `${name}, version ${nextNumber}`" :id-prefix="part" />
-      </div>
+      <!-- Preview: optional, live, and never needed to create anything -->
+      <LivePreview
+        v-else-if="segment === 'preview' && draft"
+        v-model:entries="example"
+        v-model:extra="extra"
+        v-model:advanced="advanced"
+        :fields="draft.fields"
+        :name="part === 'new' ? name : `${name}, version ${nextNumber}`"
+        :appearance="appearance"
+        :id-prefix="part"
+        @reset="example = resetEntries(draft.fields); extra = null"
+      />
     </div>
 
     <!-- The one action, in every segment -->
