@@ -24,7 +24,7 @@ const CARD = defineVersion({
 })
 
 describe('Validating with optional properties', () => {
-  const issues = (data: unknown) => validate(CONTACT, data).map((i) => `${i.problem}:${'field' in i ? i.field : ''}`)
+  const issues = (data: unknown) => validate(CONTACT, data).map((i) => `${i.problem}:${i.path.join('/')}`)
 
   it('still refuses a missing required property', () => {
     expect(issues({ age: 36 })).toEqual(['missing:name'])
@@ -107,7 +107,7 @@ describe('Transforms with optional properties', () => {
     expect(Object.hasOwn(result.output!.data, 'alias')).toBe(false)
     // A required output left unmapped is still refused, by the output's own Definition.
     const without = run(mapping([{ name: 'alias', source: prop('name') }]), { name: 'Ada', age: 36 })
-    expect(without.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'missing', field: 'greeting' }] })
+    expect(without.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'missing', path: ['greeting'] }] })
   })
 
   it('maps an optional input into an optional output: there when it’s there, left out (never invented) when it isn’t', () => {

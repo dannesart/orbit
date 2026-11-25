@@ -231,7 +231,7 @@ describe('The boundary still decides, whatever the editor allowed', () => {
     expect(run(applyConfiguration(initialConfiguration(), wrongType))[1]!.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output' })
     const extra = { ...draft, properties: [...draft.properties, { name: 'nickname', piece: piece(prop('firstName')) }] }
     const [, transform, after] = run(applyConfiguration(initialConfiguration(), extra))
-    expect(transform!.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'unexpected', field: 'nickname' }] })
+    expect(transform!.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'unexpected', path: ['nickname'] }] })
     expect(after).toBeNull()
   })
 })

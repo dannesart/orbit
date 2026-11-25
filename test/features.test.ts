@@ -68,19 +68,19 @@ function expectNoData(result: InvocationResult, ...values: string[]) {
 describe('Definitions', () => {
   it('validates exactly: every field present, of its type, and nothing else', () => {
     expect(validate(A1, ADA)).toEqual([])
-    expect(validate(A1, { firstName: 'Ada' })).toEqual([{ problem: 'missing', field: 'lastName', expected: 'string' }])
-    expect(validate(A1, { ...ADA, email: 'a@b.c' })).toEqual([{ problem: 'unexpected', field: 'email' }])
-    expect(validate(A1, { firstName: 'Ada', lastName: 1815 })).toEqual([{ problem: 'wrong_type', field: 'lastName', expected: 'string', actual: 'number' }])
-    expect(validate(A2, { ...ADA, age: Number.NaN })).toEqual([{ problem: 'wrong_type', field: 'age', expected: 'number', actual: 'other' }])
-    expect(validate(A1, ['Ada', 'Lovelace'])).toEqual([{ problem: 'not_an_object', actual: 'array' }])
-    expect(validate(A1, null)).toEqual([{ problem: 'not_an_object', actual: 'null' }])
+    expect(validate(A1, { firstName: 'Ada' })).toEqual([{ problem: 'missing', path: ['lastName'], expected: 'string' }])
+    expect(validate(A1, { ...ADA, email: 'a@b.c' })).toEqual([{ problem: 'unexpected', path: ['email'] }])
+    expect(validate(A1, { firstName: 'Ada', lastName: 1815 })).toEqual([{ problem: 'wrong_type', path: ['lastName'], expected: 'string', actual: 'number' }])
+    expect(validate(A2, { ...ADA, age: Number.NaN })).toEqual([{ problem: 'wrong_type', path: ['age'], expected: 'number', actual: 'other' }])
+    expect(validate(A1, ['Ada', 'Lovelace'])).toEqual([{ problem: 'not_an_object', path: [], actual: 'array' }])
+    expect(validate(A1, null)).toEqual([{ problem: 'not_an_object', path: [], actual: 'null' }])
   })
 
   it('looks only at the data’s own fields, never at what objects inherit', () => {
     const withProtoKey = JSON.parse('{"firstName":"Ada","lastName":"Lovelace","__proto__":"x"}')
-    expect(validate(A1, withProtoKey)).toEqual([{ problem: 'unexpected', field: '__proto__' }])
+    expect(validate(A1, withProtoKey)).toEqual([{ problem: 'unexpected', path: ['__proto__'] }])
     const toStringField = defineVersion({ id: 't', version: 1, name: 't', workspaceId: W, fields: [{ name: 'toString', type: 'string' }] })
-    expect(validate(toStringField, {})).toEqual([{ problem: 'missing', field: 'toString', expected: 'string' }])
+    expect(validate(toStringField, {})).toEqual([{ problem: 'missing', path: ['toString'], expected: 'string' }])
   })
 
   it('reports problems by field and kind, never by value', () => {
@@ -226,7 +226,7 @@ describe('Orbit.Transform: exact contracts, validated output', () => {
     const { feature, calls } = counted(orbitTransformV2)
     const badRecord = catalog({ records: [recordA({ data: { firstName: 'Ada' } })] })
     const fromRecord = transform(badRecord, recordA(), M1, feature)
-    expect(fromRecord.evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'invalid_input', issues: [{ problem: 'missing', field: 'lastName', expected: 'string' }] })
+    expect(fromRecord.evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'invalid_input', issues: [{ problem: 'missing', path: ['lastName'], expected: 'string' }] })
     const forged = transform(catalog(), { definition: { id: 'person', version: 1 }, data: { firstName: 'Ada', lastName: 'Lovelace', role: 'admin' } }, M1, feature)
     expect(forged.evidence.outcome).toMatchObject({ kind: 'not_attempted', reason: 'invalid_input' })
     expect(calls.n).toBe(0)

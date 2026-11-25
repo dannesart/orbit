@@ -4,7 +4,7 @@
 // Development only: the page that uses this is registered only by `nuxt dev` (nuxt.config.ts).
 import {
   type Data, type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type Kind,
-  deepFreeze, defineVersion, sameDefinition,
+  deepFreeze, defineVersion, propertyPathWords, sameDefinition,
 } from '#shared/features/definitions'
 import {
   type ArgumentType, type Expression, type Mapping, type MappingIssue, type MappingProperty, type Path, checkMapping,
@@ -120,9 +120,9 @@ const kindWords: Record<Kind | ArgumentType | 'invalid', string> = {
 export function describeIssue(issue: Issue): string {
   switch (issue.problem) {
     case 'not_an_object': return `The data must be an object, not ${kindWords[issue.actual]}.`
-    case 'missing': return `${issue.field} is missing (it should be ${kindWords[issue.expected]}).`
-    case 'unexpected': return `${issue.field} isn’t part of this Definition.`
-    case 'wrong_type': return `${issue.field} should be ${kindWords[issue.expected]}, not ${kindWords[issue.actual]}.`
+    case 'missing': return `${propertyPathWords(issue.path)} is missing (it should be ${kindWords[issue.expected]}).`
+    case 'unexpected': return `${propertyPathWords(issue.path)} isn’t part of this Definition.`
+    case 'wrong_type': return `${propertyPathWords(issue.path)} should be ${kindWords[issue.expected]}, not ${kindWords[issue.actual]}.`
   }
 }
 

@@ -126,31 +126,46 @@ export function kindOf(value: unknown): Kind {
 }
 
 /**
- * A problem with data, described by field and kind only. Issues never carry the data itself, so
- * they can be shown, kept as evidence or reported without exposing what a Record contains.
+ * Where in some data a problem is: the property name at each level, outermost first. The data
+ * itself is the empty path. A path is a list, never a string joined with dots or anything else,
+ * so a property literally named "a.b" (['a.b']) can't be mistaken for a property b inside a
+ * property a (['a', 'b']). Today's Definitions are flat, so a path has at most one name.
+ */
+export type PropertyPath = readonly string[]
+
+/**
+ * A problem with data, described by where it is (a PropertyPath) and kinds only. Issues never
+ * carry the data itself, so they can be shown, kept as evidence or reported without exposing what
+ * a Record contains.
  */
 export type Issue =
-  | { readonly problem: 'not_an_object'; readonly actual: Kind }
-  | { readonly problem: 'missing'; readonly field: string; readonly expected: FieldType }
-  | { readonly problem: 'unexpected'; readonly field: string }
-  | { readonly problem: 'wrong_type'; readonly field: string; readonly expected: FieldType; readonly actual: Kind }
+  | { readonly problem: 'not_an_object'; readonly path: PropertyPath; readonly actual: Kind }
+  | { readonly problem: 'missing'; readonly path: PropertyPath; readonly expected: FieldType }
+  | { readonly problem: 'unexpected'; readonly path: PropertyPath }
+  | { readonly problem: 'wrong_type'; readonly path: PropertyPath; readonly expected: FieldType; readonly actual: Kind }
 
 /** Whether `data` satisfies `definition` exactly. Returns every problem found; none means valid. */
 export function validate(definition: DefinitionVersion, data: unknown): Issue[] {
   const kind = kindOf(data)
-  if (kind !== 'object') return [{ problem: 'not_an_object', actual: kind }]
+  if (kind !== 'object') return [{ problem: 'not_an_object', path: [], actual: kind }]
   const object = data as Record<string, unknown>
   const issues: Issue[] = []
   for (const { name, type, optional } of definition.fields) {
     if (!Object.hasOwn(object, name)) {
-      if (optional !== true) issues.push({ problem: 'missing', field: name, expected: type })
-    } else if (kindOf(object[name]) !== type) issues.push({ problem: 'wrong_type', field: name, expected: type, actual: kindOf(object[name]) })
+      if (optional !== true) issues.push({ problem: 'missing', path: [name], expected: type })
+    } else if (kindOf(object[name]) !== type) issues.push({ problem: 'wrong_type', path: [name], expected: type, actual: kindOf(object[name]) })
   }
   for (const name of Object.keys(object)) {
-    if (!definition.fields.some((f) => f.name === name)) issues.push({ problem: 'unexpected', field: name })
+    if (!definition.fields.some((f) => f.name === name)) issues.push({ problem: 'unexpected', path: [name] })
   }
   return issues
 }
+
+/**
+ * A path in words, for people: names joined with " › " (the data itself: "the data"). For display
+ * only: never parsed back, never used to find anything; the path itself is the location.
+ */
+export const propertyPathWords = (path: PropertyPath): string => (path.length ? path.join(' › ') : 'the data')
 
 /**
  * Whether two lists of fields describe the same contract: the same names, each with the same type

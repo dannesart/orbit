@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { type Field, defineVersion, refOf, sameFields } from '../shared/features/definitions'
+import { type Field, defineVersion, propertyPathWords, refOf, sameFields, validate } from '../shared/features/definitions'
 import type { Mapping } from '../shared/features/mappings'
 import { type MappingFeature, invoke, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
 import { mappingWork, previewOutput, previewSource, reviewDraft } from '../app/dev/designer/preview'
@@ -226,5 +226,39 @@ describe('The Designer previews absence by the domain’s own rules', () => {
     const source = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/preview.ts'), 'utf8')
     expect(source).toMatch(/evaluatePresent\(source, example\.data\)/)
     expect(source).not.toMatch(/\bevaluate\(/)
+  })
+})
+
+describe('Validation locates problems by structured property paths', () => {
+  const D = defineVersion({ id: 'd', version: 1, name: 'D', workspaceId: 'w', fields: [f('a.b'), f('a', 'number'), f('n', 'number', true)] })
+
+  it('keeps flat validation exactly as it was, each issue at a one-name path', () => {
+    expect(validate(D, { 'a.b': 'x', a: 1 })).toEqual([])
+    expect(validate(D, { a: 'x', n: null, extra: 1 })).toEqual([
+      { problem: 'missing', path: ['a.b'], expected: 'string' },
+      { problem: 'wrong_type', path: ['a'], expected: 'number', actual: 'string' },
+      { problem: 'wrong_type', path: ['n'], expected: 'number', actual: 'null' },
+      { problem: 'unexpected', path: ['extra'] },
+    ])
+    expect(validate(D, [1])).toEqual([{ problem: 'not_an_object', path: [], actual: 'array' }])
+  })
+
+  it('keeps a literal name containing a dot one name, never a nested location', () => {
+    const [issue] = validate(D, { a: 1 })
+    expect(issue!.path).toEqual(['a.b'])
+    expect(issue!.path).not.toEqual(['a', 'b'])
+    expect(validate(D, { a: 1, 'a.b': 'x', 'a.c': true })).toEqual([{ problem: 'unexpected', path: ['a.c'] }])
+  })
+
+  it('carries paths into evidence, never the data', () => {
+    const W = 'w'
+    const C = defineVersion({ id: 'c', version: 1, name: 'C', workspaceId: W, fields: [f('a.b')] })
+    const result = invoke({ definitions: [C], records: [{ id: 'r', workspaceId: W, definition: refOf(C), data: { 'a.b': 42 } as never }], mappings: [] }, { workspaceId: W, feature: orbitConsole, input: { record: 'r' } })
+    expect(result.evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'invalid_input', issues: [{ problem: 'wrong_type', path: ['a.b'], expected: 'string', actual: 'number' }] })
+    expect(JSON.stringify(result.evidence)).not.toContain('42')
+  })
+
+  it('words a path for people without ever parsing it back', () => {
+    expect([propertyPathWords([]), propertyPathWords(['a.b']), propertyPathWords(['a', 'b'])]).toEqual(['the data', 'a.b', 'a › b'])
   })
 })

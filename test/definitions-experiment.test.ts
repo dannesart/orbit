@@ -289,7 +289,7 @@ describe('Journey A: made in Definitions, used as an exact version in the Transf
     // Applied regardless (applyConfiguration allows it; the Designer's Apply doesn't): the boundary refuses the output.
     const config = use(start, { id: v1.id, version: 2 }, [fullName, subscribed])
     const [, transform, out] = run(config, 'ws-acme')
-    expect(transform!.evidence.outcome).toEqual({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'missing', field: 'email', expected: 'string' }] })
+    expect(transform!.evidence.outcome).toEqual({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'missing', path: ['email'], expected: 'string' }] })
     expect(transform!.output).toBeUndefined()
     expect(out).toBeNull()
   })

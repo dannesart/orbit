@@ -68,7 +68,7 @@ export interface PreviewResult {
   readonly data: Record<string, unknown>
   /** Orbit's verdict, in plain words: none means it fits. */
   readonly issues: readonly string[]
-  /** Per property name, what's wrong with it (for the row it's shown on). */
+  /** Per property name, what's wrong with it (for the row it's shown on): issues located at that one property. */
   readonly byProperty: Readonly<Record<string, string>>
   /** Properties left out. */
   readonly left: readonly string[]
@@ -84,7 +84,7 @@ export function previewResult(fields: readonly DraftField[], entries: ExampleEnt
   const data = exampleData(reading, exampleOf(named, entries, extra))
   const issues = checkExample(shape, data)
   const byProperty: Record<string, string> = {}
-  for (const issue of issues) if ('field' in issue) byProperty[issue.field] ??= issueWords(issue)
+  for (const issue of issues) if (issue.path.length === 1) byProperty[issue.path[0]!] ??= issueWords(issue)
   return {
     data,
     issues: issues.map(issueWords),

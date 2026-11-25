@@ -17,7 +17,7 @@
 //     makes a version.
 import {
   type DefinitionVersion, type Field, type FieldType, type Issue,
-  deepFreeze, defineVersion, sameFields, validate,
+  deepFreeze, defineVersion, propertyPathWords, sameFields, validate,
 } from '#shared/features/definitions'
 import { type Appearance, DEFAULT_APPEARANCE, checkAppearance } from './appearance'
 
@@ -275,9 +275,9 @@ const kindWords: Record<string, string> = {
 export function issueWords(issue: Issue): string {
   switch (issue.problem) {
     case 'not_an_object': return 'This isn’t a set of properties at all.'
-    case 'missing': return `${issue.field} is missing, and it’s required.`
-    case 'unexpected': return `${issue.field} isn’t one of its properties, so it isn’t accepted.`
-    case 'wrong_type': return `${issue.field} should be ${kindWords[issue.expected]}, not ${kindWords[issue.actual] ?? 'something else'}.`
+    case 'missing': return `${propertyPathWords(issue.path)} is missing, and it’s required.`
+    case 'unexpected': return `${propertyPathWords(issue.path)} isn’t one of its properties, so it isn’t accepted.`
+    case 'wrong_type': return `${propertyPathWords(issue.path)} should be ${kindWords[issue.expected]}, not ${kindWords[issue.actual] ?? 'something else'}.`
   }
 }
 
