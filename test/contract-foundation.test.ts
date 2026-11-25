@@ -262,3 +262,11 @@ describe('Validation locates problems by structured property paths', () => {
     expect([propertyPathWords([]), propertyPathWords(['a.b']), propertyPathWords(['a', 'b'])]).toEqual(['the data', 'a.b', 'a › b'])
   })
 })
+
+describe('The Designer’s Output count', () => {
+  it('counts the properties that need a value, not optional ones left out', () => {
+    const inspector = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/TransformInspector.vue'), 'utf8')
+    expect(inspector).toMatch(/const needed = computed\(\(\) => props\.review\.fields\.length - leftOut\.value\)/)
+    expect(inspector).toMatch(/\{\{ mapped \}\}\/\{\{ needed \}\}/)
+  })
+})

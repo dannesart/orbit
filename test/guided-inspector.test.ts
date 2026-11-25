@@ -92,7 +92,7 @@ describe('The minimal inspector: a tool, not a report', () => {
 
   it('has one Output heading with its count and a square pencil, Edit output, opening Structure; focus returns to it', () => {
     const section = inspector.slice(inspector.indexOf('<section aria-labelledby="output-heading"'), inspector.indexOf('</section>', inspector.indexOf('output-heading')))
-    expect(section).toMatch(/>Output<\/h3>\s*<span[^>]*>\{\{ mapped \}\}\/\{\{ review\.fields\.length \}\}<\/span>/)
+    expect(section).toMatch(/>Output<\/h3>\s*<span[^>]*>\{\{ mapped \}\}\/\{\{ needed \}\}<\/span>/)
     expect(section).toMatch(/<button\s*type="button"\s*data-open-editor\s*aria-label="Edit output"\s*title="Edit output"[\s\S]*?@click="emit\('focus', 'structure', null\)"\s*>\s*<DesignerIcon name="pencil"/)
     expect((source('SpatialDesigner.vue') + inspector).match(/data-open-editor(?!\])/g)).toHaveLength(1)
   })

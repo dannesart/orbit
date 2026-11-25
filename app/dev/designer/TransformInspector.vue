@@ -44,6 +44,9 @@ const details = ref(false)
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
 const problems = computed(() => [...props.structure, ...props.review.problems])
 const mapped = computed(() => props.review.fields.filter((f) => f.state === 'set').length)
+// Optional properties left out aren't unfinished work: the count is of the properties that need a value.
+const leftOut = computed(() => props.review.fields.filter((f) => f.state === 'left_out').length)
+const needed = computed(() => props.review.fields.length - leftOut.value)
 const back = ref<HTMLButtonElement>()
 function showEvidence() {
   details.value = true
@@ -83,7 +86,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
         <section aria-labelledby="output-heading" class="mt-6">
           <div class="mb-2 flex items-center gap-2">
             <h3 id="output-heading" class="text-sm font-semibold text-slate-900">Output</h3>
-            <span class="text-xs text-slate-500" :aria-label="`${mapped} of ${review.fields.length} mapped`">{{ mapped }}/{{ review.fields.length }}</span>
+            <span class="text-xs text-slate-500" :aria-label="`${mapped} of ${needed} mapped${leftOut ? `, ${leftOut} optional left out` : ''}`">{{ mapped }}/{{ needed }}</span>
             <!-- The full editor at Structure, beside the output it affects. Focus returns here when it closes. -->
             <button
               type="button"
