@@ -41,7 +41,7 @@ import { exampleFrom, previewOutput, reviewDraft } from './preview'
 import { transformSupport } from './support'
 import { reconcile } from './switching'
 import {
-  type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findMapping,
+  type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findDefinition, findMapping,
   initialConfiguration, labelOf, outputOf, planApply, structureProblems,
 } from './config'
 
@@ -82,6 +82,8 @@ const pin = computed(() => PINS.find((p) => p.key === pinKey.value)!)
 const parsed = computed(() => parseRecordData(recordText.value))
 const appliedMapping = computed(() => findMapping(config.value, config.value.mapping)!)
 const label = (ref: DefinitionRef) => labelOf(config.value, ref)
+/** Exactly the version named, among those runs here use (they never change, so a past run reads the same). */
+const resolve = (ref: DefinitionRef) => findDefinition(config.value, ref)
 /** The contracts connections are judged by: Record A's pinned Definition and the applied Mapping's. */
 const contracts = computed<Contracts>(() => ({
   record: pin.value.ref,
@@ -660,6 +662,8 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
               {{ pin.note }}
               <span class="font-mono text-slate-600">{{ shapeOf(DEFINITIONS.find((d) => d.id === pin.ref.id && d.version === pin.ref.version)!) }}</span>
             </p>
+            <!-- Data only changes on purpose: an example is offered, never swapped in. -->
+            <button v-if="pin.example && recordText !== JSON.stringify(pin.example, null, 2)" type="button" class="link mt-1.5 text-xs" data-use-example @click="recordText = JSON.stringify(pin.example, null, 2)">Use example data for {{ definitionLabel(pin.ref) }}</button>
             <label for="record-data" class="mt-4 block text-xs font-medium text-slate-600">Data</label>
             <textarea id="record-data" v-model="recordText" rows="5" spellcheck="false" autocomplete="off" :aria-invalid="'error' in parsed" aria-describedby="record-data-hint" class="field font-mono text-sm" />
             <p id="record-data-hint" class="mt-2 text-xs" :class="'error' in parsed ? 'text-red-700' : 'text-slate-500'" aria-live="polite">
@@ -691,7 +695,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
             Record A isn’t a Feature, so it never runs.
             {{ shown.path.length > 1 ? `Step 1, ${stepTitle(shown.path[1]!)}, read it.` : 'Nothing read it: it wasn’t connected to a step.' }}
           </p>
-          <RunResult v-else :step="stepOf(selectedId)" :stale="stale" pass-through :label="label" />
+          <RunResult v-else :step="stepOf(selectedId)" :stale="stale" pass-through :label="label" :resolve="resolve" />
         </section>
       </div>
     </aside>

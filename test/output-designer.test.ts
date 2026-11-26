@@ -58,7 +58,7 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
   })
 
   it('uses an existing Definition version as it is, with a Mapping of its own', () => {
-    expect(catalogue().map((d) => `${d.id}@${d.version}`)).toEqual(['person-name@1', 'person-name@2', 'person-name-copy@1', 'full-name@1'])
+    expect(catalogue().map((d) => `${d.id}@${d.version}`)).toEqual(['person-name@1', 'person-name@2', 'person-name-copy@1', 'full-name@1', 'address@1', 'applicant@1'])
     const config = initialConfiguration()
     const draft: TransformDraft = {
       ...draftFrom(config),

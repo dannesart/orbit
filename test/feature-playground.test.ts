@@ -71,8 +71,10 @@ describe('Record A → Orbit.Console → Orbit.Transform → Orbit.Console', () 
   })
 
   it('holds against a Console that misbehaves: changing the value fails, handing on something else is stopped', () => {
-    expect(outcomes(run(catalog(), 1))).toEqual(['failed', 'not invoked', 'not invoked'])
-    const swapped = run(catalog(), 2)
+    const edits = CONSOLES.findIndex((c) => c.feature.id === 'playground.console-that-edits')
+    const swaps = CONSOLES.findIndex((c) => c.feature.id === 'playground.console-that-swaps')
+    expect(outcomes(run(catalog(), edits))).toEqual(['failed', 'not invoked', 'not invoked'])
+    const swapped = run(catalog(), swaps)
     expect(outcomes(swapped)).toEqual(['failed', 'not invoked', 'not invoked'])
     expect(swapped[0]!.evidence.outcome).toEqual({ kind: 'failed', reason: 'pass_through_broken' })
   })

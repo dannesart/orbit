@@ -3,10 +3,11 @@
 // versions are named through `label`, so this Transform's own output versions read by name.
 // (A copy, so /dev/features stays exactly as it was.) Labels come from immutable versions, so a
 // past run always names the versions that actually produced it, never today's draft.
-import type { DefinitionRef } from '#shared/features/definitions'
+import type { DefinitionRef, Resolve } from '#shared/features/definitions'
 import { type Step, describeOutcome, outcomeIssues, outcomeLabel } from '../features/experiment'
+import ObservedTree from './ObservedTree.vue'
 
-const props = defineProps<{ step: Step; stale: boolean; passThrough?: boolean; label: (ref: DefinitionRef) => string }>()
+const props = defineProps<{ step: Step; stale: boolean; passThrough?: boolean; label: (ref: DefinitionRef) => string; resolve: Resolve }>()
 
 const tone = computed(() => {
   if (!props.step) return 'bg-slate-100 text-slate-600'
@@ -24,6 +25,13 @@ const explanation = computed(() => {
   return outcome ? describeOutcome(outcome) : ''
 })
 const json = (value: unknown) => JSON.stringify(value, null, 2)
+// What a Console observed is a Value of the Definition it received: that exact version says what
+// each place is. Raw JSON stays one click away, as a technical view.
+const observedAs = computed(() => {
+  const ref = props.step?.evidence.input.definition
+  return ref ? props.resolve(ref) : null
+})
+const raw = ref(false)
 </script>
 
 <template>
@@ -37,9 +45,15 @@ const json = (value: unknown) => JSON.stringify(value, null, 2)
       <ul v-if="outcomeIssues(step.evidence.outcome).length" class="mt-2 list-disc pl-5 text-sm text-red-700">
         <li v-for="issue in outcomeIssues(step.evidence.outcome)" :key="issue">{{ issue }}</li>
       </ul>
-      <div v-for="(seen, i) in step.observations" :key="i" class="mt-3">
-        <p class="text-xs font-medium text-slate-500">Observed</p>
-        <pre class="mt-1 overflow-x-auto rounded-xl bg-slate-900 px-4 py-3 font-mono text-sm text-slate-100">{{ json(seen) }}</pre>
+      <div v-for="(seen, i) in step.observations" :key="i" class="mt-3" data-observation>
+        <div class="flex items-center gap-2">
+          <p class="text-xs font-medium text-slate-500">Observed<template v-if="step.evidence.input.definition">: a Value of <span class="text-slate-800">{{ label(step.evidence.input.definition) }}</span></template></p>
+          <button type="button" class="ml-auto rounded-md px-1.5 text-xs text-slate-500 transition hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" :aria-pressed="raw" data-observation-json @click="raw = !raw">JSON</button>
+        </div>
+        <pre v-if="raw" class="mt-1 overflow-x-auto rounded-xl bg-slate-900 px-4 py-3 font-mono text-sm text-slate-100">{{ json(seen) }}</pre>
+        <div v-else class="mt-1 rounded-xl bg-white px-3 py-1 ring-1 ring-slate-200/80">
+          <ObservedTree :data="seen" :fields="observedAs?.fields ?? null" :resolve="resolve" :label="label" />
+        </div>
       </div>
       <p v-if="step.output && passThrough" class="mt-3 text-xs font-medium text-slate-500">
         Handed on unchanged, still a Value of <span class="text-slate-800">{{ label(step.output.definition) }}</span>

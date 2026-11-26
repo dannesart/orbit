@@ -4,12 +4,13 @@
 import type { DefinitionRef } from '#shared/features/definitions'
 import { type Step, outcomeLabel, shapeOf } from '../features/experiment'
 import RunResult from './RunResult.vue'
-import { type Configuration, type RunRecord, labelOf } from './config'
+import { type Configuration, type RunRecord, findDefinition, labelOf } from './config'
 import { pathWords } from './flow'
 import { describeProperty } from './summary'
 
 const props = defineProps<{ step: Step; stale: boolean; runNumber: number; runs: readonly RunRecord[]; config: Configuration }>()
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
+const resolve = (ref: DefinitionRef) => findDefinition(props.config, ref)
 const mappingIds = computed(() => [...new Set(props.config.mappings.map((m) => m.id))])
 </script>
 
@@ -18,7 +19,7 @@ const mappingIds = computed(() => [...new Set(props.config.mappings.map((m) => m
     <section aria-labelledby="transform-run-heading">
       <h3 id="transform-run-heading" class="text-sm font-semibold text-slate-900">What happened in run {{ runNumber }}</h3>
       <p v-if="runs.length" class="text-xs text-slate-500">{{ pathWords(runs.at(-1)!.path) }}</p>
-      <RunResult :step="step" :stale="stale" :label="label" />
+      <RunResult :step="step" :stale="stale" :label="label" :resolve="resolve" />
     </section>
     <section v-if="runs.length > 1" aria-labelledby="runs-heading" class="mt-6">
       <h3 id="runs-heading" class="text-sm font-semibold text-slate-900">Earlier runs</h3>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// A value from the example, with the whitespace that matters drawn as dots, and said in words for
-// screen readers. Example data only: nothing here is a run's output.
+// A value (from the example, or as a step observed it), with the whitespace that matters drawn as
+// dots, and said in words for screen readers. Shown exactly: nothing is trimmed or reformatted.
 import type { Scalar } from '#shared/features/definitions'
 import { visibleSegments, whitespaceNote } from './preview'
 

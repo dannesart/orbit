@@ -307,10 +307,15 @@ describe(`Depth across the complete resolved contract: at most ${MAX_OBJECT_LEVE
 
 describe('Existing contracts are unchanged', () => {
   it('flat and local-object versions resolve as contracts with or without a resolver', () => {
-    for (const d of [...DEFINITIONS, ...ORBIT_PROVIDED]) {
+    for (const d of [...DEFINITIONS, ...ORBIT_PROVIDED].filter((x) => x.id !== 'applicant')) {
       expect(checkContract(d)).toEqual([])
       expect(defineVersion(d)).toEqual(d)
     }
+    // The composed sample (Phase 4.1) resolves only with what it references, exactly.
+    const samples = (r: { id: string; version: number }) => DEFINITIONS.find((x) => x.id === r.id && x.version === r.version) ?? null
+    const applicant = DEFINITIONS.find((x) => x.id === 'applicant')!
+    expect(checkContract(applicant, samples)).toEqual([])
+    expect(checkContract(applicant).map((i) => i.problem)).toEqual(['unresolved_reference'])
     const local = make('local', 1, W, [object('contact', [text('email')])])
     expect(checkContract(local)).toEqual([])
     expect(validate(local, { contact: { email: 'a' } })).toEqual([])

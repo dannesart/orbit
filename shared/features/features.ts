@@ -53,18 +53,19 @@ export interface InspectContext {
 /** What every Feature version declares, whatever its kind of contract. */
 interface FeatureVersion extends FeatureRef {
   /**
-   * Whether it accepts Definitions that contain local objects. Every Feature version so far was
-   * made when Definitions were flat and has never been handed one, so none does: a Definition with
-   * a local object, on either side, is refused before it runs (unsupported_contract). Accepting
-   * them would change what the version accepts, so it would be a new version.
+   * Whether it accepts Definitions that contain local objects. The versions made when Definitions
+   * were flat (Console v1, Transform v1 and v2) don't: a Definition with a local object, on either
+   * side, is refused before they run (unsupported_contract). Accepting them changes what a version
+   * accepts, so only a new version may (Console v2).
    */
-  readonly localObjects: 'unsupported'
+  readonly localObjects: 'unsupported' | 'supported'
   /**
-   * Whether it accepts Definitions that contain references to other Definitions. Likewise none
-   * does: a Definition with a reference (anywhere, local objects included) on either side is refused
-   * before it runs (unsupported_contract). Accepting them would be a new version.
+   * Whether it accepts Definitions that contain references to other Definitions (anywhere, local
+   * objects included). Likewise only versions made to: the others refuse them before running
+   * (unsupported_contract). Accepting them, the whole pinned contract is resolved and checked by
+   * the boundary first (invalid_contract when it doesn't resolve), then the data validated against it.
    */
-  readonly references: 'unsupported'
+  readonly references: 'unsupported' | 'supported'
 }
 
 export interface PassThroughFeature extends FeatureVersion {
@@ -88,17 +89,36 @@ export interface MappingFeature extends FeatureVersion {
 
 export type Feature = PassThroughFeature | MappingFeature
 
-/** Orbit.Console: shows what it receives and passes it on. */
+/** What every Orbit.Console version does: shows what it receives, exactly, and passes it on. */
+const showAndPassOn: PassThroughFeature['run'] = (input, { inspect }) => {
+  inspect(input)
+  return input
+}
+
+/** Orbit.Console v1: shows what it receives and passes it on. Flat Definitions only, as published. */
 export const orbitConsole: PassThroughFeature = {
   id: 'orbit.console',
   version: 1,
   contract: 'pass-through',
   localObjects: 'unsupported',
   references: 'unsupported',
-  run(input, { inspect }) {
-    inspect(input)
-    return input
-  },
+  run: showAndPassOn,
+}
+
+/**
+ * Orbit.Console v2: v1's very behaviour (the same run), for composed Definitions too: local
+ * objects and references to other Definitions, at any depth Orbit allows. What it receives was
+ * resolved and validated by the boundary against the complete pinned contract; it shows exactly
+ * that and passes it on unchanged, with the same Definition version. Nothing is flattened,
+ * normalised or filled in: an absent optional object stays absent, an empty one stays empty.
+ */
+export const orbitConsoleV2: PassThroughFeature = {
+  id: 'orbit.console',
+  version: 2,
+  contract: 'pass-through',
+  localObjects: 'supported',
+  references: 'supported',
+  run: showAndPassOn,
 }
 
 /**

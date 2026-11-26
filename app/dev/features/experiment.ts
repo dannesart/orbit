@@ -10,7 +10,7 @@ import {
   type ArgumentType, type Expression, type Mapping, type MappingIssue, type MappingProperty, type Path, checkMapping,
 } from '#shared/features/mappings'
 import {
-  type Catalog, type FeatureRef, type InvocationResult, type MappingFeature, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitTransformV2,
+  type Catalog, type FeatureRef, type InvocationResult, type MappingFeature, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitConsoleV2, orbitTransformV2,
 } from '#shared/features/features'
 
 export const WORKSPACE = 'ws-playground'
@@ -21,20 +21,42 @@ const nameFields: Field[] = [{ name: 'firstName', type: 'string' }, { name: 'las
 export const A1 = defineVersion({ id: 'person-name', version: 1, name: 'Definition A', workspaceId: WORKSPACE, fields: nameFields })
 export const B1 = defineVersion({ id: 'full-name', version: 1, name: 'Definition B', workspaceId: WORKSPACE, fields: [{ name: 'fullName', type: 'string' }] })
 
+/**
+ * A composed sample (Phase 4.1): a local object, an optional local object whose properties are all
+ * optional, and a reference to another Definition version, pinned exactly. Console v2 accepts it;
+ * Console v1 and Transform v2 refuse it before running.
+ */
+const ADDRESS = defineVersion({ id: 'address', version: 1, name: 'Address', workspaceId: WORKSPACE, fields: [
+  { name: 'street', type: 'string' }, { name: 'city', type: 'string' }, { name: 'postcode', type: 'string', optional: true },
+] })
+export const APPLICANT = defineVersion({ id: 'applicant', version: 1, name: 'Applicant', workspaceId: WORKSPACE, fields: [
+  ...nameFields,
+  { name: 'contact', type: 'object', optional: true, fields: [{ name: 'email', type: 'string' }, { name: 'phone', type: 'string', optional: true }] },
+  { name: 'home', type: 'reference', definition: { id: ADDRESS.id, version: ADDRESS.version } },
+  { name: 'preferences', type: 'object', optional: true, fields: [{ name: 'newsletter', type: 'boolean', optional: true }] },
+] }, (ref) => (ref.id === ADDRESS.id && ref.version === ADDRESS.version ? ADDRESS : null))
+
 export const DEFINITIONS: readonly DefinitionVersion[] = deepFreeze([
   A1,
   defineVersion({ id: 'person-name', version: 2, name: 'Definition A', workspaceId: WORKSPACE, fields: [...nameFields, { name: 'email', type: 'string' }] }),
   defineVersion({ id: 'person-name-copy', version: 1, name: 'A look-alike of Definition A', workspaceId: WORKSPACE, fields: nameFields }),
   defineVersion({ id: 'their-person-name', version: 1, name: 'Another workspace’s Definition A', workspaceId: ELSEWHERE, fields: nameFields }),
   B1,
+  ADDRESS,
+  APPLICANT,
 ])
 
 /** What Record A can be pinned to, to see how exact identity and workspace scoping behave. */
-export const PINS: readonly { key: string; ref: DefinitionRef; note: string }[] = [
+export const PINS: readonly { key: string; ref: DefinitionRef; note: string; example?: Data }[] = [
   { key: 'a1', ref: { id: 'person-name', version: 1 }, note: 'What the Mapping reads.' },
   { key: 'a2', ref: { id: 'person-name', version: 2 }, note: 'A newer version of the same Definition, with an email field.' },
   { key: 'copy', ref: { id: 'person-name-copy', version: 1 }, note: 'The same fields, but a different Definition.' },
   { key: 'elsewhere', ref: { id: 'their-person-name', version: 1 }, note: 'Belongs to another workspace.' },
+  {
+    key: 'applicant', ref: { id: 'applicant', version: 1 },
+    note: 'Has local objects and a reference to Address · v1. Console v2 accepts it; Console v1 and the Transform don’t.',
+    example: { firstName: 'Ada', lastName: 'Lovelace', contact: { email: 'ada@example.com' }, home: { street: '12 St James’s Square', city: 'London' }, preferences: {} },
+  },
 ]
 
 export const INITIAL_DATA: Data = { firstName: '  Ada  ', lastName: 'Lovelace' }
@@ -61,6 +83,7 @@ export const INITIAL_MAPPING: Mapping = deepFreeze({
  */
 export const CONSOLES: readonly { feature: PassThroughFeature; label: string }[] = [
   { feature: orbitConsole, label: 'Orbit.Console v1' },
+  { feature: orbitConsoleV2, label: 'Orbit.Console v2' },
   {
     label: 'A Console that tries to change the value',
     feature: { id: 'playground.console-that-edits', version: 1, contract: 'pass-through', localObjects: 'unsupported', references: 'unsupported', run(input, { inspect }) {

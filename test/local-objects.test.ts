@@ -255,7 +255,8 @@ describe('Flat Definitions behave exactly as before', () => {
       { problem: 'wrong_type', path: ['lastName'], expected: 'string', actual: 'number' },
       { problem: 'unexpected', path: ['x'] },
     ])
-    for (const d of DEFINITIONS) {
+    // The flat ones: every sample except the composed Applicant (Phase 4.1), which Console v2 is for.
+    for (const d of DEFINITIONS.filter((x) => x.id !== 'applicant')) {
       expect(checkFields(d.fields)).toEqual([])
       expect(localObjectPaths(d.fields)).toEqual([])
       expect(defineVersion(d)).toEqual(d)
