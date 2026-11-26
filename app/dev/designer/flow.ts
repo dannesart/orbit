@@ -7,12 +7,14 @@
 // most one, nothing hands on to Record A, and there are no loops.
 //
 // Whether a connection makes sense comes from the Features' own contracts, nothing added:
-//   Console    'pass-through': accepts a Value of any Definition and hands on the same.
+//   Console    'pass-through': accepts a Value of any Definition its version accepts, hands on the same.
 //   Transform  'mapping': reads exactly its Mapping's `from` (identity and version), makes its `to`.
+// Which Definitions a step's Feature version accepts at all (flat only, or local objects and
+// references too) is the domain's own rule (contractCompatibility), for the version that step invokes.
 // The boundary (shared/features, invoke) still checks every invocation; this only says ahead of
 // time what it would say. Nothing here changes a contract, a Mapping or a Definition.
-import { type DefinitionRef, type DefinitionVersion, sameDefinition, sameFields } from '#shared/features/definitions'
-import { type Catalog, type FeatureRef, type Input, type InvocationResult, type MappingFeature, type PassThroughFeature, invoke } from '#shared/features/features'
+import { type DefinitionRef, type DefinitionVersion, propertyPathWords, sameDefinition, sameFields } from '#shared/features/definitions'
+import { type Catalog, type FeatureRef, type Input, type InvocationResult, type MappingFeature, type PassThroughFeature, contractCompatibility, invoke } from '#shared/features/features'
 import { RECORD_ID } from '../features/experiment'
 
 export const STEPS = ['record', 'console-in', 'transform', 'console-out'] as const
@@ -59,6 +61,9 @@ export interface Contracts {
   /** Definition versions by name, for words (and to recognise a look-alike). */
   readonly definitions: readonly DefinitionVersion[]
   readonly label: (ref: DefinitionRef) => string
+  /** The exact Feature version each step invokes, and how it's named for people. */
+  readonly features: StepFeatures
+  readonly featureLabel: (step: FeatureStep) => string
 }
 
 /**
@@ -73,9 +78,27 @@ export function handsOn(connections: readonly Connection[], contracts: Contracts
   return known
 }
 
-/** Why `ref` can't go into `target`, in words; null when it can. Only Transform is particular. */
+/**
+ * Why `ref` can't go into `target`, in words; null when it can. Transform reads exactly its
+ * Mapping's input; and any step's Feature version may not accept the Definition at all.
+ */
 function contractProblem(source: StepId, target: StepId, ref: DefinitionRef | undefined, contracts: Contracts, attempt: boolean): string | null {
-  if (target !== 'transform' || !ref) return null
+  if (target === 'record' || !ref) return null
+  const find = (r: DefinitionRef) => contracts.definitions.find((d) => sameDefinition(d, r))
+  const mismatch = target === 'transform' ? readsProblem(source, ref, contracts, attempt) : null
+  if (mismatch) return mismatch
+  // The very check the boundary makes before running, for the version this step invokes.
+  const definition = find(ref)
+  const refused = definition ? contractCompatibility(contracts.features[target], definition) : []
+  if (!refused.length) return null
+  const what = `it has objects or other Definitions inside it (${refused.map(propertyPathWords).join(', ')})`
+  return attempt
+    ? `${contracts.featureLabel(target)} doesn’t accept ${contracts.label(ref)}, which ${subject(source).replace(/^This/, 'this')} hands on: ${what}.`
+    : `${contracts.featureLabel(target)} doesn’t accept ${contracts.label(ref)}: ${what}.`
+}
+
+/** Transform reads exactly its Mapping's input Definition version. */
+function readsProblem(source: StepId, ref: DefinitionRef, contracts: Contracts, attempt: boolean): string | null {
   const reads = contracts.transform.reads
   if (sameDefinition(reads, ref)) return null
   const find = (r: DefinitionRef) => contracts.definitions.find((d) => sameDefinition(d, r))

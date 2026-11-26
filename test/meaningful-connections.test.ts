@@ -25,6 +25,8 @@ const contracts = (pinned: DefinitionRef = refOf(A1)): Contracts => ({
   transform: { reads: INITIAL_MAPPING.from, makes: INITIAL_MAPPING.to },
   definitions: DEFINITIONS,
   label: definitionLabel,
+  features: { 'console-in': orbitConsole, 'transform': orbitTransformV2, 'console-out': orbitConsole },
+  featureLabel: (step) => (step === 'transform' ? 'Orbit.Transform v2' : 'Orbit.Console v1'),
 })
 const run = (connections: readonly Connection[], cat = catalog(), console: PassThroughFeature = orbitConsole) =>
   runFlow(cat, connections, { features: { 'console-in': console, 'transform': orbitTransformV2, 'console-out': orbitConsole }, mapping: { id: INITIAL_MAPPING.id, version: INITIAL_MAPPING.version }, workspaceId: WORKSPACE })

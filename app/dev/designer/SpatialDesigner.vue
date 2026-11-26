@@ -90,6 +90,8 @@ const contracts = computed<Contracts>(() => ({
   transform: { reads: appliedMapping.value.from, makes: appliedMapping.value.to },
   definitions: allDefinitions(config.value),
   label,
+  features: features.value,
+  featureLabel: featureWords,
 }))
 const path = computed(() => pathOf(connections.value))
 const problems = computed(() => connectionProblems(connections.value, contracts.value))
