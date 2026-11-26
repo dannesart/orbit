@@ -3,7 +3,7 @@
 // derives from the chosen Feature version (support.ts), so the review, the preview and the source
 // picker follow that version without ever touching a Feature. Every check is the domain's own:
 // checkMapping for flat versions, checkNestedMapping for nested ones.
-import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type Resolve, isScalarField, kindOf } from '#shared/features/definitions'
+import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type Resolve, isScalarField, kindOf, propertyPathWords } from '#shared/features/definitions'
 import {
   type ArgumentType, type LocatedMappingIssue, type MappingIssue, type MappingProperty, type Path, type ReadablePath,
   checkMapping, checkNestedMapping, readablePaths,
@@ -63,6 +63,15 @@ export function typeWith(reading: Reading, source: MappingProperty['source'], in
 export function readables(reading: Reading, input: DefinitionVersion): ReadablePath[] {
   if (reading.nested) return readablePaths(input, reading.resolve)
   return input.fields.filter(isScalarField).map((f) => ({ path: [f.name], type: f.type, optional: f.optional === true ? [[f.name]] : [] }))
+}
+
+/**
+ * Why a value may be absent, in the one wording every source picker uses: "may be absent: contact is
+ * optional". From the domain-derived list of optional properties along its path; '' when none.
+ */
+export function absenceWords(optional: readonly PropertyPath[]): string {
+  if (!optional.length) return ''
+  return `may be absent: ${optional.map(propertyPathWords).join(', ')} ${optional.length === 1 ? 'is' : 'are'} optional`
 }
 
 /** The example's value at a path, if it has one there (a value, never a whole object). */

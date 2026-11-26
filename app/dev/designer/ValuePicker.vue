@@ -11,7 +11,7 @@ import { type DefinitionVersion, type Field, type FieldType, type PropertyPath, 
 import ShownText from './ShownText.vue'
 import type { Piece } from './parts'
 import type { Example } from './preview'
-import { FLAT, READING, exampleAt, readables } from './reading'
+import { FLAT, READING, absenceWords, exampleAt, readables } from './reading'
 
 const props = defineProps<{ fields: readonly Field[]; example: Example; inputLabel: string; need?: FieldType; heading?: string; input?: DefinitionVersion }>()
 const emit = defineEmits<{ pick: [Piece]; cancel: [] }>()
@@ -26,8 +26,10 @@ const exampleOf = (path: PropertyPath): Scalar | undefined => ('data' in props.e
 const unusable = (f: Field) => !isScalarField(f) || (!!props.need && f.type !== props.need)
 // Nested reading: every value at any depth, from the resolved contract.
 const nested = computed(() => (reading.value.nested && props.input ? readables(reading.value, props.input) : null))
+// What may make each top-level value absent, from the same domain-derived list.
+const absence = computed(() => new Map((props.input ? readables(reading.value, props.input) : []).map((r) => [r.path.length === 1 ? r.path[0]! : '', r.optional])))
+const flatAbsence = (f: Field) => absenceWords(absence.value.get(f.name) ?? [])
 const pickPath = (path: PropertyPath): Piece => (path.length === 1 ? { kind: 'field', name: path[0]!, trim: false } : { kind: 'nested', path, trim: false })
-const absentWords = (optional: readonly PropertyPath[]) => `${optional.map(propertyPathWords).join(', ')} ${optional.length === 1 ? 'is' : 'are'} optional`
 const option = 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ring-1 ring-slate-200 transition hover:bg-accent-50 hover:ring-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
 </script>
 
@@ -41,7 +43,7 @@ const option = 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left te
           :class="option"
           :disabled="!!need && r.type !== need"
           :data-value-path="JSON.stringify(r.path)"
-          :aria-label="`${propertyPathWords(r.path)}, ${typeWords[r.type]}${r.optional.length ? `, may be absent: ${absentWords(r.optional)}` : ''}`"
+          :aria-label="`${propertyPathWords(r.path)}, ${typeWords[r.type]}${r.optional.length ? `, ${absenceWords(r.optional)}` : ''}`"
           @click="emit('pick', pickPath(r.path))"
         >
           <span class="min-w-0">
@@ -50,7 +52,7 @@ const option = 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left te
             </span>
             <span class="block text-xs text-slate-500">
               {{ typeWords[r.type] }}<template v-if="need && r.type !== need">, can’t be used here</template>
-              <span v-if="r.optional.length" class="text-amber-700"> · may be absent: {{ absentWords(r.optional) }}</span>
+              <span v-if="r.optional.length" class="text-amber-700"> · {{ absenceWords(r.optional) }}</span>
             </span>
           </span>
           <ShownText v-if="exampleOf(r.path) !== undefined" class="ml-auto" :value="exampleOf(r.path)!" />
@@ -61,7 +63,7 @@ const option = 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left te
       <li v-for="f in fields" :key="f.name">
         <button type="button" :class="option" :disabled="unusable(f)" @click="emit('pick', { kind: 'field', name: f.name, trim: false })">
           <span class="font-mono font-medium text-slate-900">{{ f.name }}</span>
-          <span class="text-xs text-slate-500">{{ typeWords[f.type] }}<template v-if="unusable(f)">, can’t be used here</template></span>
+          <span class="text-xs text-slate-500">{{ typeWords[f.type] }}<template v-if="unusable(f)">, can’t be used here</template><span v-if="flatAbsence(f)" class="text-amber-700"> · {{ flatAbsence(f) }}</span></span>
           <ShownText v-if="exampleOf([f.name]) !== undefined" class="ml-auto" :value="exampleOf([f.name])!" />
         </button>
       </li>

@@ -11,7 +11,7 @@ import PieceEditor from './PieceEditor.vue'
 import ShownText from './ShownText.vue'
 import { type Piece, fromPiece } from './parts'
 import { type Example, previewSource } from './preview'
-import { FLAT, READING, type ReviewIssue, readables } from './reading'
+import { FLAT, READING, type ReviewIssue, absenceWords, readables } from './reading'
 
 const props = defineProps<{
   /** null while nothing makes this property yet. */
@@ -34,7 +34,7 @@ const fixed = () => emit('update:piece', { kind: 'literal', value: props.type ==
 const fromPath = (path: PropertyPath) => emit('update:piece', path.length === 1 ? { kind: 'field', name: path[0]!, trim: false } : { kind: 'nested', path, trim: false })
 const keyOf = (path: PropertyPath) => JSON.stringify(path)
 const chosenKey = computed(() => (props.piece?.kind === 'field' ? keyOf([props.piece.name]) : props.piece?.kind === 'nested' ? keyOf(props.piece.path) : ''))
-const optionWords = (r: { path: PropertyPath; optional: readonly PropertyPath[] }) => `${propertyPathWords(r.path)}${r.optional.length ? ' (may be absent)' : ''}`
+const optionWords = (r: { path: PropertyPath; optional: readonly PropertyPath[] }) => `${propertyPathWords(r.path)}${r.optional.length ? ` · ${absenceWords(r.optional)}` : ''}`
 const result = computed(() => (props.piece ? previewSource(fromPiece(props.piece), props.input, props.example, reading.value) : null))
 const words = computed(() => (props.type === 'number' ? 'number' : 'true-or-false'))
 const tab = 'rounded-lg px-3 py-1.5 text-sm font-medium ring-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-40'

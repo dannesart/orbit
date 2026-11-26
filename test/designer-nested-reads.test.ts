@@ -13,7 +13,7 @@ import { applyConfiguration, draftFrom, initialConfiguration, inputOf, mappingId
 import { INITIAL_STEP_FEATURES } from '../app/dev/designer/flow'
 import { fromPiece, toPiece } from '../app/dev/designer/parts'
 import { exampleFrom, previewOutput, previewSource, reviewDraft } from '../app/dev/designer/preview'
-import { FLAT, checkWith, readables } from '../app/dev/designer/reading'
+import { FLAT, absenceWords, checkWith, readables } from '../app/dev/designer/reading'
 import { transformSupport } from '../app/dev/designer/support'
 
 const resolve = (r: { id: string; version: number }) => DEFINITIONS.find((d) => d.id === r.id && d.version === r.version) ?? null
@@ -137,7 +137,7 @@ describe('The Transform’s input, chosen on purpose', () => {
   it('offers the input choice in Structure, never changing it by itself', () => {
     const structure = read('app/dev/designer/StructureEditor.vue')
     expect(structure).toMatch(/<select id="input-definition"[^>]*data-input-definition @change="setInput/)
-    expect(read('app/dev/designer/ValuePicker.vue')).toContain('· may be absent: {{ absentWords(r.optional) }}')
+    expect(read('app/dev/designer/ValuePicker.vue')).toContain('· {{ absenceWords(r.optional) }}')
   })
 })
 
@@ -150,5 +150,22 @@ describe('Historical evidence', () => {
     const second = runWith(orbitTransformV3)
     expect([first.evidence.feature, second.evidence.feature]).toEqual([{ id: 'orbit.transform', version: 2 }, { id: 'orbit.transform', version: 3 }])
     expect(first.evidence.mapping).toEqual(second.evidence.mapping)
+  })
+})
+
+describe('Potential absence, said the same way in every primitive source picker', () => {
+  it('words the domain-derived list once', () => {
+    expect(absenceWords([])).toBe('')
+    expect(absenceWords([['contact']])).toBe('may be absent: contact is optional')
+    expect(absenceWords([['contact'], ['contact', 'phone']])).toBe('may be absent: contact, contact › phone are optional')
+  })
+  it('is used by the value picker (top-level and nested) and the number and yes-or-no picker alike', () => {
+    const picker = read('app/dev/designer/ValuePicker.vue')
+    const scalar = read('app/dev/designer/ScalarEditor.vue')
+    expect(picker).toContain('{{ flatAbsence(f) }}')
+    expect(picker).toContain('· {{ absenceWords(r.optional) }}')
+    expect(picker).toContain('readables(reading.value, props.input)')
+    expect(scalar).toContain('absenceWords(r.optional)')
+    expect(scalar).not.toContain('(may be absent)')
   })
 })
