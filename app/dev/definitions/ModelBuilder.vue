@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// Building a Definition's model: a palette of property types (text, number, yes or no) beside the
-// properties themselves. A type is added by clicking it or by dragging it into the model (same
-// result, and a new property is required); its name field then has focus. Each property is a
+// Building a Definition's model: the properties themselves, with the toolbox of building blocks
+// (PropertyToolbox) to their right. A block is added by clicking it or by dragging it into the model
+// (same result, and a new property is required); its name field then has focus. Each property is a
 // compact row (type, name, required or optional); the row opens its own small editor (name, type,
 // required or optional, move, remove), one at a time. Order is presentation only (model.ts,
 // versionLike): rows move with their handle (drag, or arrow keys on it) or with Move up/down.
@@ -9,6 +9,7 @@
 import type { FieldType } from '#shared/features/definitions'
 import { type Draft, addField, moveField, removeField, typeWords, updateField } from './model'
 import DefinitionsIcon from './DefinitionsIcon.vue'
+import PropertyToolbox from './PropertyToolbox.vue'
 
 const props = defineProps<{ draft: Draft; idPrefix: string }>()
 const emit = defineEmits<{ 'update:draft': [Draft] }>()
@@ -111,32 +112,9 @@ const small = 'grid size-8 place-items-center rounded-lg text-slate-500 transiti
 </script>
 
 <template>
-  <div class="grid gap-6 lg:grid-cols-[11rem_minmax(0,1fr)]">
-    <!-- The palette -->
-    <section aria-labelledby="palette-heading">
-      <h2 id="palette-heading" class="text-xs font-medium text-slate-500">Add a property</h2>
-      <ul class="mt-2 flex gap-2 lg:flex-col">
-        <li v-for="t in TYPES" :key="t" class="flex-1 lg:flex-none">
-          <button
-            type="button"
-            draggable="true"
-            :data-add-type="t"
-            :aria-label="`Add a ${typeWords[t].toLowerCase()} property`"
-            class="flex w-full cursor-grab items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-left text-sm font-medium whitespace-nowrap text-slate-700 sm:gap-2.5 sm:px-3 transition hover:border-accent-300 hover:bg-accent-50/60 hover:text-accent-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 active:cursor-grabbing"
-            @click="add(t)"
-            @dragstart="startType($event, t)"
-            @dragend="end"
-          >
-            <span class="grid size-6 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600 sm:size-7">
-              <DefinitionsIcon :name="t" class="size-4" />
-            </span>
-            {{ typeWords[t] }}
-            <DefinitionsIcon name="plus" class="ml-auto hidden size-3.5 text-slate-400 lg:block" />
-          </button>
-        </li>
-      </ul>
-      <p class="mt-2 hidden text-xs text-slate-500 lg:block">Click, or drag into the model.</p>
-    </section>
+  <div class="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:gap-8">
+    <!-- The toolbox: right of the model on wide screens (in view while it scrolls), a strip above it otherwise -->
+    <PropertyToolbox class="min-w-0 self-start lg:sticky lg:top-6 lg:order-last" :target="null" @add="add($event)" @drag="startType" @dragend="end" />
 
     <!-- The model -->
     <section aria-labelledby="model-heading" class="min-w-0">
@@ -244,8 +222,8 @@ const small = 'grid size-8 place-items-center rounded-lg text-slate-500 transiti
           <span v-if="dragging === 'type'">Drop to add it here</span>
           <template v-else>
             <!-- Phones can't drag here: they're told what works. -->
-            <span class="sm:hidden">{{ draft.fields.length ? 'Choose a type above to add another' : 'Choose a type above to add the first property' }}</span>
-            <span class="hidden sm:inline">{{ draft.fields.length ? 'Drag a type here, or choose one to add another property' : 'Drag a type here, or choose one, to add the first property' }}</span>
+            <span class="lg:hidden">{{ draft.fields.length ? 'Choose a type above to add another' : 'Choose a type above to add the first property' }}</span>
+            <span class="hidden lg:inline">{{ draft.fields.length ? 'Drag a type here, or choose one to add another property' : 'Drag a type here, or choose one, to add the first property' }}</span>
           </template>
         </p>
       </div>

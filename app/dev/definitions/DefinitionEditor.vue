@@ -277,7 +277,7 @@ onMounted(() => heading.value?.focus())
       <!-- Model: building it from property types; its rows are how it reads -->
       <div v-else-if="segment === 'model' && draft">
         <ModelBuilder :draft="draft" :id-prefix="part" @update:draft="part === 'new' ? updateNew({ draft: $event }) : setEvolving(workspace.id, id, $event)" />
-        <div class="lg:pl-[12.5rem]">
+        <div class="lg:pr-[19rem]">
           <div v-if="part === 'next' && evolving" class="mt-6 rounded-2xl bg-slate-50 p-4 text-sm ring-1 ring-slate-200/70" aria-live="polite">
             <h2 class="font-semibold text-slate-900">What changes from version {{ evolving.basedOn }}</h2>
             <p v-if="!changes.length" class="mt-1 text-slate-500">Nothing yet.</p>

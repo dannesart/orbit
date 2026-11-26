@@ -453,12 +453,14 @@ describe('The Definitions Studio: a catalogue, an inspector, and editing on purp
   })
 })
 
-describe('The model builder: a palette, compact rows, and editing in place', () => {
+describe('The model builder: a toolbox, compact rows, and editing in place', () => {
   const builder = source('app/dev/definitions/ModelBuilder.vue')
+  const toolbox = source('app/dev/definitions/PropertyToolbox.vue')
   const rows = builder.slice(builder.indexOf('<!-- The model -->'))
 
   it('adds a type by click or by drag, with one result: a required property whose name has focus', () => {
-    expect(builder).toMatch(/@click="add\(t\)"\s*@dragstart="startType\(\$event, t\)"/)
+    expect(toolbox).toMatch(/@click="emit\('add', t\)"\s*@dragstart="emit\('drag', \$event, t\)"/)
+    expect(builder).toMatch(/<PropertyToolbox[^>]*@add="add\(\$event\)" @drag="startType"/)
     expect(builder).toMatch(/if \(type && TYPES\.includes\(type\)\) add\(type, index\)/)
     const add = builder.slice(builder.indexOf('function add('), builder.indexOf('function remove('))
     expect(add).toContain('addField(props.draft, type)')
@@ -485,8 +487,8 @@ describe('The model builder: a palette, compact rows, and editing in place', () 
     expect(builder).toContain('moveField(props.draft, key, index > from ? index - 1 : index)')
   })
 
-  it('never needs dragging: the palette is buttons, and a drop target is always shown', () => {
-    expect(builder).toMatch(/<button\s+type="button"\s+draggable="true"\s+:data-add-type="t"/)
+  it('never needs dragging: the toolbox is buttons, and a drop target is always shown', () => {
+    expect(toolbox).toMatch(/<button\s+type="button"\s+draggable="true"\s+:data-add-type="t"/)
     expect(builder).toContain("'Drag a type here, or choose one, to add the first property'")
   })
 })

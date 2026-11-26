@@ -7,7 +7,7 @@
 <script setup lang="ts">
 export type DefinitionsIconName =
   | 'definition' | 'lock' | 'plus' | 'chevron' | 'pencil' | 'close'
-  | 'string' | 'number' | 'boolean' | 'grip' | 'up' | 'down' | 'reset' | 'flask'
+  | 'string' | 'number' | 'boolean' | 'grip' | 'up' | 'down' | 'reset' | 'flask' | 'search'
 defineProps<{ name: DefinitionsIconName }>()
 </script>
 
@@ -39,6 +39,10 @@ defineProps<{ name: DefinitionsIconName }>()
     <template v-else-if="name === 'reset'">
       <path d="M3 8a5 5 0 1 0 1.5-3.55" />
       <path d="M3 2.75V5.5h2.75" />
+    </template>
+    <template v-else-if="name === 'search'">
+      <circle cx="7" cy="7" r="4.25" />
+      <path d="m10.25 10.25 3 3" />
     </template>
     <template v-else-if="name === 'flask'">
       <path d="M6.25 2.75h3.5M6.75 2.75v3.5L3.4 11.9a1 1 0 0 0 .87 1.35h7.46a1 1 0 0 0 .87-1.35L9.25 6.25v-3.5" />
