@@ -168,6 +168,7 @@ export function describeMappingIssue(issue: MappingIssue): string {
     case 'may_be_absent': return `${issue.optional.join(', ')} may be missing, but this property is required. Orbit won’t invent a value.`
     case 'object_property': return `${issue.name} is an object. A source can read text, numbers and yes or no, not a whole object.`
     case 'absence_unsupported': return `${issue.optional.join(', ')} may be missing, and this version of the Transform has no behaviour for that.`
+    case 'unsupported_source': return 'This version of the Transform doesn’t understand this kind of source.'
   }
 }
 

@@ -1,4 +1,4 @@
-import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, type Scalar, deepFreeze, frozenCopy, kindOf, sameData } from './definitions'
+import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, type PropertyPath, type Scalar, deepFreeze, frozenCopy, kindOf, sameData } from './definitions'
 
 /**
  * Mappings: how Orbit.Transform builds one object from another.
@@ -27,6 +27,11 @@ import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, 
  * Local objects and references. A source reads only top-level value properties: never a local object
  * or a referenced Definition, and nothing inside one (object_property). Nested reads and nested
  * output are future work.
+ *
+ * The source language is closed. A source of any other kind (one a later Transform version may
+ * understand, or something malformed) is refused before anything runs (unsupported_source), never
+ * guessed at and never evaluated: a version only runs what it was published to run. Sources of the
+ * kinds below, well formed, mean exactly what they always meant.
  */
 
 export type Expression =
@@ -94,11 +99,44 @@ export type MappingIssue =
   | { readonly problem: 'object_property'; readonly path: Path; readonly name: string }
   /** The source reads an optional input property, and the Feature version applying it has no behaviour for absence. */
   | { readonly problem: 'absence_unsupported'; readonly path: Path; readonly optional: readonly string[] }
+  /**
+   * Not a source this language has (an unknown kind, or a known kind that isn't well formed). Says
+   * where, never what it held: it may be anything.
+   */
+  | { readonly problem: 'unsupported_source'; readonly path: Path }
+
+/**
+ * Where a problem in a nested Mapping is (for a later Transform version; v1 and v2 use Path): the
+ * output property it's about, as a PropertyPath (['contact', 'email']), and where inside that
+ * property's source, as steps into the expression (function names and argument or item positions,
+ * as Path does after the property today). Two separate lists, never one joined path, so an output
+ * property named like a function, or a number, can't be mistaken for a step into its source.
+ */
+export interface MappingProblemLocation {
+  readonly output: PropertyPath
+  readonly expression: ExpressionPath
+}
+/** Steps into a source: a function's name, then an argument's or a list item's position. */
+export type ExpressionPath = readonly (string | number)[]
 
 /** `reads`: the optional input properties the argument depends on (absent if any of them is). */
 type Checked = { type: ArgumentType | 'invalid'; issues: MappingIssue[]; reads: string[] }
 
+/** Whether something is a source of a kind this language has, with each part of the shape that kind needs. */
+function wellFormed(arg: unknown): arg is Argument {
+  if (kindOf(arg) !== 'object') return false
+  const a = arg as Record<string, unknown>
+  switch (a.kind) {
+    case 'literal': return Object.hasOwn(a, 'value')
+    case 'property': return typeof a.name === 'string'
+    case 'list': return Array.isArray(a.items)
+    case 'call': return typeof a.fn === 'string' && Array.isArray(a.args)
+    default: return false
+  }
+}
+
 function checkArgument(arg: Argument, input: DefinitionVersion, path: Path): Checked {
+  if (!wellFormed(arg)) return { type: 'invalid', issues: [{ problem: 'unsupported_source', path }], reads: [] }
   switch (arg.kind) {
     case 'literal': {
       const kind = kindOf(arg.value)
@@ -247,5 +285,7 @@ export function formatSource(arg: Argument): string {
       return `[${arg.items.map(formatSource).join(', ')}]`
     case 'call':
       return `${arg.fn}(${arg.args.map(formatSource).join(', ')})`
+    default:
+      return '?'
   }
 }
