@@ -56,6 +56,8 @@ export function previewSource(source: Expression, input: DefinitionVersion, exam
   // The very evaluation the Transform runs with: the same result, the same absence.
   const result = evaluatePresent(source, example.data)
   if (result.present) return kindOf(result.value) === 'object' ? { object: result.value as Data } : { value: result.value as Scalar }
+  // A built object is left out only by its condition: the source object the example doesn't have.
+  if (source.kind === 'construct' && source.presence.when === 'present') return { absent: [propertyPathWords(source.presence.source)] }
   return { absent: absent[0]!.filter((path) => !presentIn(example.data, path)).map(propertyPathWords) }
 }
 
@@ -147,7 +149,8 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
     const own: string[] = []
     const type = checked[index]!.types[0]
     if (type && type !== field.type) own.push(`${targetLabel} needs ${typeWords[field.type]} here, but this makes ${typeWords[type]}.`)
-    problems.push(...own.map((p) => `${field.name}: ${p}`), ...issues[index]!.map((i) => `${field.name}: ${friendlyIssue(i)}`))
+    // Each problem where it is: inside a built object, by its path ("Contact › Email").
+    problems.push(...own.map((p) => `${field.name}: ${p}`), ...issues[index]!.map((i) => `${'at' in i ? propertyPathWords(i.at.output) : field.name}: ${friendlyIssue(i)}`))
     return { name: field.name, expected: field.type, optional, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }
   })
 
@@ -188,9 +191,14 @@ export interface OutputPreview {
 /** The object the draft would make from the example, property by property, absent ones left out. */
 export function previewOutput(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, example: Example, reading: Reading = FLAT): OutputPreview {
   const values = properties.map((p) => previewSource(p.source, input, example, reading))
-  if (!values.every((v) => 'value' in v || 'absent' in v) || new Set(properties.map((p) => p.name)).size !== properties.length) return { values, fits: null }
-  const output = Object.fromEntries(properties.flatMap((p, i) => ('value' in values[i]! ? [[p.name, (values[i] as { value: Scalar }).value]] : [])))
-  return { values, fits: { issues: validate(target, output).map(describeIssue) } }
+  if (!values.every((v) => 'value' in v || 'absent' in v || 'object' in v) || new Set(properties.map((p) => p.name)).size !== properties.length) return { values, fits: null }
+  const output = Object.fromEntries(properties.flatMap((p, i): [string, unknown][] => {
+    const v = values[i]!
+    return 'value' in v ? [[p.name, v.value]] : 'object' in v ? [[p.name, v.object]] : []
+  }))
+  // The one validator, through the same resolver, at every depth.
+  if (checkContract(target, reading.resolve).length) return { values, fits: null }
+  return { values, fits: { issues: validate(target, output, reading.resolve).map(describeIssue) } }
 }
 
 // --- Whitespace you can see ---

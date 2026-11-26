@@ -11,7 +11,8 @@ import PieceEditor from './PieceEditor.vue'
 import ShownText from './ShownText.vue'
 import { type Piece, fromPiece } from './parts'
 import { type Example, previewSource } from './preview'
-import { FLAT, READING, type ReviewIssue, absenceWords, readables } from './reading'
+import { notGuaranteed } from '#shared/features/mappings'
+import { FLAT, GUARANTEED, READING, type ReviewIssue, absenceWords, readables } from './reading'
 
 const props = defineProps<{
   /** null while nothing makes this property yet. */
@@ -27,7 +28,8 @@ const emit = defineEmits<{ 'update:piece': [Piece] }>()
 
 // The input's values of this type: top-level ones, and nested ones when the version reads them.
 const reading = inject(READING, ref(FLAT))
-const compatible = computed(() => readables(reading.value, props.input).filter((r) => r.type === props.type))
+const guaranteed = inject(GUARANTEED, ref([]))
+const compatible = computed(() => readables(reading.value, props.input).filter((r) => r.type === props.type).map((r) => ({ ...r, optional: notGuaranteed(r.optional, guaranteed.value) })))
 const mode = computed(() => (props.piece === null ? null : props.piece.kind === 'field' || props.piece.kind === 'nested' ? 'field' : props.piece.kind === 'literal' ? 'fixed' : 'other'))
 const fixed = () => emit('update:piece', { kind: 'literal', value: props.type === 'number' ? 0 : true })
 /** A value by its path: a top-level one is a field, a deeper one a nested source. Exact names, as listed. */

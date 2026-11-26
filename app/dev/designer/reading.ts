@@ -19,6 +19,12 @@ export interface Reading {
 export const FLAT: Reading = Object.freeze({ nested: false, resolve: () => null })
 /** The page provides the reading of the Transform version the step invokes. */
 export const READING: InjectionKey<Readonly<Ref<Reading>>> = Symbol('reading')
+/**
+ * The source objects known to be present where a value is being chosen: each enclosing
+ * construction's presence condition (Transform v3's presence guarantees). Applied with the domain's
+ * own rule (notGuaranteed), never interpreted here. None outside constructions.
+ */
+export const GUARANTEED: InjectionKey<Readonly<Ref<readonly PropertyPath[]>>> = Symbol('guaranteed')
 
 /**
  * A problem as the Designer places it: flat versions' issues as they are; nested versions' located
@@ -43,7 +49,9 @@ export function checkWith(reading: Reading, properties: readonly MappingProperty
   const c = checkNestedMapping({ properties }, input, output, { resolve: reading.resolve })
   const indexOf = (name: string) => Math.max(0, properties.findIndex((p) => p.name === name))
   return {
-    issues: c.issues.map((i) => ({ ...i, path: [i.at.output[0] || indexOf(i.at.output[0] ?? ''), ...i.at.expression] })),
+    // [output property, ...deeper output properties, ...place in the source]: a construction has no
+    // expression, and a value has no deeper properties, so the two never mix.
+    issues: c.issues.map((i) => ({ ...i, path: [i.at.output[0] || indexOf(i.at.output[0] ?? ''), ...i.at.output.slice(1), ...i.at.expression] })),
     types: c.types,
     absent: c.absent,
   }

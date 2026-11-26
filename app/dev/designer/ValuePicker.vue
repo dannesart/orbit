@@ -11,11 +11,14 @@ import { type DefinitionVersion, type Field, type FieldType, type PropertyPath, 
 import ShownText from './ShownText.vue'
 import type { Piece } from './parts'
 import type { Example } from './preview'
-import { FLAT, READING, absenceWords, exampleAt, readables } from './reading'
+import { notGuaranteed } from '#shared/features/mappings'
+import { FLAT, GUARANTEED, READING, absenceWords, exampleAt, readables } from './reading'
 
 const props = defineProps<{ fields: readonly Field[]; example: Example; inputLabel: string; need?: FieldType; heading?: string; input?: DefinitionVersion }>()
 const emit = defineEmits<{ pick: [Piece]; cancel: [] }>()
 const reading = inject(READING, ref(FLAT))
+// Inside a construction built when a source object is present, what that guarantees (the domain's rule).
+const guaranteed = inject(GUARANTEED, ref([]))
 
 const root = ref<HTMLElement>()
 onMounted(() => root.value?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus())
@@ -25,7 +28,7 @@ const typeWords: Record<PropertyType, string> = { string: 'text', number: 'numbe
 const exampleOf = (path: PropertyPath): Scalar | undefined => ('data' in props.example ? exampleAt(props.example.data, path) : undefined)
 const unusable = (f: Field) => !isScalarField(f) || (!!props.need && f.type !== props.need)
 // Nested reading: every value at any depth, from the resolved contract.
-const nested = computed(() => (reading.value.nested && props.input ? readables(reading.value, props.input) : null))
+const nested = computed(() => (reading.value.nested && props.input ? readables(reading.value, props.input).map((r) => ({ ...r, optional: notGuaranteed(r.optional, guaranteed.value) })) : null))
 // What may make each top-level value absent, from the same domain-derived list.
 const absence = computed(() => new Map((props.input ? readables(reading.value, props.input) : []).map((r) => [r.path.length === 1 ? r.path[0]! : '', r.optional])))
 const flatAbsence = (f: Field) => absenceWords(absence.value.get(f.name) ?? [])

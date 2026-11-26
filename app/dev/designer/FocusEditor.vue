@@ -118,7 +118,7 @@ const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visib
               <span class="text-xs text-slate-500">{{ typeWords[selected.expected] }}</span>
             </div>
             <p v-if="selected.state === 'unsupported'" class="text-sm text-slate-600" data-unsupported-property>{{ selected.name }} is {{ selected.expected === 'reference' ? 'another Definition' : 'an object' }}. This Transform version can’t make it, so there’s nothing to map here.</p>
-            <PropertyEditor v-else :draft="draft" :field="selected" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" />
+            <PropertyEditor v-else :output="target.definition" :draft="draft" :field="selected" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" />
           </section>
           <p v-else-if="selected" class="text-sm text-slate-500">This property has no name yet. Name it in Structure first.</p>
           <p v-else class="text-sm text-slate-500">The output has no properties yet. Add some in Structure.</p>

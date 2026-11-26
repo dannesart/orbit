@@ -5,7 +5,7 @@
 // the original Expression untouched, for the recursive SourceEditor. Nothing here simplifies,
 // normalizes or rewrites a tree: only an explicit edit by the person changes it.
 import type { PropertyPath } from '#shared/features/definitions'
-import type { Expression, MappingProperty, Path } from '#shared/features/mappings'
+import type { Expression, MappingProperty, Path, Presence } from '#shared/features/mappings'
 import type { ReviewIssue } from './reading'
 
 /**
@@ -15,6 +15,7 @@ import type { ReviewIssue } from './reading'
  *   text      literal text (a space is text too)
  *   literal   a fixed number, or true or false
  *   combine   values joined in order, with an optional separator between them (join)
+ *   construct an output object built property by property, with its presence (Transform v3)
  *   advanced  any other tree, kept exactly as it is
  * `trim` is "Remove spaces from both ends" (the trim function) applied to the value.
  */
@@ -24,6 +25,7 @@ export type Piece =
   | { readonly kind: 'text'; readonly value: string; readonly trim: boolean }
   | { readonly kind: 'literal'; readonly value: number | boolean }
   | { readonly kind: 'combine'; readonly parts: readonly Piece[]; readonly separator: string; readonly trim: boolean }
+  | { readonly kind: 'construct'; readonly presence: Presence; readonly properties: readonly DraftProperty[] }
   | { readonly kind: 'advanced'; readonly expression: Expression }
 
 /** A Mapping property while it is being edited: its name and its value as a Piece. */
@@ -46,6 +48,9 @@ export function toPiece(e: Expression): Piece {
   }
   if (e?.kind === 'path' && hasKeys(e, ['kind', 'path']) && Array.isArray(e.path) && e.path.length >= 2 && e.path.every((n) => typeof n === 'string')) {
     return { kind: 'nested', path: e.path, trim: false }
+  }
+  if (e?.kind === 'construct' && hasKeys(e, ['kind', 'presence', 'properties']) && Array.isArray(e.properties)) {
+    return { kind: 'construct', presence: e.presence, properties: toDraft(e.properties) }
   }
   if (e?.kind === 'literal' && hasKeys(e, ['kind', 'value']) && typeof e.value === 'string') {
     return { kind: 'text', value: e.value, trim: false }
@@ -78,6 +83,7 @@ export function fromPiece(piece: Piece): Expression {
   let e: Expression
   switch (piece.kind) {
     case 'advanced': return piece.expression
+    case 'construct': return { kind: 'construct', presence: piece.presence, properties: fromDraft(piece.properties) }
     case 'literal': return { kind: 'literal', value: piece.value }
     case 'field': e = { kind: 'property', name: piece.name }; break
     case 'nested': e = { kind: 'path', path: [...piece.path] }; break

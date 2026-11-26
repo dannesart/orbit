@@ -49,7 +49,7 @@ const words = computed(() => {
     <p v-if="plan.changes && blocked" class="mt-2 text-xs text-slate-600">
       <!-- Not something to fix here: the Transform version can't take these contracts (said above). -->
       <span v-if="unsupported" class="text-slate-600" data-apply-unsupported>Apply isn’t available: this Transform version doesn’t support these contracts.</span>
-      <span v-else-if="errors.length" class="text-red-700">{{ errors.length === 1 ? 'One thing' : `${errors.length} things` }} to fix before applying: {{ errors[0] }}<template v-if="missing.length"> {{ missing.length === 1 ? 'One property still needs' : `${missing.length} properties still need` }} a value.</template></span>
+      <span v-else-if="errors.length" class="text-red-700">{{ errors.length === 1 ? 'One thing' : `${errors.length} things` }} to fix before applying: {{ errors[0] }}<template v-if="missing.length">{{ ' ' }}{{ missing.length === 1 ? 'One property still needs' : `${missing.length} properties still need` }} a value.</template></span>
       <span v-else>{{ next }} Apply is available once every property has one.</span>    </p>
   </div>
 </template>

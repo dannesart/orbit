@@ -244,8 +244,8 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
       </div>
     </template>
 
-    <!-- Anything else: the expression itself, in the recursive editor -->
-    <template v-else>
+    <!-- Anything else: the expression itself, in the recursive editor (a built object has its own editor) -->
+    <template v-else-if="piece.kind === 'advanced'">
       <div class="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
         <p class="text-xs text-slate-600">
           <span class="font-semibold">Advanced.</span>

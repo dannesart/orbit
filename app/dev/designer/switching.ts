@@ -22,8 +22,9 @@ function typeOf(property: DraftProperty, input: DefinitionVersion, reading: Read
 
 /** Whether this property's mapping can fill the target's property of the same name. */
 function fits(property: DraftProperty, field: Field, input: DefinitionVersion, reading: Reading): boolean {
-  // A local object or a reference can't be made by a Mapping (no nested output yet), so nothing fits one.
-  if (property.name !== field.name || !isScalarField(field)) return false
+  // An object property is built (a construction), never made from a value.
+  if (property.name !== field.name) return false
+  if (!isScalarField(field)) return property.piece.kind === 'construct'
   const type = typeOf(property, input, reading)
   return type === null || type === field.type
 }
