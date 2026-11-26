@@ -1,6 +1,6 @@
 import {
   type DefinitionRef, type DefinitionVersion, type Data, type Field, type FieldType, type PropertyPath, type Resolve, type Scalar,
-  MAX_OBJECT_LEVELS, deepFreeze, frozenCopy, kindOf, resolveReference, sameData,
+  MAX_OBJECT_LEVELS, deepFreeze, frozenCopy, isScalarField, kindOf, resolveReference, sameData,
 } from './definitions'
 
 /**
@@ -56,6 +56,31 @@ import {
  * refuse a path source like any source they don't have (unsupported_source), and their problems keep
  * their Path. Problems checked for nested sources are located by MappingProblemLocation.
  *
+ * Building objects (Transform v3, provisional). An output property that is a local object or a
+ * reference to a Definition version is built property by property: its source is a construction,
+ * { kind: 'construct', presence, properties }, whose properties are the object's own (each a value
+ * expression or, deeper, a construction), checked against exactly that object's contract (a
+ * referenced version resolved exactly). An object's properties are only ever made by its own
+ * construction, so no output property can be made twice by overlapping operations. A construction
+ * is a property's whole source: never a value inside an expression.
+ *
+ * Presence. A required output object is always built. An optional one is left out (not in the
+ * Mapping), always built, or built when a source object is present ({ when: 'present', source }).
+ * Never left out because its properties ended up absent, and never filled in: an object always built
+ * may be empty ({}) when its contract allows that. Inside a construction, every required property
+ * must be made (missing_output_property) by something that can't be absent there (may_be_absent),
+ * of the right type, and nothing the object doesn't have: decided before running.
+ *
+ * Presence guarantees. Within a construction built when source object P is present, P and every
+ * property on its path are known to be present; anything a source reads that is optional only
+ * because of them isn't absent there. Other optional properties (P's own optional children, anything
+ * unrelated) still may be. Guarantees pass to nested constructions and add up; they never reach a
+ * sibling or anything outside. The absence model is unchanged: a source's absence is still the list
+ * of optional properties along what it reads; a guarantee only removes the ones it covers. At run
+ * time the construction is only made when P is present, so evaluation agrees.
+ *
+ * Whole-value copying is reserved (Phase 4.4): no source of that kind exists yet.
+ *
  * The source language is closed. A source of any other kind (one a later Transform version may
  * understand, or something malformed) is refused before anything runs (unsupported_source), never
  * guessed at and never evaluated: a version only runs what it was published to run. Sources of the
@@ -68,6 +93,11 @@ export type Expression =
   | { readonly kind: 'call'; readonly fn: string; readonly args: readonly Argument[] }
   /** A value inside a local object or a referenced Definition: exact names, at least two (Transform v3). */
   | { readonly kind: 'path'; readonly path: PropertyPath }
+  /** An output object built property by property (Transform v3): a property's whole source, never a value inside one. */
+  | { readonly kind: 'construct'; readonly presence: Presence; readonly properties: readonly MappingProperty[] }
+
+/** When a constructed object is made: always, or only when a source object (by exact path, one name or more) is present. */
+export type Presence = { readonly when: 'always' } | { readonly when: 'present'; readonly source: PropertyPath }
 
 /** A function's argument: one expression, or a list of them where the function takes a list. */
 export type Argument = Expression | { readonly kind: 'list'; readonly items: readonly Expression[] }
@@ -167,6 +197,24 @@ export type FoundMappingIssue =
   | { readonly problem: 'path_to_object'; readonly path: Path }
   /** A reference along the path doesn't resolve here (missing, or not allowed). */
   | { readonly problem: 'unresolved_path'; readonly path: Path; readonly step: number }
+  /** A construction isn't well formed (its presence or its properties). */
+  | { readonly problem: 'malformed_construction'; readonly path: Path }
+  /** A construction used as a value inside an expression: it can only be a property's whole source. */
+  | { readonly problem: 'construction_in_expression'; readonly path: Path }
+  /** A construction for an output property that is a value, not an object. */
+  | { readonly problem: 'construct_into_value'; readonly path: Path }
+  /** A value expression for an output property that is an object (build it instead). */
+  | { readonly problem: 'value_into_object'; readonly path: Path }
+  /** Inside a construction: a property the object's contract doesn't have. */
+  | { readonly problem: 'unknown_output_property'; readonly path: Path; readonly name: string }
+  /** Inside a construction: a required property nothing makes. */
+  | { readonly problem: 'missing_output_property'; readonly path: Path; readonly name: string }
+  /** Inside a construction: a value of another type than the property's. */
+  | { readonly problem: 'wrong_output_type'; readonly path: Path; readonly expected: FieldType; readonly actual: FieldType }
+  /** A presence condition that names a value, not a source object. */
+  | { readonly problem: 'condition_not_object'; readonly path: Path }
+  /** An output reference that doesn't resolve here (missing, or not allowed). */
+  | { readonly problem: 'unresolved_output'; readonly path: Path }
 
 type Locate<T> = T extends { readonly path: Path } ? { readonly [K in keyof T as K extends 'path' ? never : K]: T[K] } & { readonly at: MappingProblemLocation } : never
 /** A problem with a Mapping checked for nested sources (Transform v3): located in two parts. */
@@ -241,6 +289,51 @@ export function resolvePath(input: DefinitionVersion, path: unknown, resolve?: R
   return { problem: 'malformed_path' }
 }
 
+type ObjectResolved = { readonly object: { readonly path: PropertyPath; readonly optional: readonly PropertyPath[] } }
+  | { readonly problem: 'malformed_path' | 'condition_not_object' }
+  | { readonly problem: 'unknown_path_property' | 'path_through_value' | 'unresolved_path'; readonly step: number }
+
+/**
+ * Where a presence condition leads: a source object (a local object or a referenced Definition, one
+ * name or more), and the optional properties along its path; or why it doesn't.
+ */
+export function resolveObjectPath(input: DefinitionVersion, path: unknown, resolve?: Resolve): ObjectResolved {
+  if (!Array.isArray(path) || path.length < 1 || path.length > MAX_OBJECT_LEVELS || !path.every((n) => typeof n === 'string')) return { problem: 'malformed_path' }
+  let fields: readonly Field[] = input.fields
+  let owner = input.workspaceId
+  const optional: PropertyPath[] = []
+  for (const [step, name] of path.entries()) {
+    const field = fields.find((f) => f.name === name)
+    if (!field) return { problem: 'unknown_path_property', step }
+    if (field.optional === true) optional.push(path.slice(0, step + 1))
+    const last = step === path.length - 1
+    if (field.type === 'object') fields = field.fields
+    else if (field.type === 'reference') {
+      if (last) break
+      const found = resolveReference(field.definition, owner, resolve)
+      if ('problem' in found) return { problem: 'unresolved_path', step }
+      fields = found.version.fields
+      owner = found.version.workspaceId
+    } else return last ? { problem: 'condition_not_object' } : { problem: 'path_through_value', step }
+  }
+  return { object: { path: [...path], optional } }
+}
+
+/** Whether `prefix` is `path` or one of the properties on its way. */
+const isPrefix = (prefix: PropertyPath, path: PropertyPath) => prefix.length <= path.length && prefix.every((n, i) => n === path[i])
+/** The optional properties a guarantee doesn't cover: those not on the path of an object known to be present. */
+const notGuaranteed = (optional: readonly PropertyPath[], guaranteed: readonly PropertyPath[]) =>
+  optional.filter((o) => !guaranteed.some((g) => isPrefix(o, g)))
+
+const isConstruction = (source: unknown): source is Extract<Expression, { kind: 'construct' }> =>
+  kindOf(source) === 'object' && (source as { kind?: unknown }).kind === 'construct'
+/** A construction with each part of its shape: a presence, and properties with names. */
+function wellFormedConstruction(node: Extract<Expression, { kind: 'construct' }>): boolean {
+  const presence = node.presence as unknown as Record<string, unknown> | undefined
+  const presenceOk = kindOf(presence) === 'object' && (presence!.when === 'always' || (presence!.when === 'present' && Object.hasOwn(presence!, 'source')))
+  return presenceOk && Array.isArray(node.properties) && node.properties.every((p) => kindOf(p) === 'object' && typeof p.name === 'string')
+}
+
 /**
  * Every value a source may read in a contract, depth-first in the contract's order: top-level ones
  * (read as 'property') and nested ones (read as 'path'). A reference that doesn't resolve here
@@ -265,8 +358,10 @@ export function readablePaths(input: DefinitionVersion, resolve?: Resolve): Read
 }
 
 function checkArgument(arg: Argument, input: DefinitionVersion, path: Path, accepts: Accepts): Checked {
+  if (accepts.nested && isConstruction(arg)) return { type: 'invalid', issues: [{ problem: 'construction_in_expression', path }], reads: [] }
   if (!wellFormed(arg, accepts)) return { type: 'invalid', issues: [{ problem: 'unsupported_source', path }], reads: [] }
   switch (arg.kind) {
+    case 'construct': return { type: 'invalid', issues: [{ problem: 'construction_in_expression', path }], reads: [] }
     case 'literal': {
       const kind = kindOf(arg.value)
       return kind === 'string' || kind === 'number' || kind === 'boolean'
@@ -348,32 +443,92 @@ export function checkMapping(mapping: Pick<Mapping, 'properties'>, input: Defini
  */
 export function checkNestedMapping(mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output: DefinitionVersion | undefined, options: { absence?: 'unsupported' | 'omitted'; resolve?: Resolve } = {}) {
   const { found, types, absent } = checkProperties(mapping, input, output, options.absence ?? 'omitted', { nested: true, resolve: options.resolve })
-  const issues = found.map(({ name, issue }): LocatedMappingIssue => {
+  const issues = found.map(({ output, issue }): LocatedMappingIssue => {
     const { path, ...rest } = issue
-    return { ...rest, at: { output: [name], expression: path.slice(1) } } as LocatedMappingIssue
+    return { ...rest, at: { output, expression: path.slice(1) } } as LocatedMappingIssue
   })
   return { issues, types, absent }
 }
 
+/**
+ * Checks properties at every level. At the top, the output's properties as flat versions always
+ * have; inside a construction (nested versions only), against that object's own contract too:
+ * nothing it doesn't have, every required property made, each of its type. `guaranteed`: the source
+ * objects known to be present here (presence guarantees from enclosing constructions).
+ */
 function checkProperties(mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output: DefinitionVersion | undefined, absence: 'unsupported' | 'omitted', accepts: Accepts) {
-  const found: { name: string; issue: FoundMappingIssue }[] = []
+  const found: { output: PropertyPath; issue: FoundMappingIssue }[] = []
   const types: (FieldType | null)[] = []
   const absent: PropertyPath[][] = []
-  const seen = new Set<string>()
-  for (const [i, { name, source }] of mapping.properties.entries()) {
-    const path = [name || i]
-    const add = (issue: FoundMappingIssue) => found.push({ name, issue })
-    if (!name) add({ problem: 'empty_name', path })
-    else if (seen.has(name)) add({ problem: 'duplicate_name', path })
-    seen.add(name)
-    const checked = checkSource(source, input, path, accepts)
-    checked.issues.forEach(add)
-    types.push(checked.type)
-    absent.push(checked.reads)
-    const target = output?.fields.find((f) => f.name === name)
-    if (checked.reads.length && absence === 'unsupported') add({ problem: 'absence_unsupported', path, optional: checked.reads })
-    else if (checked.reads.length && target && target.optional !== true) add({ problem: 'may_be_absent', path, optional: checked.reads })
+
+  function level(properties: readonly MappingProperty[], fields: readonly Field[] | null, owner: string | null, at: PropertyPath, guaranteed: readonly PropertyPath[], inside: boolean) {
+    const seen = new Set<string>()
+    for (const [i, { name, source }] of properties.entries()) {
+      const out = [...at, name]
+      const path = [name || i]
+      const add = (issue: FoundMappingIssue, where: PropertyPath = out) => found.push({ output: where, issue })
+      if (!name) add({ problem: 'empty_name', path })
+      else if (seen.has(name)) add({ problem: 'duplicate_name', path })
+      seen.add(name)
+      const target = fields?.find((field) => field.name === name)
+      if (inside && fields && name && !target) add({ problem: 'unknown_output_property', path, name })
+
+      if (accepts.nested && isConstruction(source)) {
+        if (!inside) { types.push(null); absent.push([]) }
+        construction(source, path, out, target, owner, guaranteed, add)
+        continue
+      }
+      const checked = checkSource(source, input, path, accepts)
+      const reads = notGuaranteed(checked.reads, guaranteed)
+      checked.issues.forEach((issue) => add(issue))
+      if (!inside) { types.push(checked.type); absent.push(reads) }
+      // An object property is built, never made from a value (at any level, for versions that build objects).
+      if (accepts.nested && target && (target.type === 'object' || target.type === 'reference')) add({ problem: 'value_into_object', path })
+      else if (inside && target && isScalarField(target) && checked.type && checked.type !== target.type) add({ problem: 'wrong_output_type', path, expected: target.type, actual: checked.type })
+      if (reads.length && absence === 'unsupported') add({ problem: 'absence_unsupported', path, optional: reads })
+      else if (reads.length && target && target.optional !== true) add({ problem: 'may_be_absent', path, optional: reads })
+    }
+    // A constructed object never misses a required property: nothing is invented to fill one.
+    if (inside && fields) {
+      for (const field of fields) {
+        if (field.optional !== true && !properties.some((p) => p.name === field.name)) {
+          found.push({ output: [...at, field.name], issue: { problem: 'missing_output_property', path: [field.name], name: field.name } })
+        }
+      }
+    }
   }
+
+  function construction(node: Extract<Expression, { kind: 'construct' }>, path: Path, out: PropertyPath, target: Field | undefined, owner: string | null, guaranteed: readonly PropertyPath[], add: (issue: FoundMappingIssue) => void) {
+    if (!wellFormedConstruction(node)) return add({ problem: 'malformed_construction', path })
+    let fields: readonly Field[] | null = null
+    let inner = owner
+    if (target && target.type !== 'object' && target.type !== 'reference') return add({ problem: 'construct_into_value', path })
+    if (target?.type === 'object') fields = target.fields
+    if (target?.type === 'reference') {
+      const found = resolveReference(target.definition, owner, accepts.resolve)
+      if ('problem' in found) return add({ problem: 'unresolved_output', path })
+      fields = found.version.fields
+      inner = found.version.workspaceId
+    }
+    let scope = guaranteed
+    if (node.presence.when === 'present') {
+      const where = [...path, 'presence']
+      const condition = resolveObjectPath(input, node.presence.source, accepts.resolve)
+      if (!('object' in condition)) {
+        if (condition.problem === 'unknown_path_property') add({ problem: 'unknown_path_property', path: where, step: condition.step, name: String(node.presence.source[condition.step]) })
+        else if ('step' in condition) add({ problem: condition.problem, path: where, step: condition.step })
+        else add({ problem: condition.problem, path: where })
+      } else {
+        // A required object is always made: a condition that may not hold can't build one.
+        const may = notGuaranteed(condition.object.optional, guaranteed)
+        if (may.length && target && target.optional !== true) add({ problem: 'may_be_absent', path: where, optional: may })
+        scope = [...guaranteed, condition.object.path]
+      }
+    }
+    level(node.properties, fields, inner, out, scope, true)
+  }
+
+  level(mapping.properties, output?.fields ?? null, output?.workspaceId ?? null, [], [], false)
   return { found, types, absent }
 }
 
@@ -397,6 +552,8 @@ function evaluateArgument(arg: Argument, input: Data): Scalar | Scalar[] {
       if (!spec) throw new Error('A source calls a function Orbit does not have')
       return spec.apply(arg.args.map((a) => evaluateArgument(a, input)))
     }
+    case 'construct':
+      throw new Error('A construction is a property’s whole source, never a value inside one')
   }
 }
 
@@ -409,6 +566,7 @@ function propertiesRead(arg: Argument): PropertyPath[] {
     case 'literal': return []
     case 'property': return [[arg.name]]
     case 'path': return [arg.path]
+    case 'construct': return []
     case 'list': return arg.items.flatMap(propertiesRead)
     case 'call': return arg.args.flatMap(propertiesRead)
   }
@@ -433,9 +591,25 @@ function valueAt(data: Data, path: PropertyPath): { readonly present: true; read
  * A property's value for `input`, or none when the source reads a property the input doesn't have
  * (an optional one, left out). Nothing is substituted: no empty text, zero, false or null.
  */
-export function evaluatePresent(source: Expression, input: Data): { readonly present: true; readonly value: Scalar } | { readonly present: false } {
+export function evaluatePresent(source: Expression, input: Data): { readonly present: true; readonly value: Scalar | Data } | { readonly present: false } {
+  if (source.kind === 'construct') return construct(source, input)
   if (propertiesRead(source).some((path) => !valueAt(input, path).present)) return { present: false }
   return { present: true, value: evaluate(source, input) }
+}
+
+/**
+ * A constructed object: left out when its condition's source object isn't there; otherwise each of
+ * its properties made as everywhere (left out when absent). Nothing is filled in, and an object
+ * whose properties are all absent is still made ({}): only its condition leaves it out.
+ */
+function construct(node: Extract<Expression, { kind: 'construct' }>, input: Data): { readonly present: true; readonly value: Data } | { readonly present: false } {
+  if (node.presence.when === 'present' && !valueAt(input, node.presence.source).present) return { present: false }
+  const value: Record<string, Scalar | Data> = {}
+  for (const p of node.properties) {
+    const made = evaluatePresent(p.source, input)
+    if (made.present) value[p.name] = made.value
+  }
+  return { present: true, value }
 }
 
 /**
@@ -448,7 +622,16 @@ export function sameMappingProperties(a: readonly MappingProperty[], b: readonly
   if (a.length !== b.length) return false
   const byName = new Map(b.map((p) => [p.name, p]))
   if (byName.size !== b.length || new Set(a.map((p) => p.name)).size !== a.length) return sameData(a, b)
-  return a.every((p) => byName.has(p.name) && sameData(p.source, byName.get(p.name)!.source))
+  return a.every((p) => byName.has(p.name) && sameSource(p.source, byName.get(p.name)!.source))
+}
+
+/** Sources compared exactly, except that a construction's properties are compared as properties (their order is presentation, at every depth); its presence is meaning. */
+function sameSource(a: Expression, b: Expression): boolean {
+  if (isConstruction(a) && isConstruction(b)) {
+    const keys = (x: object) => Object.keys(x).sort().join()
+    return keys(a) === keys(b) && sameData(a.presence, b.presence) && Array.isArray(a.properties) && Array.isArray(b.properties) && sameMappingProperties(a.properties, b.properties)
+  }
+  return sameData(a, b)
 }
 
 /** A Mapping's next version: same identity and contracts, new properties, frozen. */
@@ -469,6 +652,8 @@ export function formatSource(arg: Argument): string {
       return `${arg.fn}(${arg.args.map(formatSource).join(', ')})`
     case 'path':
       return arg.path.join(' › ')
+    case 'construct':
+      return `object(${arg.presence.when === 'present' ? `when ${arg.presence.source.join(' › ')}` : 'always'}){ ${arg.properties.map((p) => `${p.name}: ${formatSource(p.source)}`).join(', ')} }`
     default:
       return '?'
   }

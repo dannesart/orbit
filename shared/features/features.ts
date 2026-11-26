@@ -39,8 +39,8 @@ import { type AnyMappingIssue, type Mapping, checkMapping, checkNestedMapping, e
  *
  * Provisional versions. A Feature version still being built on an experimental branch is marked
  * `provisional`: it has never been published, so nothing outside the experiment invokes it, and its
- * capabilities may still grow there (Transform v3: nested reads now; building objects and copying
- * whole values in later phases). Publishing it freezes it: the capabilities it has at that moment
+ * capabilities may still grow there (Transform v3: nested reads and building objects now; copying
+ * whole values in a later phase). Publishing it freezes it: the capabilities it has at that moment
  * become its behaviour for good, the mark is removed, and any later change is a new version. This is
  * no exception to "Feature versions guarantee behaviour": that guarantee starts at publication, and
  * a published version is never changed, provisional or not before.
@@ -190,13 +190,15 @@ function buildPresent(input: Data, mapping: Mapping): Data {
 }
 
 /**
- * Orbit.Transform v3 (provisional): v2, plus nested reads. Its Mappings may read values inside local
- * objects and referenced Definitions by structured path ({ kind: 'path' }), resolved through the
- * complete pinned input contract; absence follows every optional property along a path, by v2's
- * rule. It accepts composed input Definitions and still makes flat ones only (composed output is
- * refused before running). Every flat Mapping v2 accepts, v3 accepts and runs to exactly the same
- * result (the same building function); only how problems are located differs (in two parts). Still
- * being built here: see "Provisional versions".
+ * Orbit.Transform v3 (provisional): v2, plus nested reads and built objects. Its Mappings may read
+ * values inside local objects and referenced Definitions by structured path ({ kind: 'path' }),
+ * resolved through the complete pinned input contract (absence follows every optional property along
+ * a path, by v2's rule), and build output objects property by property ({ kind: 'construct' }):
+ * local objects and values of exactly referenced Definition versions, with explicit presence and
+ * presence guarantees (mappings.ts). It accepts composed Definitions on both sides. Every flat
+ * Mapping v2 accepts, v3 accepts and runs to exactly the same result (the same building function);
+ * only how problems are located differs (in two parts). Still being built here: see "Provisional
+ * versions" (whole-value copying is next).
  */
 export const orbitTransformV3: MappingFeature = Object.freeze<MappingFeature>({
   id: 'orbit.transform',
@@ -205,8 +207,8 @@ export const orbitTransformV3: MappingFeature = Object.freeze<MappingFeature>({
   contract: 'mapping',
   absence: 'omitted',
   sources: 'nested',
-  localObjects: 'input-only',
-  references: 'input-only',
+  localObjects: 'supported',
+  references: 'supported',
   run: buildPresent,
 })
 

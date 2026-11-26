@@ -47,10 +47,11 @@ const run = (feature: MappingFeature, properties: MappingProperty[], output: Def
 const check = (properties: MappingProperty[], output?: DefinitionVersion, r = resolve) => checkNestedMapping({ properties }, PERSON, output, { resolve: r }).issues
 
 describe('Transform v3 is declared for what it is', () => {
-  it('is provisional, reads nested sources, accepts composed input and refuses composed output', () => {
-    expect(orbitTransformV3).toMatchObject({ id: 'orbit.transform', version: 3, provisional: true, sources: 'nested', absence: 'omitted', localObjects: 'input-only', references: 'input-only' })
+  it('is provisional, reads nested sources, and accepts composed contracts on both sides', () => {
+    expect(orbitTransformV3).toMatchObject({ id: 'orbit.transform', version: 3, provisional: true, sources: 'nested', absence: 'omitted', localObjects: 'supported', references: 'supported' })
     expect(contractCompatibility(orbitTransformV3, PERSON, 'input')).toEqual([])
-    expect(contractCompatibility(orbitTransformV3, PERSON, 'output')).toEqual([['flags'], ['contact'], ['contact', 'details'], ['contact', 'details', 'deeper'], ['contact', 'mail'], ['home']])
+    // Since Phase 4.3 it builds objects too, so composed output is accepted.
+    expect(contractCompatibility(orbitTransformV3, PERSON, 'output')).toEqual([])
     expect([orbitTransformV1, orbitTransformV2].map((f) => [f.sources, f.provisional])).toEqual([['flat', undefined], ['flat', undefined]])
   })
 })
@@ -191,9 +192,9 @@ describe('Compatibility, before execution', () => {
     expect(checkMapping({ properties }, A1, B1).issues).toEqual([{ problem: 'unsupported_source', path: ['a'] }])
   })
 
-  it('v3 still refuses composed output contracts before running', () => {
+  it('at the top level, a required object nothing builds fails after running, as a flat property always has', () => {
     const composedOut = defineVersion({ id: 'out-composed', version: 1, name: 'Out', workspaceId: W, fields: [{ name: 'where', type: 'reference', definition: refOf(ADDRESS) }] }, only(ADDRESS))
-    expect(run(orbitTransformV3, [], composedOut).evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'unsupported_contract', definition: { id: 'out-composed', version: 1 }, paths: [['where']] })
+    expect(run(orbitTransformV3, [], composedOut).evidence.outcome).toEqual({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'missing', path: ['where'], expected: 'object' }] })
   })
 
   it('evidence of an earlier run keeps the version that ran when the step changes version', () => {

@@ -37,11 +37,13 @@ describe('The step’s Transform version is chosen explicitly', () => {
     expect(read('app/dev/designer/TransformInspector.vue')).toMatch(/<select :value="featureKey"[^>]*data-transform-version @change="emit\('feature'/)
   })
 
-  it('says composed input is unsupported by v2 and fine for v3; composed output is unsupported by both', () => {
+  it('says composed contracts are unsupported by v2 and fine for v3', () => {
     const composedOut = defineVersion({ id: 'co', version: 1, name: 'Composed', workspaceId: WORKSPACE, fields: [{ name: 'home', type: 'reference', definition: { id: 'address', version: 1 } }] }, resolve)
     expect(reviewDraft([], APPLICANT, B1, 'B', transformSupport(APPLICANT, B1, orbitTransformV2, resolve)).unsupported).toMatch(/^Transform v2 doesn’t support objects or other Definitions inside what it reads \(contact, preferences, home\)/)
     expect(reviewDraft([], APPLICANT, B1, 'B', transformSupport(APPLICANT, B1, orbitTransformV3, resolve)).unsupported).toBeNull()
-    expect(reviewDraft([], APPLICANT, composedOut, 'C', transformSupport(APPLICANT, composedOut, orbitTransformV3, resolve)).unsupported).toMatch(/^Transform v3 doesn’t support objects or other Definitions inside what it makes \(home\)/)
+    // Since Phase 4.3, v3 builds objects: composed output is fine for it, and still not for v2.
+    expect(reviewDraft([], APPLICANT, composedOut, 'C', transformSupport(APPLICANT, composedOut, orbitTransformV3, resolve)).unsupported).toBeNull()
+    expect(reviewDraft([], APPLICANT, composedOut, 'C', transformSupport(APPLICANT, composedOut, orbitTransformV2, resolve)).unsupported).toMatch(/inside what it reads \(contact, preferences, home\) or what it makes \(home\)/)
   })
 })
 

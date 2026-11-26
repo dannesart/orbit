@@ -3,7 +3,7 @@
 // never invokes a Feature, so there is no outcome and no evidence. Nothing here mutates its input.
 // Absence follows the domain's rule: a source reading an absent optional property has no value,
 // and that property is left out of the object, never filled in.
-import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type PropertyType, type Resolve, type Scalar, checkContract, frozenCopy, propertyPathWords, validate } from '#shared/features/definitions'
+import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type PropertyType, type Resolve, type Scalar, checkContract, frozenCopy, kindOf, propertyPathWords, validate } from '#shared/features/definitions'
 import { type Expression, type MappingProperty, evaluatePresent } from '#shared/features/mappings'
 import { FLAT, type Reading, type ReviewIssue, checkWith, presentIn } from './reading'
 import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData } from '../features/experiment'
@@ -43,6 +43,8 @@ export type ValuePreview =
   | { readonly value: Scalar }
   /** No value: it reads optional properties the example doesn't have (in words, by path), so it's left out. */
   | { readonly absent: readonly string[] }
+  /** A built object (Transform v3): what it holds, exactly as the Transform would make it. */
+  | { readonly object: Data }
   | { readonly problems: readonly string[] }
   | { readonly noExample: true }
 
@@ -53,7 +55,8 @@ export function previewSource(source: Expression, input: DefinitionVersion, exam
   if (!('data' in example)) return { noExample: true }
   // The very evaluation the Transform runs with: the same result, the same absence.
   const result = evaluatePresent(source, example.data)
-  return result.present ? { value: result.value } : { absent: absent[0]!.filter((path) => !presentIn(example.data, path)).map(propertyPathWords) }
+  if (result.present) return kindOf(result.value) === 'object' ? { object: result.value as Data } : { value: result.value as Scalar }
+  return { absent: absent[0]!.filter((path) => !presentIn(example.data, path)).map(propertyPathWords) }
 }
 
 // --- The whole draft, against the target Definition ---

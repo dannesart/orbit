@@ -217,6 +217,15 @@ export function describeMappingIssue(issue: AnyMappingIssue): string {
     case 'path_through_value': return 'This path goes on past a value, as if it were an object.'
     case 'path_to_object': return 'This path ends at an object. A source can read text, numbers and yes or no, not a whole object.'
     case 'unresolved_path': return 'A Definition along this path can’t be found here.'
+    case 'malformed_construction': return 'This object’s construction isn’t complete: it needs a presence and its properties.'
+    case 'construction_in_expression': return 'An object can only be built as a property’s whole value, not inside a function or a group.'
+    case 'construct_into_value': return 'This property is a value, not an object, so it can’t be built.'
+    case 'value_into_object': return 'This property is an object: build it property by property.'
+    case 'unknown_output_property': return `This object has no property “${issue.name}”.`
+    case 'missing_output_property': return `${issue.name} is required here, and nothing makes it. Orbit won’t invent a value.`
+    case 'wrong_output_type': return `This needs ${kindWords[issue.expected]}, not ${kindWords[issue.actual]}.`
+    case 'condition_not_object': return 'An object is built when a source object is present: this names a value.'
+    case 'unresolved_output': return 'The Definition this object should be can’t be found here.'
   }
 }
 
