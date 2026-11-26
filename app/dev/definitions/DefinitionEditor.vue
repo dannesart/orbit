@@ -21,7 +21,7 @@ import { type Appearance, DEFAULT_APPEARANCE, sameAppearance } from './appearanc
 import {
   type Draft, type NewDefinition, blankDraft, changeWords, changesFrom, draftFrom, draftProblems, fieldsOf, nameNotes, nameProblem, versionLike,
 } from './model'
-import { createFromDraft, findMade, redescribe, setCreating, setEvolving, shelfOf, startCreating, versionFromDraft } from './store'
+import { catalogueOf, createFromDraft, findMade, redescribe, setCreating, setEvolving, shelfOf, startCreating, versionFromDraft } from './store'
 import AppearancePicker from './AppearancePicker.vue'
 import DefinitionTile from './DefinitionTile.vue'
 import DefinitionsIcon from './DefinitionsIcon.vue'
@@ -96,8 +96,11 @@ const notes = computed(() => nameNotes(
   shelfOf(props.workspace.id).made.filter((d) => d.id !== props.id).map((d) => d.name),
   props.workspace.name,
 ))
+// What it may build on (its own Definitions and Orbit's), and how its references resolve: Orbit's rules, never the Studio's.
+const catalogue = computed(() => catalogueOf(props.workspace.id))
+const checking = computed(() => ({ owner: props.workspace.id, resolve: catalogue.value.resolve, label: catalogue.value.label }))
 const changes = computed(() => (evolving.value && base.value ? changesFrom(base.value, evolving.value) : []))
-const same = computed(() => (made.value && evolving.value && !draftProblems(evolving.value).length ? versionLike(made.value, fields.value) : null))
+const same = computed(() => (made.value && evolving.value && !draftProblems(evolving.value, checking.value).length ? versionLike(made.value, fields.value) : null))
 
 // The checks, by segment, so a failed attempt can say where to look.
 const problems = computed<{ segment: Segment; text: string }[]>(() => {
@@ -106,7 +109,7 @@ const problems = computed<{ segment: Segment; text: string }[]>(() => {
     const p = nameProblem(props.part === 'new' ? creating.value!.name : about.value.name)
     if (p) list.push({ segment: 'general', text: p })
   }
-  if (draft.value) list.push(...draftProblems(draft.value).map((text) => ({ segment: 'model' as const, text })))
+  if (draft.value) list.push(...draftProblems(draft.value, checking.value).map((text) => ({ segment: 'model' as const, text })))
   if (same.value) list.push({ segment: 'model', text: `This is exactly version ${same.value.version}. Use version ${same.value.version} instead of making another.` })
   return list
 })
@@ -276,13 +279,13 @@ onMounted(() => heading.value?.focus())
 
       <!-- Model: building it from property types; its rows are how it reads -->
       <div v-else-if="segment === 'model' && draft">
-        <ModelBuilder :draft="draft" :id-prefix="part" @update:draft="part === 'new' ? updateNew({ draft: $event }) : setEvolving(workspace.id, id, $event)" />
+        <ModelBuilder :draft="draft" :id-prefix="part" :catalogue="catalogue" @update:draft="part === 'new' ? updateNew({ draft: $event }) : setEvolving(workspace.id, id, $event)" />
         <div class="lg:pr-[19rem]">
           <div v-if="part === 'next' && evolving" class="mt-6 rounded-2xl bg-slate-50 p-4 text-sm ring-1 ring-slate-200/70" aria-live="polite">
             <h2 class="font-semibold text-slate-900">What changes from version {{ evolving.basedOn }}</h2>
             <p v-if="!changes.length" class="mt-1 text-slate-500">Nothing yet.</p>
             <ul v-else class="mt-1 list-disc pl-5 text-slate-700">
-              <li v-for="(c, i) in changes" :key="i">{{ changeWords(c) }}</li>
+              <li v-for="(c, i) in changes" :key="i">{{ changeWords(c, catalogue.label) }}</li>
             </ul>
             <p class="mt-3 text-xs text-slate-500">
               Version {{ evolving.basedOn }} stays exactly as it is, and so does every other version. Whatever uses a version keeps using it:

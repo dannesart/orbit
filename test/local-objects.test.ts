@@ -11,7 +11,7 @@ import {
   type Feature, type InvocationResult, contractCompatibility, invoke, mappingCompatibility, orbitConsole, orbitTransformV1, orbitTransformV2,
 } from '../shared/features/features'
 import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, describeOutcome } from '../app/dev/features/experiment'
-import { draftFrom } from '../app/dev/definitions/model'
+import { draftFrom, fieldsOf, locate } from '../app/dev/definitions/model'
 
 const W = 'w'
 const text = (name: string, optional = false): Field => (optional ? { name, type: 'string', optional: true } : { name, type: 'string' })
@@ -353,8 +353,13 @@ describe('Existing Feature versions: nested contracts are refused explicitly, ne
   })
 })
 
-describe('The Studio and the Designer stay flat, and say so rather than flattening', () => {
-  it('the Studio refuses to open a version with local objects as a draft', () => {
-    expect(() => draftFrom(CANDIDATE)).toThrow(/has local objects or references, which the Studio can’t edit yet/)
+describe('The Studio opens local objects as they are, never flattened', () => {
+  it('drafts a version with local objects with every level intact, each row with its own key', () => {
+    const draft = draftFrom(CANDIDATE)
+    expect(sameFields(fieldsOf(draft), CANDIDATE.fields)).toBe(true)
+    expect(fieldsOf(draft)).toEqual(CANDIDATE.fields)
+    const keys = locate(draft.fields).map((l) => l.field.key)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(draft.nextKey).toBe(keys.length)
   })
 })

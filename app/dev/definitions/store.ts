@@ -13,6 +13,7 @@ import {
   type Draft, type MadeDefinition, type NewDefinition, ORBIT_PROVIDED,
   addVersion, blankDraft, checkSequence, createDefinition, newIdentity, renamed,
 } from './model'
+import { type StudioCatalogue, studioCatalogue } from './catalogue'
 
 /** The workspace you were last in, as one of its pages established it (they're authorized). */
 export interface WorkspaceContext {
@@ -56,6 +57,9 @@ function taken(id: string): boolean {
   return Object.values(state.shelves).some((s) => s.made.some((d) => d.id === id))
 }
 
+/** What this workspace may build on: its own Definitions and Orbit’s (catalogue.ts). */
+export const catalogueOf = (workspaceId: string): StudioCatalogue => studioCatalogue(workspaceId, shelfOf(workspaceId).made)
+
 export const findMade = (workspaceId: string, id: string): MadeDefinition | null =>
   shelfOf(workspaceId).made.find((d) => d.id === id) ?? null
 
@@ -78,7 +82,7 @@ export function setCreating(workspaceId: string, next: NewDefinition | null) {
 export function createFromDraft(workspaceId: string): string {
   const shelf = shelfOf(workspaceId)
   if (!shelf.creating) throw new Error('Nothing is being created')
-  const made = createDefinition({ id: newIdentity(taken), workspaceId, ...shelf.creating })
+  const made = createDefinition({ id: newIdentity(taken), workspaceId, ...shelf.creating, resolve: catalogueOf(workspaceId).resolve })
   shelf.made = [...shelf.made, made]
   shelf.creating = null
   return made.id
@@ -95,7 +99,7 @@ export function versionFromDraft(workspaceId: string, id: string): number {
   const made = findMade(workspaceId, id)
   const draft = shelfOf(workspaceId).evolving[id]
   if (!made || !draft) throw new Error('Nothing to make a version from')
-  const next = addVersion(made, draft)
+  const next = addVersion(made, draft, catalogueOf(workspaceId).resolve)
   replace(workspaceId, next)
   setEvolving(workspaceId, id, null)
   return next.versions.length

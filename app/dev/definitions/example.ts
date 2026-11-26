@@ -38,11 +38,12 @@ const generated = (type: FieldType): ExampleEntry => ({ given: true, value: samp
  * (it may no longer fit, and the result will say so).
  */
 export function reconcile(entries: ExampleEntries, fields: readonly DraftField[]): ExampleEntries {
-  return Object.fromEntries(fields.map((f) => {
+  return Object.fromEntries(fields.flatMap((f) => {
+    if (f.type === 'object' || f.type === 'reference') return []
     const entry = entries[f.key]
-    if (!entry) return [f.key, generated(f.type)]
-    if (!entry.edited && !entry.raw && entry.type !== f.type) return [f.key, { ...generated(f.type), given: entry.given }]
-    return [f.key, entry]
+    if (!entry) return [[f.key, generated(f.type)]]
+    if (!entry.edited && !entry.raw && entry.type !== f.type) return [[f.key, { ...generated(f.type), given: entry.given }]]
+    return [[f.key, entry]]
   }))
 }
 
@@ -77,10 +78,10 @@ export interface PreviewResult {
 /** What Orbit makes of the example, judged by Orbit's own validation. */
 export function previewResult(fields: readonly DraftField[], entries: ExampleEntries, extra: Example['extra']): PreviewResult {
   const named = fields.filter((f) => f.name.trim())
-  const shape = fieldsOf({ basedOn: null, fields: named, nextKey: 0 })
+  const shape = fieldsOf({ fields: named })
   // A value sent as typed (advanced testing) is read as text, whatever the property's type; Orbit
   // still judges it against the real types.
-  const reading = shape.map((f, i) => (entries[named[i]!.key]?.raw ? { ...f, type: 'string' as const } : f))
+  const reading = shape.map((f, i) => (entries[named[i]!.key]?.raw && f.type !== 'object' && f.type !== 'reference' ? { ...f, type: 'string' as const } : f))
   const data = exampleData(reading, exampleOf(named, entries, extra))
   const issues = checkExample(shape, data)
   const byProperty: Record<string, string> = {}

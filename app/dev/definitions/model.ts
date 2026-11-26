@@ -1,8 +1,9 @@
 // Experiment #7: Definitions made in a workspace, independently of any workflow. Pure and in memory.
 //
-// What is Orbit's (shared/features/definitions.ts, unchanged): a Definition version is an exact
-// identity (id + version), immutable once made (defineVersion), with required text, number or yes/no
-// properties and nothing else (validate). Its `name` is for people and never identity.
+// What is Orbit's (shared/features/definitions.ts): a Definition version is an exact identity
+// (id + version), immutable once made (defineVersion), with text, number or yes/no properties, local
+// objects and references to other versions, and nothing else (checkFields, validate). Its `name` is
+// for people and never identity. The Studio reveals that model; it doesn't have one of its own.
 //
 // What is only this experiment's, kept here and nowhere else:
 //   - A Definition's current name, description and appearance (an icon and a colour, appearance.ts).
@@ -16,10 +17,10 @@
 //     the same properties in another order are the same (versionLike), and reordering alone never
 //     makes a version.
 import {
-  type DefinitionVersion, type Field, type FieldType, type Issue, type PropertyType, type ScalarField, isScalarField,
-  checkPropertyNames, deepFreeze, defineVersion, propertyPathWords, sameFields, validate,
+  type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type PropertyPath, type PropertyType, type Resolve,
+  checkFields, deepFreeze, defineVersion, propertyPathWords, refOf, sameDefinition, sameFields, validate,
 } from '#shared/features/definitions'
-import { describeNamingIssues } from '../features/experiment'
+import { describeDefinitionIssue } from '../features/experiment'
 import { type Appearance, DEFAULT_APPEARANCE, checkAppearance } from './appearance'
 
 /** A Definition made in one workspace, with every version it has had (oldest first). */
@@ -34,13 +35,21 @@ export interface MadeDefinition {
   readonly versions: readonly DefinitionVersion[]
 }
 
-/** A property being edited. `key` follows a row through renames, so changes can be told apart. */
+/**
+ * A property being edited: one row of the model, at any level. `key` follows it through renames and
+ * moves (unique in the whole draft), so changes can be told apart. A local object holds its own rows
+ * (`fields`); a reference names exactly one version (`definition`).
+ */
 export interface DraftField {
   readonly key: number
   readonly name: string
-  readonly type: FieldType
+  readonly type: PropertyType
   /** May be absent. New properties are required. */
   readonly optional: boolean
+  /** A local object's own properties (type 'object' only). */
+  readonly fields?: readonly DraftField[]
+  /** Exactly the version referenced (type 'reference' only). Never "the latest": a version is chosen. */
+  readonly definition?: DefinitionRef
 }
 
 /** What someone is editing: a first version, or the next one, started from an existing version. */
@@ -101,49 +110,145 @@ export function newIdentity(taken: (id: string) => boolean, random: () => string
 export const blankDraft = (): Draft => ({ basedOn: null, fields: [{ key: 0, name: '', type: 'string', optional: false }], nextKey: 1 })
 
 /**
- * A version's properties as the Studio edits them: value properties only. The Studio has no editor
- * for local objects or references (Orbit's model has them; this experiment doesn't build them), so
- * a version with one is refused here, never shown flattened, copied or with anything dropped.
+ * A draft that starts as an exact copy of a version: every property, at every level, with its own
+ * key (numbered depth-first, so the same version always gives the same keys: changesFrom relies on
+ * it). A local object's properties stay inside it; a reference stays a reference to exactly the
+ * version it names. Nothing is flattened, copied in or dropped.
  */
-function editableFields(version: DefinitionVersion): readonly ScalarField[] {
-  if (!version.fields.every(isScalarField)) throw new Error(`${version.id}@${version.version} has local objects or references, which the Studio can’t edit yet`)
-  return version.fields as readonly ScalarField[]
-}
-
-/** A draft that starts as an exact copy of a version. */
 export function draftFrom(version: DefinitionVersion): Draft {
-  return { basedOn: version.version, fields: editableFields(version).map((f, key) => ({ key, name: f.name, type: f.type, optional: f.optional === true })), nextKey: version.fields.length }
+  let next = 0
+  const from = (fields: readonly Field[]): DraftField[] => fields.map((f): DraftField => {
+    const base = { key: next++, name: f.name, optional: f.optional === true }
+    if (f.type === 'object') return { ...base, type: 'object', fields: from(f.fields) }
+    if (f.type === 'reference') return { ...base, type: 'reference', definition: refOf(f.definition) }
+    return { ...base, type: f.type }
+  })
+  const fields = from(version.fields)
+  return { basedOn: version.version, fields, nextKey: next }
 }
 
-export function addField(draft: Draft, type: FieldType = 'string'): Draft {
-  return { ...draft, fields: [...draft.fields, { key: draft.nextKey, name: '', type, optional: false }], nextKey: draft.nextKey + 1 }
+/** A draft property and where it is: the object holding it (null: the top level), its index there, and its path of names. */
+export interface Located {
+  readonly field: DraftField
+  readonly parent: number | null
+  readonly index: number
+  readonly path: PropertyPath
 }
-export const updateField = (draft: Draft, key: number, change: Partial<Omit<DraftField, 'key'>>): Draft =>
-  ({ ...draft, fields: draft.fields.map((f) => (f.key === key ? { ...f, ...change } : f)) })
-export const removeField = (draft: Draft, key: number): Draft => ({ ...draft, fields: draft.fields.filter((f) => f.key !== key) })
-/** The same properties in another order: for people only (see versionLike). */
-export function moveField(draft: Draft, key: number, to: number): Draft {
-  const from = draft.fields.findIndex((f) => f.key === key)
-  if (from < 0) return draft
-  const fields = [...draft.fields]
-  const [moved] = fields.splice(from, 1)
-  fields.splice(Math.max(0, Math.min(to, fields.length)), 0, moved!)
-  return { ...draft, fields }
+
+/** Every property of a draft, depth-first, each with where it is. */
+export function locate(fields: readonly DraftField[], parent: number | null = null, at: PropertyPath = []): Located[] {
+  return fields.flatMap((field, index) => {
+    const here: Located = { field, parent, index, path: [...at, field.name] }
+    return field.type === 'object' ? [here, ...locate(field.fields ?? [], field.key, here.path)] : [here]
+  })
+}
+export const findField = (draft: Draft, key: number): Located | null => locate(draft.fields).find((l) => l.field.key === key) ?? null
+/** The properties directly inside `parent` (null: the top level). */
+export const childrenOf = (draft: Draft, parent: number | null): readonly DraftField[] =>
+  parent === null ? draft.fields : findField(draft, parent)?.field.fields ?? []
+
+/** The same draft with `parent`'s properties (null: the top level) replaced by `change(them)`. */
+function withChildren(draft: Draft, parent: number | null, change: (fields: readonly DraftField[]) => readonly DraftField[]): Draft {
+  if (parent === null) return { ...draft, fields: change(draft.fields) }
+  const visit = (fields: readonly DraftField[]): DraftField[] => fields.map((f) =>
+    f.key === parent ? { ...f, fields: change(f.fields ?? []) } : f.type === 'object' ? { ...f, fields: visit(f.fields ?? []) } : f)
+  return { ...draft, fields: visit(draft.fields) }
+}
+const insert = <T>(list: readonly T[], item: T, index: number) => {
+  const next = [...list]
+  next.splice(Math.max(0, Math.min(index, next.length)), 0, item)
+  return next
 }
 
 /**
- * The properties a draft describes, as Orbit's model has them: names exactly as typed. A name with
- * spaces around it isn't tidied but refused (draftProblems), by Orbit's one naming rule.
+ * Adds a property inside `parent` (the top level by default) at `index` (the end by default). New
+ * properties are required. An object starts empty; a reference names exactly one version.
  */
-export const fieldsOf = (draft: Draft): Field[] => draft.fields.map((f) => (f.optional ? { name: f.name, type: f.type, optional: true } : { name: f.name, type: f.type }))
+export function addField(draft: Draft, type: PropertyType = 'string', options: { parent?: number | null; index?: number; definition?: DefinitionRef; name?: string } = {}): Draft {
+  const base = { key: draft.nextKey, name: options.name ?? '', optional: false }
+  const field: DraftField = type === 'object'
+    ? { ...base, type, fields: [] }
+    : type === 'reference'
+      ? { ...base, type, definition: refOf(options.definition!) }
+      : { ...base, type }
+  const parent = options.parent ?? null
+  const added = withChildren(draft, parent, (fields) => insert(fields, field, options.index ?? fields.length))
+  return { ...added, nextKey: draft.nextKey + 1 }
+}
 
-/** Why a draft can't become a version yet, in plain words. None means it can. */
-export function draftProblems(draft: Draft): string[] {
-  const fields = fieldsOf(draft)
+/** Changes one property, wherever it is. Its key, kind of contents and children stay its own. */
+export function updateField(draft: Draft, key: number, change: Partial<Pick<DraftField, 'name' | 'type' | 'optional' | 'definition'>>): Draft {
+  const visit = (fields: readonly DraftField[]): DraftField[] => fields.map((f) =>
+    f.key === key ? { ...f, ...change } : f.type === 'object' ? { ...f, fields: visit(f.fields ?? []) } : f)
+  return { ...draft, fields: visit(draft.fields) }
+}
+
+/** Removes one property, wherever it is (an object with everything inside it). */
+export function removeField(draft: Draft, key: number): Draft {
+  const visit = (fields: readonly DraftField[]): DraftField[] =>
+    fields.filter((f) => f.key !== key).map((f) => (f.type === 'object' ? { ...f, fields: visit(f.fields ?? []) } : f))
+  return { ...draft, fields: visit(draft.fields) }
+}
+
+/** Whether `key` is `ancestor` or inside it. */
+export function isWithin(draft: Draft, key: number, ancestor: number): boolean {
+  for (let at: number | null = key; at !== null; at = findField(draft, at)?.parent ?? null) if (at === ancestor) return true
+  return false
+}
+
+/**
+ * Moves a property to `to` among `parent`'s properties (its own level by default). Within a level
+ * it's the same properties in another order: for people only (see versionLike). Into another object
+ * it changes the contract. A property never moves into itself or its own contents.
+ */
+export function moveField(draft: Draft, key: number, to: number, parent?: number | null): Draft {
+  const where = findField(draft, key)
+  if (!where) return draft
+  const target = parent === undefined ? where.parent : parent
+  if (target !== null && isWithin(draft, target, key)) return draft
+  const without = withChildren(draft, where.parent, (fields) => fields.filter((f) => f.key !== key))
+  return withChildren(without, target, (fields) => insert(fields, where.field, to))
+}
+
+/** Every object a property could live in (the top level first), by path: never the property itself or its contents. */
+export function placesFor(draft: Draft, key: number | null): { key: number | null; path: PropertyPath }[] {
+  const objects = locate(draft.fields).filter((l) => l.field.type === 'object' && (key === null || !isWithin(draft, l.field.key, key)))
+  return [{ key: null, path: [] }, ...objects.map((l) => ({ key: l.field.key, path: l.path }))]
+}
+
+/**
+ * The properties a draft describes, as Orbit's model has them: names exactly as typed, local objects
+ * with their own properties, references to exactly the version chosen. A name with spaces around it
+ * isn't tidied but refused (draftProblems), by Orbit's one naming rule.
+ */
+export const fieldsOf = (draft: Pick<Draft, 'fields'>): Field[] => draft.fields.map(toField)
+function toField(f: DraftField): Field {
+  const base = { name: f.name, ...(f.optional ? { optional: true as const } : {}) }
+  if (f.type === 'object') return { ...base, type: 'object', fields: (f.fields ?? []).map(toField) }
+  if (f.type === 'reference') return { ...base, type: 'reference', definition: refOf(f.definition!) }
+  return { ...base, type: f.type }
+}
+
+/** What a draft is checked against: the workspace making it, and how its references resolve there. */
+export interface DraftContext {
+  readonly owner: string
+  readonly resolve: Resolve
+  /** How a referenced version is named for people. */
+  readonly label?: (ref: DefinitionRef) => string
+}
+
+/**
+ * Why a draft can't become a version yet, in plain words. None means it can. Judged by Orbit's own
+ * check of the whole resolved contract (checkFields: the naming rule in every object, references
+ * resolved and allowed, no cycles, the depth limit): there is no second check here. A name of only
+ * spaces counts as no name.
+ */
+export function draftProblems(draft: Draft, context?: DraftContext): string[] {
   const problems: string[] = []
-  if (!fields.length) problems.push('Add at least one property.')
-  // Orbit's naming rule, the one the Designer uses too (a name of only spaces is no name).
-  problems.push(...describeNamingIssues(checkPropertyNames(fields.map((f) => (f.name.trim() ? f.name : '')))))
+  if (!draft.fields.length) problems.push('Add at least one property.')
+  const blank = (f: Field): Field => ({ ...f, name: f.name.trim() ? f.name : '', ...(f.type === 'object' ? { fields: f.fields.map(blank) } : {}) } as Field)
+  const issues = checkFields(fieldsOf(draft).map(blank), { owner: context?.owner ?? null, resolve: context?.resolve })
+  problems.push(...issues.map((i) => describeDefinitionIssue(i, context?.label)))
   return [...new Set(problems)]
 }
 
@@ -168,25 +273,48 @@ export function nameNotes(name: string, others: readonly string[], workspaceName
 
 // --- What changed ---
 
+/**
+ * One change from the version a draft started from, located by path (names, outermost first).
+ * `path` is where the property is now; `from` is where it was, when that's what changed.
+ */
 export type Change =
-  | { readonly kind: 'added'; readonly name: string; readonly type: FieldType }
-  | { readonly kind: 'removed'; readonly name: string }
-  | { readonly kind: 'renamed'; readonly from: string; readonly to: string }
-  | { readonly kind: 'retyped'; readonly name: string; readonly from: FieldType; readonly to: FieldType }
-  | { readonly kind: 'requirement'; readonly name: string; readonly optional: boolean }
+  | { readonly kind: 'added'; readonly path: PropertyPath; readonly type: PropertyType }
+  | { readonly kind: 'removed'; readonly path: PropertyPath }
+  | { readonly kind: 'renamed'; readonly from: PropertyPath; readonly path: PropertyPath }
+  | { readonly kind: 'moved'; readonly from: PropertyPath; readonly path: PropertyPath }
+  | { readonly kind: 'retyped'; readonly path: PropertyPath; readonly from: PropertyType; readonly to: PropertyType }
+  | { readonly kind: 'requirement'; readonly path: PropertyPath; readonly optional: boolean }
+  | { readonly kind: 'repointed'; readonly path: PropertyPath; readonly from: DefinitionRef; readonly to: DefinitionRef }
 
-/** How a draft differs from the version it started from, row by row. */
+/**
+ * How a draft differs from the version it started from, property by property, at every level. Rows
+ * are followed by key (draftFrom numbers the version's properties the same way every time), so a
+ * renamed or moved property is told apart from one removed and another added. Inside something
+ * added or removed, nothing more is listed: "Adds contact" says it all.
+ */
 export function changesFrom(base: DefinitionVersion, draft: Draft): Change[] {
+  const before = new Map(locate(draftFrom(base).fields).map((l) => [l.field.key, l]))
+  const now = new Map(locate(draft.fields).map((l) => [l.field.key, l]))
   const changes: Change[] = []
-  editableFields(base).forEach((field, key) => {
-    const now = draft.fields.find((f) => f.key === key)
-    if (!now) return changes.push({ kind: 'removed', name: field.name })
-    const name = now.name.trim()
-    if (name && name !== field.name) changes.push({ kind: 'renamed', from: field.name, to: name })
-    if (now.type !== field.type) changes.push({ kind: 'retyped', name: name || field.name, from: field.type, to: now.type })
-    if (now.optional !== (field.optional === true)) changes.push({ kind: 'requirement', name: name || field.name, optional: now.optional })
-  })
-  for (const f of draft.fields) if (f.key >= base.fields.length) changes.push({ kind: 'added', name: f.name.trim(), type: f.type })
+  for (const [key, was] of before) {
+    const is = now.get(key)
+    if (!is) {
+      if (was.parent === null || now.has(was.parent)) changes.push({ kind: 'removed', path: was.path })
+      continue
+    }
+    const named = is.field.name.trim() ? is.path : [...is.path.slice(0, -1), was.field.name]
+    if (is.field.name.trim() && is.field.name !== was.field.name) changes.push({ kind: 'renamed', from: was.path, path: named })
+    if (is.parent !== was.parent) changes.push({ kind: 'moved', from: was.path, path: named })
+    if (is.field.type !== was.field.type) changes.push({ kind: 'retyped', path: named, from: was.field.type, to: is.field.type })
+    if (is.field.optional !== was.field.optional) changes.push({ kind: 'requirement', path: named, optional: is.field.optional })
+    if (is.field.type === 'reference' && was.field.type === 'reference' && !sameDefinition(is.field.definition!, was.field.definition!)) {
+      changes.push({ kind: 'repointed', path: named, from: was.field.definition!, to: is.field.definition! })
+    }
+  }
+  for (const [key, is] of now) {
+    if (before.has(key)) continue
+    if (is.parent === null || before.has(is.parent)) changes.push({ kind: 'added', path: is.path, type: is.field.type })
+  }
   return changes
 }
 
@@ -204,12 +332,12 @@ export function checkSequence(made: MadeDefinition): void {
   })
 }
 
-/** A new Definition and its first, immutable version. */
-export function createDefinition(input: { id: string; workspaceId: string; name: string; description: string; appearance?: Appearance; draft: Draft }): MadeDefinition {
+/** A new Definition and its first, immutable version. References resolve with `resolve`, in its workspace. */
+export function createDefinition(input: { id: string; workspaceId: string; name: string; description: string; appearance?: Appearance; draft: Draft; resolve?: Resolve }): MadeDefinition {
   const name = input.name.trim()
   if (!name) throw new Error('A Definition needs a name')
-  if (draftProblems(input.draft).length) throw new Error('These properties can’t be a Definition yet')
-  const first = defineVersion({ id: input.id, version: 1, name, workspaceId: input.workspaceId, fields: fieldsOf(input.draft) })
+  if (draftProblems(input.draft, { owner: input.workspaceId, resolve: input.resolve ?? (() => null) }).length) throw new Error('These properties can’t be a Definition yet')
+  const first = defineVersion({ id: input.id, version: 1, name, workspaceId: input.workspaceId, fields: fieldsOf(input.draft) }, input.resolve)
   const appearance = checkAppearance(input.appearance ?? DEFAULT_APPEARANCE)
   return deepFreeze({ id: input.id, workspaceId: input.workspaceId, name, description: input.description.trim(), appearance, versions: [first] })
 }
@@ -218,14 +346,14 @@ export function createDefinition(input: { id: string; workspaceId: string; name:
  * The next version, after the last one. Earlier versions stay exactly as they were. Refused when
  * the draft is exactly like an existing version: that version already says it.
  */
-export function addVersion(made: MadeDefinition, draft: Draft): MadeDefinition {
+export function addVersion(made: MadeDefinition, draft: Draft, resolve?: Resolve): MadeDefinition {
   checkSequence(made)
-  if (draftProblems(draft).length) throw new Error('These properties can’t be a Definition yet')
+  if (draftProblems(draft, { owner: made.workspaceId, resolve: resolve ?? (() => null) }).length) throw new Error('These properties can’t be a Definition yet')
   const fields = fieldsOf(draft)
   const like = versionLike(made, fields)
   if (like) throw new Error(`This is exactly version ${like.version}`)
   const version = made.versions.length + 1
-  const next = defineVersion({ id: made.id, version, name: made.name, workspaceId: made.workspaceId, fields })
+  const next = defineVersion({ id: made.id, version, name: made.name, workspaceId: made.workspaceId, fields }, resolve)
   return deepFreeze({ ...made, versions: [...made.versions, next] })
 }
 
@@ -289,12 +417,15 @@ export function issueWords(issue: Issue): string {
   }
 }
 
-export function changeWords(change: Change): string {
+export function changeWords(change: Change, label: (ref: DefinitionRef) => string = (r) => `${r.id} · v${r.version}`): string {
+  const at = (path: PropertyPath) => (path.at(-1) ? propertyPathWords(path) : [...path.slice(0, -1), 'an unnamed property'].join(' › '))
   switch (change.kind) {
-    case 'added': return `Adds ${change.name || 'an unnamed property'} (${typeWords[change.type].toLowerCase()})`
-    case 'removed': return `Removes ${change.name}`
-    case 'renamed': return `Renames ${change.from} to ${change.to}`
-    case 'retyped': return `Changes ${change.name} from ${typeWords[change.from].toLowerCase()} to ${typeWords[change.to].toLowerCase()}`
-    case 'requirement': return `Makes ${change.name} ${change.optional ? 'optional' : 'required'}`
+    case 'added': return `Adds ${at(change.path)} (${typeWords[change.type].toLowerCase()})`
+    case 'removed': return `Removes ${at(change.path)}`
+    case 'renamed': return `Renames ${at(change.from)} to ${change.path.at(-1)}`
+    case 'moved': return `Moves ${at(change.from)} ${change.path.length > 1 ? `into ${propertyPathWords(change.path.slice(0, -1))}` : 'to the top level'}`
+    case 'retyped': return `Changes ${at(change.path)} from ${typeWords[change.from].toLowerCase()} to ${typeWords[change.to].toLowerCase()}`
+    case 'requirement': return `Makes ${at(change.path)} ${change.optional ? 'optional' : 'required'}`
+    case 'repointed': return `Changes ${at(change.path)} from ${label(change.from)} to ${label(change.to)}`
   }
 }

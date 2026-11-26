@@ -10,7 +10,7 @@ import {
 import { type Feature, type InvocationResult, contractCompatibility, invoke, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
 import type { Mapping } from '../shared/features/mappings'
 import { DEFINITIONS, describeDefinitionIssue, describeOutcome, outcomeIssues } from '../app/dev/features/experiment'
-import { ORBIT_PROVIDED, draftFrom } from '../app/dev/definitions/model'
+import { ORBIT_PROVIDED, draftFrom, fieldsOf } from '../app/dev/definitions/model'
 
 const W = 'ws-a'
 const OTHER = 'ws-b'
@@ -316,8 +316,10 @@ describe('Existing contracts are unchanged', () => {
     expect(validate(local, { contact: { email: 'a' } })).toEqual([])
   })
 
-  it('the Studio, which has no reference editor, refuses to open one as a draft rather than copying it', () => {
-    expect(() => draftFrom(PROCESS_1)).toThrow(/has local objects or references, which the Studio can’t edit yet/)
+  it('the Studio drafts a version with references as references, never copying what they contain', () => {
+    const draft = draftFrom(PROCESS_1)
+    expect(draft.fields[1]).toEqual({ key: 1, name: 'candidate', type: 'reference', optional: false, definition: { id: 'candidate', version: 1 } })
+    expect(fieldsOf(draft)).toEqual(PROCESS_1.fields)
   })
 })
 

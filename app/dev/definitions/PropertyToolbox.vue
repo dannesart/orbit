@@ -5,14 +5,21 @@
 //
 // On wide screens it stands to the right of the model, and stays in view while the model scrolls.
 // On smaller ones it sits above the model as one compact strip, so the model keeps the width.
-import type { FieldType } from '#shared/features/definitions'
+import type { DefinitionRef, PropertyType } from '#shared/features/definitions'
+import type { StudioCatalogue } from './catalogue'
 import { typeWords } from './model'
 import DefinitionsIcon from './DefinitionsIcon.vue'
 
-defineProps<{ target: string | null }>()
-const emit = defineEmits<{ add: [FieldType]; drag: [DragEvent, FieldType]; dragend: []; clearTarget: [] }>()
+/** What a block adds: a basic type, or a reference to one exact version (with a suggested name). */
+interface Block {
+  readonly type: PropertyType
+  readonly definition?: DefinitionRef
+  readonly name?: string
+}
+defineProps<{ target: string | null; catalogue: StudioCatalogue }>()
+const emit = defineEmits<{ add: [Block]; drag: [DragEvent, Block]; dragend: []; clearTarget: [] }>()
 
-const BASIC: FieldType[] = ['string', 'number', 'boolean']
+const BASIC: PropertyType[] = ['string', 'number', 'boolean', 'object']
 
 const query = ref('')
 const matches = (text: string) => text.toLowerCase().includes(query.value.trim().toLowerCase())
@@ -44,13 +51,13 @@ const block = 'flex w-full cursor-grab items-center gap-2.5 rounded-xl border bo
           type="button"
           draggable="true"
           :data-add-type="t"
-          :aria-label="`Add a ${typeWords[t].toLowerCase()} property${target ? ` into ${target}` : ''}`"
+          :aria-label="`Add ${t === 'object' ? 'an object' : `a ${typeWords[t].toLowerCase()} property`}${target ? ` into ${target}` : ''}`"
           :class="block"
-          @click="emit('add', t)"
-          @dragstart="emit('drag', $event, t)"
+          @click="emit('add', { type: t })"
+          @dragstart="emit('drag', $event, { type: t })"
           @dragend="emit('dragend')"
         >
-          <span class="grid size-6 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600">
+          <span class="grid size-6 shrink-0 place-items-center rounded-lg" :class="t === 'object' ? 'bg-accent-50 text-accent-600' : 'bg-slate-100 text-slate-600'">
             <DefinitionsIcon :name="t" class="size-3.5" />
           </span>
           {{ typeWords[t] }}

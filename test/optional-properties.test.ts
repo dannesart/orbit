@@ -73,7 +73,7 @@ describe('Versions when requiredness changes', () => {
   it('makes a new version, says so, and leaves the earlier one exactly as it was', () => {
     const before = structuredClone(v1.versions[0])
     const draft = updateField(draftFrom(v1.versions[0]!), 1, { optional: true })
-    expect(changesFrom(v1.versions[0]!, draft)).toEqual([{ kind: 'requirement', name: 'b', optional: true }])
+    expect(changesFrom(v1.versions[0]!, draft)).toEqual([{ kind: 'requirement', path: ['b'], optional: true }])
     expect(versionLike(v1, fieldsOf(draft))).toBeNull()
     const v2 = addVersion(v1, draft)
     expect(v2.versions.map((v) => v.fields[1])).toEqual([{ name: 'b', type: 'string' }, { name: 'b', type: 'string', optional: true }])

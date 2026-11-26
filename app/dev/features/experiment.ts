@@ -189,13 +189,13 @@ export function describeOutcome(outcome: Outcome): string {
   }
 }
 
-/** A problem with a contract (checkFields, checkContract), in words. */
-export function describeDefinitionIssue(issue: DefinitionIssue): string {
+/** A problem with a contract (checkFields, checkContract), in words. `label` names a referenced version. */
+export function describeDefinitionIssue(issue: DefinitionIssue, label: (ref: DefinitionRef) => string = definitionLabel): string {
   const at = propertyPathWords(issue.path)
   switch (issue.problem) {
-    case 'unresolved_reference': return `${at} refers to ${definitionLabel(issue.definition)}, which can’t be found here.`
-    case 'unavailable_reference': return `${at} refers to ${definitionLabel(issue.definition)}, which this Definition may not depend on.`
-    case 'cyclic_reference': return `${at} refers back to ${definitionLabel(issue.definition)}, which contains it, so it never ends.`
+    case 'unresolved_reference': return `${at} refers to ${label(issue.definition)}, which can’t be found here.`
+    case 'unavailable_reference': return `${at} refers to ${label(issue.definition)}, which this Definition may not depend on.`
+    case 'cyclic_reference': return `${at} refers back to ${label(issue.definition)}, which contains it, so it never ends.`
     case 'too_deep': return `${at} would nest ${issue.level} levels deep. At most ${MAX_OBJECT_LEVELS} are allowed.`
     case 'malformed': return `${at} isn’t a property Orbit understands.`
     default: return describeNamingIssues([issue])[0]!
@@ -205,7 +205,7 @@ export function describeDefinitionIssue(issue: DefinitionIssue): string {
 export const outcomeIssues = (outcome: Outcome): string[] => {
   if (!('issues' in outcome)) return []
   if (outcome.reason === 'invalid_mapping') return outcome.issues.map((i) => `${formatPath(i.path)}: ${describeMappingIssue(i)}`)
-  if (outcome.reason === 'invalid_contract') return outcome.issues.map(describeDefinitionIssue)
+  if (outcome.reason === 'invalid_contract') return outcome.issues.map((i) => describeDefinitionIssue(i))
   return outcome.issues.map(describeIssue)
 }
 

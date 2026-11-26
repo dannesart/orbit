@@ -167,11 +167,11 @@ describe('Evolving a Definition', () => {
     draft = addField(draft)
     draft = updateField(draft, draft.nextKey - 1, { name: 'email' })
     expect(changesFrom(base, draft)).toEqual([
-      { kind: 'renamed', from: 'full name', to: 'name' },
-      { kind: 'retyped', name: 'subscribed', from: 'boolean', to: 'string' },
-      { kind: 'added', name: 'email', type: 'string' },
+      { kind: 'renamed', from: ['full name'], path: ['name'] },
+      { kind: 'retyped', path: ['subscribed'], from: 'boolean', to: 'string' },
+      { kind: 'added', path: ['email'], type: 'string' },
     ])
-    expect(changesFrom(base, removeField(draftFrom(base), 0))).toEqual([{ kind: 'removed', name: 'full name' }])
+    expect(changesFrom(base, removeField(draftFrom(base), 0))).toEqual([{ kind: 'removed', path: ['full name'] }])
   })
 })
 
@@ -453,42 +453,50 @@ describe('The Definitions Studio: a catalogue, an inspector, and editing on purp
   })
 })
 
-describe('The model builder: a toolbox, compact rows, and editing in place', () => {
+describe('The model builder: a toolbox, a tree of compact rows, and editing in place', () => {
   const builder = source('app/dev/definitions/ModelBuilder.vue')
   const toolbox = source('app/dev/definitions/PropertyToolbox.vue')
-  const rows = builder.slice(builder.indexOf('<!-- The model -->'))
+  const tree = source('app/dev/definitions/PropertyTree.vue')
 
-  it('adds a type by click or by drag, with one result: a required property whose name has focus', () => {
-    expect(toolbox).toMatch(/@click="emit\('add', t\)"\s*@dragstart="emit\('drag', \$event, t\)"/)
-    expect(builder).toMatch(/<PropertyToolbox[^>]*@add="add\(\$event\)" @drag="startType"/)
-    expect(builder).toMatch(/if \(type && TYPES\.includes\(type\)\) add\(type, index\)/)
+  it('adds a block by click or by drag, with one result: a required property whose name has focus', () => {
+    expect(toolbox).toMatch(/@click="emit\('add', \{ type: t \}\)"\s*@dragstart="emit\('drag', \$event, \{ type: t \}\)"/)
+    expect(builder).toMatch(/<PropertyToolbox[\s\S]*@add="add\(\$event\)"\s*@drag="startBlock"/)
+    expect(builder).toContain('if (block) add(JSON.parse(block) as Block, { parent, index })')
     const add = builder.slice(builder.indexOf('function add('), builder.indexOf('function remove('))
-    expect(add).toContain('addField(props.draft, type)')
-    expect(add).toContain('nextTick(() => nameInput(key)?.focus())')
+    expect(add).toContain('addField(draft.value, block.type, { parent, index: place?.index, definition: block.definition, name: block.name })')
+    expect(add).toContain('nextTick(() => nameInput(key)?.select())')
     expect(addField(blankDraft(), 'number').fields.at(-1)).toMatchObject({ type: 'number', optional: false })
   })
 
   it('shows each property as a row: type icon, name, type, required or optional, and a chevron; the row opens its editor', () => {
-    const row = rows.slice(rows.indexOf('data-row-toggle'), rows.indexOf('<!-- The row\'s own editor -->'))
-    expect(row).toMatch(/:aria-expanded="open === f\.key"[\s\S]*@click="toggle\(f\.key\)"/)
-    expect(row).toMatch(/<DefinitionsIcon :name="f\.type"[\s\S]*f\.name\.trim\(\) \|\| 'unnamed'[\s\S]*typeWords\[f\.type\][\s\S]*'Optional' : 'Required'[\s\S]*name="chevron"/)
+    const row = tree.slice(tree.indexOf('data-row-toggle'), tree.indexOf('<!-- The row\'s own editor -->'))
+    expect(row).toMatch(/:aria-expanded="open === f\.key"[\s\S]*@click="b\.toggle\(f\.key\)"/)
+    expect(row).toMatch(/<DefinitionsIcon :name="f\.type"[\s\S]*f\.name\.trim\(\) \|\| 'unnamed'[\s\S]*typeLabel\(f\)[\s\S]*'Optional' : 'Required'[\s\S]*name="chevron"/)
     // No type selector, requiredness switch or remove button on a closed row.
     expect(row).not.toMatch(/type="radio"|Remove/)
-    const editor = rows.slice(rows.indexOf('<!-- The row\'s own editor -->'))
+    const editor = tree.slice(tree.indexOf('<!-- The row\'s own editor -->'))
     expect(editor).toMatch(/v-if="open === f\.key"/)
-    expect(editor).toMatch(/updateField\(draft, f\.key, \{ name:[\s\S]*updateField\(draft, f\.key, \{ type: t \}\)[\s\S]*updateField\(draft, f\.key, \{ optional: o \}\)[\s\S]*@click="remove\(f\.key\)"/)
+    expect(editor).toMatch(/set\(f\.key, \{ name:[\s\S]*set\(f\.key, \{ type: t \}\)[\s\S]*set\(f\.key, \{ optional: o \}\)[\s\S]*@click="b\.remove\(f\.key\)"/)
   })
 
   it('reorders with a handle (drag or arrow keys) or Move up and down, never by accident changing the contract', () => {
-    expect(builder).toMatch(/data-handle\s+draggable="true"[\s\S]*@dragstart="startRow\(\$event, f\.key\)"[\s\S]*@keydown="handleKey\(\$event, f\.key\)"/)
+    expect(tree).toMatch(/data-handle\s+draggable="true"[\s\S]*@dragstart="b\.startRow\(\$event, f\.key\)"[\s\S]*@keydown="b\.handleKey\(\$event, f\.key\)"/)
     expect(builder).toMatch(/if \(event\.key === 'ArrowUp'\) \{ event\.preventDefault\(\); move\(key, -1, 'handle'\) \}/)
-    expect(builder).toMatch(/data-move="up"[\s\S]*data-move="down"/)
+    expect(tree).toMatch(/data-move="up"[\s\S]*data-move="down"/)
     // Order is presentation: a reordered draft is the same version (test/optional-properties.test.ts).
-    expect(builder).toContain('moveField(props.draft, key, index > from ? index - 1 : index)')
+    expect(builder).toContain('moveField(draft.value, key, from.parent === parent && index > from.index ? index - 1 : index, parent)')
   })
 
-  it('never needs dragging: the toolbox is buttons, and a drop target is always shown', () => {
+  it('never needs dragging: the toolbox is buttons, a drop target is always shown, and "In" moves between levels', () => {
     expect(toolbox).toMatch(/<button\s+type="button"\s+draggable="true"\s+:data-add-type="t"/)
-    expect(builder).toContain("'Drag a type here, or choose one, to add the first property'")
+    expect(tree).toContain("'Drag a type here, or choose one, to add the first property'")
+    expect(tree).toMatch(/data-move-into[\s\S]*b\.moveInto\(f\.key/)
+    expect(tree).toMatch(/data-add-here[\s\S]*@click="b\.setTarget\(isTarget \? null : parent\)"/)
+  })
+
+  it('nests: each local object is its own level, with the same rows, folding and its own drop target', () => {
+    expect(tree).toMatch(/<PropertyTree :fields="f\.fields \?\? \[\]" :parent="f\.key" :path="\[\.\.\.path, f\.name\]" \/>/)
+    expect(tree).toMatch(/@dragover="b\.over\(\$event, parent\)"[\s\S]*@drop="b\.drop\(\$event, parent\)"/)
+    expect(tree).toMatch(/data-fold[\s\S]*@click="b\.fold\(f\.key\)"/)
   })
 })

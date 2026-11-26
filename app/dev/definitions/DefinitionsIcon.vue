@@ -7,7 +7,7 @@
 <script setup lang="ts">
 export type DefinitionsIconName =
   | 'definition' | 'lock' | 'plus' | 'chevron' | 'pencil' | 'close'
-  | 'string' | 'number' | 'boolean' | 'grip' | 'up' | 'down' | 'reset' | 'flask' | 'search'
+  | 'string' | 'number' | 'boolean' | 'grip' | 'up' | 'down' | 'reset' | 'flask' | 'search' | 'object' | 'reference' | 'open'
 defineProps<{ name: DefinitionsIconName }>()
 </script>
 
@@ -40,6 +40,12 @@ defineProps<{ name: DefinitionsIconName }>()
       <path d="M3 8a5 5 0 1 0 1.5-3.55" />
       <path d="M3 2.75V5.5h2.75" />
     </template>
+    <path v-else-if="name === 'object'" d="M5.5 2.75H5a1.5 1.5 0 0 0-1.5 1.5v2.25L2.25 8 3.5 9.5v2.25a1.5 1.5 0 0 0 1.5 1.5h.5M10.5 2.75h.5a1.5 1.5 0 0 1 1.5 1.5v2.25L13.75 8 12.5 9.5v2.25a1.5 1.5 0 0 1-1.5 1.5h-.5" />
+    <template v-else-if="name === 'reference'">
+      <path d="M6.75 9.25a2.75 2.75 0 0 0 3.9.1l2-2a2.75 2.75 0 0 0-3.9-3.9l-.7.7" />
+      <path d="M9.25 6.75a2.75 2.75 0 0 0-3.9-.1l-2 2a2.75 2.75 0 0 0 3.9 3.9l.7-.7" />
+    </template>
+    <path v-else-if="name === 'open'" d="M6.5 3.25H4.25a1 1 0 0 0-1 1v7.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V9.5M9.25 2.75h4v4M13 3 7.75 8.25" />
     <template v-else-if="name === 'search'">
       <circle cx="7" cy="7" r="4.25" />
       <path d="m10.25 10.25 3 3" />
