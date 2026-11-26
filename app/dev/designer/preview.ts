@@ -93,7 +93,10 @@ export interface DraftReview {
   readonly issues: readonly (readonly ReviewIssue[])[]
   /** Everything that keeps the draft from being a sound Mapping for the target, in words. */
   readonly problems: readonly string[]
-  /** The target's required properties nothing makes yet: incomplete, not wrong. (Optional ones may stay unmapped.) */
+  /**
+   * The target's required properties nothing makes yet, at any depth (inside a built object by its
+   * path, "contact › email"): incomplete, not wrong. (Optional ones may stay unmapped.)
+   */
   readonly missing: readonly string[]
   /** The problems that are actual errors: everything except what's still missing. */
   readonly errors: readonly string[]
@@ -144,6 +147,9 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   const top = completeness(properties, input, target, support?.reading?.resolve)
   const at = (problem: LocatedMappingIssue['problem'], name: string) => top.find((i) => i.problem === problem && i.at.output[0] === name)
 
+  // A required property inside a built object that nothing makes yet: unfinished work, like a
+  // required property of the output itself, never an error (by path: "contact › email").
+  const inside: { readonly words: string; readonly problem: string }[] = []
   const fields = target.fields.map((field): FieldReview => {
     const index = firstIndex(field.name)
     const optional = field.optional === true
@@ -156,7 +162,13 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
     const wrong = at('wrong_output_type', field.name)
     if (wrong?.problem === 'wrong_output_type') own.push(`${targetLabel} needs ${typeWords[wrong.expected]} here, but this makes ${typeWords[wrong.actual]}.`)
     // Each problem where it is: inside a built object, by its path ("Contact › Email").
-    problems.push(...own.map((p) => `${field.name}: ${p}`), ...issues[index]!.map((i) => `${'at' in i ? propertyPathWords(i.at.output) : field.name}: ${friendlyIssue(i)}`))
+    problems.push(...own.map((p) => `${field.name}: ${p}`))
+    for (const i of issues[index]!) {
+      const words = 'at' in i ? propertyPathWords(i.at.output) : field.name
+      const problem = `${words}: ${friendlyIssue(i)}`
+      if ('at' in i && i.problem === 'missing_output_property') inside.push({ words, problem })
+      problems.push(problem)
+    }
     return { name: field.name, expected: field.type, optional, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }
   })
 
@@ -173,8 +185,9 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
     problems.push(`${p.name || 'An unnamed value'}: ${reason}`)
   })
 
-  const missing = fields.filter((f) => f.state === 'not_set').map((f) => f.name)
-  const unset = new Set(missing.map((name) => `${name} isn’t set yet. ${targetLabel} needs it.`))
+  const unmade = fields.filter((f) => f.state === 'not_set').map((f) => f.name)
+  const missing = [...unmade, ...inside.map((i) => i.words)]
+  const unset = new Set([...unmade.map((name) => `${name} isn’t set yet. ${targetLabel} needs it.`), ...inside.map((i) => i.problem)])
   if (unsupported) problems.unshift(unsupported)
   return { fields, extras, issues, problems, missing, errors: problems.filter((p) => !unset.has(p)), unsupported }
 }

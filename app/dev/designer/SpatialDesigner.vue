@@ -24,7 +24,7 @@ import {
 import RunResult from './RunResult.vue'
 import DesignerToolbar from './DesignerToolbar.vue'
 import LeaveDialog from './LeaveDialog.vue'
-import { draftLoses, workAtRisk } from './session'
+import { draftAfterApply, draftLoses, workAtRisk } from './session'
 import { lastWorkspace, shelfOf } from '../definitions/store'
 import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput } from '../definitions/designer'
 import FocusEditor from './FocusEditor.vue'
@@ -164,8 +164,9 @@ const boundary = computed(() => (review.value.problems.length || review.value.un
  */
 function apply() {
   if (!plan.value.changes || structure.value.length || review.value.problems.length || boundary.value.length) return
-  config.value = applyConfiguration(config.value, draft.value)
-  setDraft({ ...draft.value, properties: draftFrom(config.value).properties }, false)
+  const before = config.value
+  config.value = applyConfiguration(before, draft.value)
+  setDraft(draftAfterApply(draft.value, before, config.value), false)
 }
 
 // Discard and Start over reset the draft on purpose. When that would lose work someone wrote

@@ -4,7 +4,7 @@
 // opening panels aren't work: an untouched playground can be left without a question.
 import { sameData, sameDefinition, sameFields } from '#shared/features/definitions'
 import { INITIAL_MAPPING } from '../features/experiment'
-import { type Configuration, type TransformDraft, initialConfiguration, labelOf } from './config'
+import { type Configuration, type TransformDraft, draftFrom, initialConfiguration, labelOf } from './config'
 import { type DraftProperty, fromPiece } from './parts'
 
 const sameProperty = (a: DraftProperty, b: DraftProperty) => a.name === b.name && sameData(fromPiece(a.piece), fromPiece(b.piece))
@@ -24,6 +24,19 @@ export function draftLoses(draft: TransformDraft, to: TransformDraft): string[] 
   if (aside) at.push(`${count(aside, 'mapping', 'mappings')} set aside when you switched Definitions`)
   if (draft.local.name !== to.local.name || !sameFields(draft.local.fields, to.local.fields)) at.push('Changes to the Transform’s own output')
   return at
+}
+
+/**
+ * The draft once Apply has turned `before` into `after`: the applied Mapping's properties, and the
+ * Transform's own output as written. An untouched own output (still the copy it was started from)
+ * follows the newly applied output instead, so it never reads as someone's work afterwards (Discard
+ * and Cancel compare against that copy).
+ */
+export function draftAfterApply(draft: TransformDraft, before: Configuration, after: Configuration): TransformDraft {
+  const fresh = draftFrom(after)
+  const seed = draftFrom(before).local
+  const untouched = draft.local.name === seed.name && sameFields(draft.local.fields, seed.fields)
+  return { ...draft, properties: fresh.properties, ...(untouched ? { local: fresh.local } : {}) }
 }
 
 export interface Setup {
