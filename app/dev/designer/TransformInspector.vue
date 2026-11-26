@@ -28,6 +28,8 @@ const props = defineProps<{
   example: Example
   input: DefinitionVersion
   canUndo: boolean
+  /** What the step's Transform version would refuse in the complete draft that the review hasn't said. */
+  boundary?: readonly string[]
   step: Step
   stale: boolean
   runNumber: number
@@ -126,7 +128,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
     </div>
 
     <div class="border-t border-slate-100 px-5 pt-3 pb-4">
-      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :unsupported="review.unsupported" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
+      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors, ...(boundary ?? [])]" :missing="review.missing" :unsupported="review.unsupported" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
     </div>
   </div>
 </template>

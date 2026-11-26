@@ -4,7 +4,7 @@
 // Absence follows the domain's rule: a source reading an absent optional property has no value,
 // and that property is left out of the object, never filled in.
 import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type PropertyType, type Resolve, type Scalar, checkContract, frozenCopy, kindOf, propertyPathWords, validate } from '#shared/features/definitions'
-import { type Expression, type MappingProperty, evaluatePresent } from '#shared/features/mappings'
+import { type Expression, type LocatedMappingIssue, type MappingProperty, checkNestedMapping, evaluatePresent } from '#shared/features/mappings'
 import { FLAT, type Reading, type ReviewIssue, checkWith, presentIn } from './reading'
 import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData } from '../features/experiment'
 
@@ -137,18 +137,24 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   const issues = checked.map((c) => c.issues)
   const firstIndex = (name: string) => properties.findIndex((p) => p.name === name)
   const problems: string[] = []
+  // The output's own completeness (each required property made, of its type, nothing it doesn't
+  // have, names unique) is the domain's rule, asked of the whole Mapping at once: never a rule of the
+  // Designer's. Transform v3's boundary refuses an incomplete Mapping by exactly this check; v1 and v2
+  // only find out by validating what ran, so for them the Designer asks the same rule earlier.
+  const top = completeness(properties, input, target, support?.reading?.resolve)
+  const at = (problem: LocatedMappingIssue['problem'], name: string) => top.find((i) => i.problem === problem && i.at.output[0] === name)
 
   const fields = target.fields.map((field): FieldReview => {
     const index = firstIndex(field.name)
     const optional = field.optional === true
     if (cannotMake.has(field.name)) return { name: field.name, expected: field.type, optional, index, state: 'unsupported', problems: [] }
     if (index < 0) {
-      if (!optional) problems.push(`${field.name} isn’t set yet. ${targetLabel} needs it.`)
+      if (at('missing_output_property', field.name)) problems.push(`${field.name} isn’t set yet. ${targetLabel} needs it.`)
       return { name: field.name, expected: field.type, optional, index, state: optional ? 'left_out' : 'not_set', problems: [] }
     }
     const own: string[] = []
-    const type = checked[index]!.types[0]
-    if (type && type !== field.type) own.push(`${targetLabel} needs ${typeWords[field.type]} here, but this makes ${typeWords[type]}.`)
+    const wrong = at('wrong_output_type', field.name)
+    if (wrong?.problem === 'wrong_output_type') own.push(`${targetLabel} needs ${typeWords[wrong.expected]} here, but this makes ${typeWords[wrong.actual]}.`)
     // Each problem where it is: inside a built object, by its path ("Contact › Email").
     problems.push(...own.map((p) => `${field.name}: ${p}`), ...issues[index]!.map((i) => `${'at' in i ? propertyPathWords(i.at.output) : field.name}: ${friendlyIssue(i)}`))
     return { name: field.name, expected: field.type, optional, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }
@@ -157,11 +163,12 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   const extras: ExtraReview[] = []
   properties.forEach((p, index) => {
     if (fields.some((f) => f.index === index)) return
+    // Why it has no place, as the domain's check says: no name, a name already made, or one the target doesn't have.
     const reason = !p.name
       ? 'It has no name.'
-      : target.fields.some((f) => f.name === p.name)
-        ? `Another value already makes ${p.name}.`
-        : `${targetLabel} has no field “${p.name}”, so the Transform’s output would be rejected.`
+      : at('unknown_output_property', p.name)
+        ? `${targetLabel} has no field “${p.name}”, so the Transform’s output would be rejected.`
+        : `Another value already makes ${p.name}.`
     extras.push({ index, reason })
     problems.push(`${p.name || 'An unnamed value'}: ${reason}`)
   })
@@ -170,6 +177,17 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   const unset = new Set(missing.map((name) => `${name} isn’t set yet. ${targetLabel} needs it.`))
   if (unsupported) problems.unshift(unsupported)
   return { fields, extras, issues, problems, missing, errors: problems.filter((p) => !unset.has(p)), unsupported }
+}
+
+/**
+ * The output's completeness problems at its top level, from the domain's whole-Mapping check
+ * (checkNestedMapping, which checks each object against its contract): required properties nothing
+ * makes, values of the wrong type, properties the output doesn't have, and names missing or repeated.
+ * Problems inside a property are the per-property check's (checkWith), where they're shown.
+ */
+export function completeness(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, resolve?: Resolve): LocatedMappingIssue[] {
+  const kinds = new Set(['missing_output_property', 'wrong_output_type', 'unknown_output_property', 'empty_name', 'duplicate_name'])
+  return checkNestedMapping({ properties }, input, target, { resolve }).issues.filter((i) => kinds.has(i.problem) && i.at.output.length === 1 && !i.at.expression.length)
 }
 
 /**

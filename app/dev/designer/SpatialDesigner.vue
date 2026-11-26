@@ -38,7 +38,7 @@ import {
 import { summarize } from './summary'
 import { fromDraft } from './parts'
 import { exampleFrom, previewOutput, reviewDraft } from './preview'
-import { transformSupport } from './support'
+import { boundaryProblems, transformSupport } from './support'
 import { READING } from './reading'
 import { reconcile } from './switching'
 import {
@@ -138,11 +138,18 @@ const review = computed(() => reviewDraft(draftProperties.value, input.value, ta
 const output = computed(() => previewOutput(draftProperties.value, input.value, target.value.definition, example.value, support.value.reading))
 const plan = computed(() => planApply(config.value, draft.value))
 /**
- * The only place versions are made, and only from a sound draft: complete, with no errors. (What
- * the boundary does with a Mapping it would refuse is the list view's to show: /dev/features.)
+ * Before Apply, the complete draft is checked as the boundary checks it before running, with the
+ * Transform version this step invokes (mappingCompatibility). The review already says why in its
+ * own words; this is only what it might not have said, so nothing the step would refuse is applied.
+ */
+const boundary = computed(() => (review.value.problems.length || review.value.unsupported ? [] : boundaryProblems(features.value.transform, draftProperties.value, input.value, target.value.definition, resolve)))
+/**
+ * The only place versions are made, and only from a sound draft: complete, with no errors, and
+ * accepted by the step's Transform version as a whole. (What the boundary does with a Mapping it
+ * would refuse is the list view's to show: /dev/features.)
  */
 function apply() {
-  if (!plan.value.changes || structure.value.length || review.value.problems.length) return
+  if (!plan.value.changes || structure.value.length || review.value.problems.length || boundary.value.length) return
   config.value = applyConfiguration(config.value, draft.value)
   setDraft({ ...draft.value, properties: draftFrom(config.value).properties }, false)
 }
@@ -647,6 +654,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :example="example"
         :input="input"
         :can-undo="history.length > 0"
+        :boundary="boundary"
         :step="stepOf('transform')"
         :stale="stale"
         :run-number="runNumber"
@@ -731,6 +739,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :example="example"
         :input="input"
         :can-undo="history.length > 0"
+        :boundary="boundary"
         :mode="focus.mode"
         :property="focus.property"
         @update:draft="setDraft"

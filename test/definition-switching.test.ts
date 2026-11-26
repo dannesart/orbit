@@ -179,7 +179,7 @@ describe('The calm editor', () => {
 
   it('has no way to apply a draft that is incomplete or wrong', () => {
     expect(read('ApplyBar.vue')).not.toMatch(/anyway/i)
-    expect(read('SpatialDesigner.vue')).toMatch(/function apply\(\) \{\s*if \(!plan\.value\.changes \|\| structure\.value\.length \|\| review\.value\.problems\.length\) return/)
+    expect(read('SpatialDesigner.vue')).toMatch(/function apply\(\) \{\s*if \(!plan\.value\.changes \|\| structure\.value\.length \|\| review\.value\.problems\.length \|\| boundary\.value\.length\) return/)
   })
 
   it('calls a yes-or-no property the same everywhere people see it', () => {
