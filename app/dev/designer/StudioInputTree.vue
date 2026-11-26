@@ -48,7 +48,7 @@ const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
         <span class="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 text-xs text-slate-500">
           <span v-if="n.type === 'reference' && n.unresolved" class="font-medium text-red-700">{{ label(n.definition!) }} can’t be found here</span>
           <span v-else-if="n.type === 'reference'" class="truncate font-medium text-slate-700" data-input-version>{{ label(n.definition!) }}</span>
-          <span v-else-if="n.type === 'object'">Object · {{ count(n.children.length) }}</span>
+          <span v-else-if="n.type === 'object'">Object<span class="max-sm:hidden"> · {{ count(n.children.length) }}</span></span>
           <span v-else-if="!n.readable" :title="`This Transform version reads only top-level values`">{{ typeWords[n.type] }} · not readable here</span>
           <span v-else>{{ typeWords[n.type] }}</span>
           <span v-if="n.optional" class="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">Optional</span>

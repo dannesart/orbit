@@ -28,6 +28,8 @@ import { draftLoses, workAtRisk } from './session'
 import { lastWorkspace, shelfOf } from '../definitions/store'
 import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput } from '../definitions/designer'
 import FocusEditor from './FocusEditor.vue'
+import MappingStudio from './MappingStudio.vue'
+import type { AppliedPreview } from './studio'
 import TransformInspector from './TransformInspector.vue'
 import StepNode, { type StepView } from './StepNode.vue'
 import { drawEdges, initialNodes, nodeLabel, resetPositions } from './graph'
@@ -46,7 +48,7 @@ import {
   initialConfiguration, labelOf, outputOf, planApply, structureProblems,
 } from './config'
 
-useHead({ title: 'Spatial designer (experiment) · Orbit' })
+// The page's title follows where you are (Mapping Studio, below).
 
 // --- The experiment's state: as on the list playground (FeaturePlayground.vue), except that the
 // Transform's configuration (its output Definition and its Mapping) is edited as a draft and only
@@ -136,6 +138,18 @@ provide(READING, computed(() => support.value.reading!))
 const example = computed(() => exampleFrom(recordText.value, input.value, resolve))
 const review = computed(() => reviewDraft(draftProperties.value, input.value, target.value.definition, target.value.label, support.value))
 const output = computed(() => previewOutput(draftProperties.value, input.value, target.value.definition, example.value, support.value.reading))
+/**
+ * The applied Mapping, previewed the same way with the same Record A (Mapping Studio's Preview
+ * shows it beside the draft's). A preview, never a run: runs are what made the evidence.
+ */
+const applied = computed<AppliedPreview>(() => {
+  const mapping = appliedMapping.value
+  const from = findDefinition(config.value, mapping.from) ?? A1
+  const to = findDefinition(config.value, mapping.to)!
+  const example = exampleFrom(recordText.value, from, resolve)
+  const reading = { nested: features.value.transform.sources === 'nested', resolve }
+  return { version: mapping.version, label: label(mapping.to), properties: mapping.properties, input: from, target: to, example, preview: previewOutput(mapping.properties, from, to, example, reading) }
+})
 const plan = computed(() => planApply(config.value, draft.value))
 /**
  * Before Apply, the complete draft is checked as the boundary checks it before running, with the
@@ -431,6 +445,42 @@ const views = computed<Record<StepId, StepView>>(() => {
 // brought into view by panning, without zooming, on wide screens; on phones, where they're sheets,
 // the selected step is fitted above the sheet.
 const focus = ref<{ mode: 'mapping' | 'structure'; property: string | null } | null>(null)
+
+// --- Mapping Studio (Phase 4.5A) ---
+// Its own view, over the Designer rather than instead of it: this page stays as it is underneath
+// (the canvas, positions, connections, Feature versions, runs and the draft), so going there and
+// back loses nothing and applies nothing. Where you are is in the address (?studio=mapping), so the
+// browser's Back returns to the canvas too. Leaving Orbit from the Studio is guarded as from here.
+const route = useRoute()
+const router = useRouter()
+const studio = computed(() => route.query.studio === 'mapping')
+useHead({ title: () => (studio.value ? 'Mapping Studio (experiment) · Orbit' : 'Spatial designer (experiment) · Orbit') })
+let pushed = false
+function openStudio() {
+  focus.value = null
+  pushed = true
+  router.push({ query: { ...route.query, studio: 'mapping' } })
+}
+function closeStudio() {
+  if (pushed) {
+    pushed = false
+    return router.back()
+  }
+  const { studio: _, ...rest } = route.query
+  router.replace({ query: rest })
+}
+// Back on the canvas: focus returns to where the Studio was opened from.
+watch(studio, (open) => {
+  if (!open) nextTick(() => document.querySelector<HTMLElement>('[data-edit-mapping]')?.focus())
+})
+/** Cancel discards the draft on purpose (asking first when that loses work), then returns. */
+function cancelStudio() {
+  const to = draftFrom(config.value)
+  resetAfterAsking({
+    title: 'Cancel your changes?', intro: 'The Mapping goes back to what’s applied. Cancelling forgets:', confirm: 'Discard changes',
+    losing: draftLoses(draft.value, to), act: () => { setDraft(to, false); closeStudio() },
+  })
+}
 const inspector = ref<HTMLElement>()
 /** The property row the editor was opened from (null: the Output pencil); focus returns there. */
 let origin: string | null = null
@@ -537,6 +587,8 @@ onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
 // Arriving with a requested version: open the Transform's structure, where that choice shows.
 onMounted(() => {
   if (requested) nextTick(() => { select('transform'); openFocus('structure', null) })
+  // Arriving in Mapping Studio: the Transform is what it's about, so that's where the way back leads.
+  if (studio.value) nextTick(() => select('transform'))
 })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
@@ -553,6 +605,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
     </div>
 
     <DesignerToolbar
+      :inert="studio || undefined"
       :back="back"
       :status="toolbarStatus"
       :attention="plan.changes ? 'Transform has unapplied changes' : null"
@@ -561,7 +614,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       @start-over="startOver"
     />
 
-    <div class="absolute inset-0">
+    <div class="absolute inset-0" :inert="studio || undefined">
       <ClientOnly>
         <VueFlow
           v-model:nodes="nodes"
@@ -623,6 +676,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
     <aside
       v-if="selectedId && panelTitle && !focus"
       ref="inspector"
+      :inert="studio || undefined"
       data-floating-surface
       :aria-label="`${panelTitle.title}: inspector`"
       class="fixed inset-x-0 bottom-0 z-20 flex animate-rise flex-col overflow-hidden rounded-t-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-900/15 lg:absolute lg:inset-x-auto lg:top-4 lg:right-4 lg:w-[26rem] lg:rounded-3xl lg:shadow-xl lg:shadow-slate-900/10"
@@ -666,6 +720,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         @discard="discard"
         @undo="undo"
         @focus="openFocus"
+        @studio="openStudio"
         @close="closeInspector"
       />
       <div v-else class="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
@@ -751,6 +806,36 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         @close="closeFocus"
       />
     </section>
+
+    <!-- Mapping Studio: its own view, over the Designer, which stays as it is underneath -->
+    <div v-if="studio" class="fixed inset-0 z-40 overflow-y-auto bg-slate-50" data-studio-view>
+      <main class="mx-auto w-full max-w-[96rem] px-3 pt-4 pb-8 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
+        <MappingStudio
+          :draft="draft"
+          :config="config"
+          :target="target"
+          :plan="plan"
+          :structure="structure"
+          :review="review"
+          :output="output"
+          :example="example"
+          :input="input"
+          :can-undo="history.length > 0"
+          :boundary="boundary"
+          :feature="featureWords('transform')"
+          :applied="applied"
+          :step="stepOf('transform')"
+          :stale="stale"
+          :run-number="runNumber"
+          :runs="runs"
+          @update:draft="setDraft"
+          @apply="apply"
+          @cancel="cancelStudio"
+          @undo="undo"
+          @back="closeStudio"
+        />
+      </main>
+    </div>
 
     <LeaveDialog :losing="leaving ? atRisk : null" @stay="stay" @leave="leave" />
     <LeaveDialog

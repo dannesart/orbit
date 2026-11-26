@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // Committing the draft: exactly which versions Apply would create (or that it would create
-// none), with Undo and Discard beside it. Shared by the inspector and the focused editor, so the
-// version boundary always reads the same.
+// none), with Undo and Discard beside it. Shared by the inspector, the focused editor and Mapping
+// Studio, so the version boundary always reads the same. In the Studio, Discard is Cancel: always
+// available, it discards the draft on purpose and returns to the Designer.
 import type { DefinitionRef } from '#shared/features/definitions'
 import DesignerIcon from './DesignerIcon.vue'
 import { type Configuration, type Plan, type TransformDraft, labelOf } from './config'
 
-const props = defineProps<{ plan: Plan; config: Configuration; draft: TransformDraft; errors: readonly string[]; missing: readonly string[]; canUndo: boolean; unsupported?: string | null }>()
+const props = defineProps<{ plan: Plan; config: Configuration; draft: TransformDraft; errors: readonly string[]; missing: readonly string[]; canUndo: boolean; unsupported?: string | null; cancel?: boolean }>()
 const emit = defineEmits<{ apply: []; discard: []; undo: [] }>()
 
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
@@ -43,7 +44,7 @@ const words = computed(() => {
       >
         <DesignerIcon name="undo" class="size-4" />
       </button>
-      <button type="button" class="rounded-full px-3.5 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-40 disabled:hover:bg-transparent" :disabled="!plan.changes" @click="emit('discard')">Discard</button>
+      <button type="button" class="rounded-full px-3.5 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-40 disabled:hover:bg-transparent" :disabled="!plan.changes && !cancel" :data-cancel="cancel || undefined" @click="emit('discard')">{{ cancel ? 'Cancel' : 'Discard' }}</button>
       <button type="button" class="btn-primary w-auto rounded-full px-5 py-1.5 text-sm disabled:cursor-default disabled:opacity-40" :disabled="!plan.changes || blocked" @click="emit('apply')">Apply</button>
     </div>
     <p v-if="plan.changes && blocked" class="mt-2 text-xs text-slate-600">

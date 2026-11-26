@@ -45,6 +45,7 @@ const emit = defineEmits<{
   focus: [mode: 'mapping' | 'structure', property: string | null]
   close: []
   feature: [key: string]
+  studio: []
 }>()
 
 const details = ref(false)
@@ -97,6 +98,13 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
             <option v-for="v in versions" :key="v.key" :value="v.key">{{ v.label }}</option>
           </select>
         </label>
+
+        <!-- Mapping Studio: the Mapping in a view of its own. Opening it changes nothing. -->
+        <button type="button" data-edit-mapping class="mt-4 flex w-full items-center gap-2 rounded-2xl px-4 py-2.5 text-left text-sm font-medium text-accent-700 ring-1 ring-accent-200 transition hover:bg-accent-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" @click="emit('studio')">
+          Edit Mapping
+          <span class="text-xs font-normal text-slate-500">· {{ definitionLabel(input) }} → {{ target.label }}</span>
+          <DesignerIcon name="chevron" class="ml-auto size-4 shrink-0" />
+        </button>
 
         <UnsupportedNotice v-if="review.unsupported" class="mt-4" :text="review.unsupported" />
 

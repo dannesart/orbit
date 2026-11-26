@@ -10,8 +10,9 @@ describe('The floating surfaces: the canvas stays where it is', () => {
 
   it('never refits or resizes the canvas when the inspector or the editor opens or closes', () => {
     expect(page).not.toMatch(/panelWidth/)
-    // The canvas fills the page no matter what is selected or open: its container has no bindings.
-    expect(page).toMatch(/<div class="absolute inset-0">\s*<ClientOnly>/)
+    // The canvas fills the page no matter what is selected or open: its container has no bindings
+    // that could size or move it (only inert, while Mapping Studio is over it).
+    expect(page).toMatch(/<div class="absolute inset-0" :inert="studio \|\| undefined">\s*<ClientOnly>/)
     // The inspector and the editor are overlays.
     expect(page).toMatch(/<aside[\s\S]*?data-floating-surface[\s\S]*?lg:absolute/)
     expect(page).toMatch(/<section[\s\S]*?data-floating-surface[\s\S]*?lg:absolute/)
