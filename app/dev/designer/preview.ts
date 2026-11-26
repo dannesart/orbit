@@ -179,7 +179,7 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
     const reason = !p.name
       ? 'It has no name.'
       : at('unknown_output_property', p.name)
-        ? `${targetLabel} has no field “${p.name}”, so the Transform’s output would be rejected.`
+        ? `${targetLabel} has no field “${p.name}”.`
         : `Another value already makes ${p.name}.`
     extras.push({ index, reason })
     problems.push(`${p.name || 'An unnamed value'}: ${reason}`)

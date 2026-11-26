@@ -38,6 +38,15 @@ describe('Discarding after Apply asks only about what someone wrote', () => {
     expect(draftLoses(draft, draftFrom(after))).toContain('Changes to the Transform’s own output')
   })
 
+  it('doesn’t count a mapping set aside exactly as an applied version has it: that version keeps it', () => {
+    const aside = { name: 'fullName', piece: field('firstName') }
+    const draft = { ...draftFrom(start), properties: [], aside: [aside] }
+    expect(draftLoses(draft, draftFrom(start))).toContain('1 mapping set aside when you switched Definitions')
+    expect(draftLoses(draft, draftFrom(start), [{ properties: [{ name: 'fullName', source: { kind: 'property', name: 'firstName' } }] }])).toEqual([])
+    // One someone wrote is still work.
+    expect(draftLoses({ ...draft, aside: [{ name: 'fullName', piece: field('lastName') }] }, draftFrom(start), [{ properties: [{ name: 'fullName', source: { kind: 'property', name: 'firstName' } }] }])).toContain('1 mapping set aside when you switched Definitions')
+  })
+
   it('is what Apply does', () => {
     const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
     expect(page).toContain('setDraft(draftAfterApply(draft.value, before, config.value), false)')
@@ -64,6 +73,6 @@ describe('A value missing inside a built object is unfinished work', () => {
     const wrong: DraftProperty[] = draft.map((p) => (p.name === 'contact' ? { ...p, piece: { kind: 'construct', presence: { when: 'always' }, properties: [{ name: 'email', piece: nested('contact', 'email') }] } as Piece } : p))
     const r = review(wrong)
     expect(r.missing).toEqual(['home › city'])
-    expect(r.errors).toEqual(['contact › email: contact may be missing, but this property is required. Orbit won’t invent a value.'])
+    expect(r.errors).toEqual(['contact › email: contact may be missing, but this property is required.'])
   })
 })

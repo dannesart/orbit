@@ -279,7 +279,7 @@ describe('Reviewing a draft against Definition B', () => {
     const review = reviewDraft(draft, A1, B1)
     expect(review.fields[0]).toMatchObject({ index: 1, state: 'set' })
     expect(review.extras).toEqual([
-      { index: 0, reason: 'Definition B · v1 has no field “nickname”, so the Transform’s output would be rejected.' },
+      { index: 0, reason: 'Definition B · v1 has no field “nickname”.' },
       { index: 2, reason: 'Another value already makes fullName.' },
       { index: 3, reason: 'It has no name.' },
     ])

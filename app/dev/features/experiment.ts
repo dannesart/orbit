@@ -208,7 +208,7 @@ export function describeMappingIssue(issue: AnyMappingIssue): string {
     case 'list_item_type': return `Only strings can be joined; this is ${kindWords[issue.actual]}.`
     case 'list_not_allowed': return 'A property can’t be a list.'
     case 'invalid_literal': return 'That isn’t a usable number.'
-    case 'may_be_absent': return `${optionalWords(issue.optional)} may be missing, but this property is required. Orbit won’t invent a value.`
+    case 'may_be_absent': return `${optionalWords(issue.optional)} may be missing, but this property is required.`
     case 'object_property': return `${issue.name} is an object. A source can read text, numbers and yes or no, not a whole object.`
     case 'absence_unsupported': return `${optionalWords(issue.optional)} may be missing, and this version of the Transform has no behaviour for that.`
     case 'unsupported_source': return 'This version of the Transform doesn’t understand this kind of source.'
@@ -222,7 +222,7 @@ export function describeMappingIssue(issue: AnyMappingIssue): string {
     case 'construct_into_value': return 'This property is a value, not an object, so it can’t be built.'
     case 'value_into_object': return 'This property is an object: build it property by property.'
     case 'unknown_output_property': return `This object has no property “${issue.name}”.`
-    case 'missing_output_property': return `${issue.name} is required here, and nothing makes it. Orbit won’t invent a value.`
+    case 'missing_output_property': return `${issue.name} needs a value.`
     case 'wrong_output_type': return `This needs ${kindWords[issue.expected]}, not ${kindWords[issue.actual]}.`
     case 'condition_not_object': return 'An object is built when a source object is present: this names a value.'
     case 'condition_not_chosen': return 'Choose the source object it’s built when present.'

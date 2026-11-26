@@ -43,14 +43,17 @@ describe('Going to Mapping Studio and back', () => {
   it('applies nothing by going or coming back; Cancel discards on purpose, asking first when that loses work', () => {
     const open = page.slice(page.indexOf('function openStudio()'), page.indexOf('function cancelStudio()'))
     expect(open).not.toMatch(/apply|setDraft|config\.value =/)
-    expect(page).toContain('losing: draftLoses(draft.value, to), act: () => { setDraft(to, false); closeStudio() },')
+    expect(page).toContain('losing: draftLoses(draft.value, to, config.value.mappings), act: () => { setDraft(to, false); closeStudio() },')
     expect(page).toContain('@cancel="cancelStudio"')
-    expect(read('app/dev/designer/ApplyBar.vue')).toContain(':disabled="!plan.changes && !cancel"')
+    // Cancel is always there; Apply only for a changed, compatible draft.
+    const bar = read('app/dev/designer/StudioStatusBar.vue')
+    expect(bar).toMatch(/<button type="button"[^>]*data-cancel @click="emit\('cancel'\)">Cancel<\/button>/)
+    expect(bar).toContain("const canApply = computed(() => props.plan.changes && props.status.state === 'compatible')")
   })
 
-  it('applies only what Apply allows everywhere: the same apply, the same errors', () => {
+  it('applies only what Apply allows everywhere: the same apply, the same checks', () => {
     expect(page).toContain('@apply="apply"')
-    expect(read('app/dev/designer/MappingStudio.vue')).toContain(':errors="[...structure, ...review.errors, ...boundary]"')
+    expect(read('app/dev/designer/MappingStudio.vue')).toContain('studioStatus(props.plan.changes, props.structure, props.review, props.boundary,')
   })
 
   it('makes no version for a presentation-only change, such as the order of properties', () => {

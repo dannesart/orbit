@@ -105,7 +105,7 @@ describe('Review and preview agree with execution', () => {
 
   it('refuses a required output fed by something that may be absent, as the boundary would', () => {
     const review = reviewDraft([{ name: 'city', source: path('contact', 'email') }], APPLICANT, OUT, 'Summary · v1', transformSupport(APPLICANT, OUT, orbitTransformV3, resolve))
-    expect(review.problems).toEqual(['city: contact may be missing, but this property is required. Orbit won’t invent a value.'])
+    expect(review.problems).toEqual(['city: contact may be missing, but this property is required.'])
     const ok = reviewDraft([{ name: 'email', source: path('contact', 'email') }, { name: 'city', source: path('home', 'city') }], APPLICANT, OUT, 'Summary · v1', transformSupport(APPLICANT, OUT, orbitTransformV3, resolve))
     expect(ok.problems).toEqual([])
   })

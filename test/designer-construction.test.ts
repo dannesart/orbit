@@ -53,9 +53,9 @@ describe('Review, with the domain’s own check', () => {
 
   it('says exactly where something is missing or may be absent, by path', () => {
     const incomplete = DRAFT.map((p) => (p.name === 'home' ? { ...p, piece: construct({ when: 'always' }, [{ name: 'street', piece: nested('home', 'street') }]) } : p))
-    expect(reviewDraft(fromDraft(incomplete), APPLICANT, APPLICANT, 'Applicant · v1', support).problems).toEqual(['home › city: city is required here, and nothing makes it. Orbit won’t invent a value.'])
+    expect(reviewDraft(fromDraft(incomplete), APPLICANT, APPLICANT, 'Applicant · v1', support).problems).toEqual(['home › city: city needs a value.'])
     const always = DRAFT.map((p) => (p.name === 'contact' ? { ...p, piece: construct({ when: 'always' }, [{ name: 'email', piece: nested('contact', 'email') }]) } : p))
-    expect(reviewDraft(fromDraft(always), APPLICANT, APPLICANT, 'Applicant · v1', support).problems).toEqual(['contact › email: contact may be missing, but this property is required. Orbit won’t invent a value.'])
+    expect(reviewDraft(fromDraft(always), APPLICANT, APPLICANT, 'Applicant · v1', support).problems).toEqual(['contact › email: contact may be missing, but this property is required.'])
   })
 
   it('keeps v2 truthful: it can’t build objects', () => {

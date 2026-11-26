@@ -203,6 +203,53 @@ export function outputTree(target: DefinitionVersion, properties: readonly Draft
   })
 }
 
+// --- Where the draft stands, in one word ---
+
+/**
+ * incompatible  something keeps it from being a sound Mapping for these contracts (an error, the
+ *               output's structure, or what the step's Transform version accepts)
+ * incomplete    sound so far, but something required isn't made yet
+ * unchanged     exactly what's applied
+ * compatible    changed, complete and sound: Apply is available
+ */
+export type StudioState = 'incompatible' | 'incomplete' | 'unchanged' | 'compatible'
+
+/** One thing to do, where it is: an output place (opened in the inspector), or General. */
+export interface StudioItem { readonly text: string; readonly at: PropertyPath | null; readonly where: 'mapping' | 'general' }
+
+export interface StudioStatus {
+  readonly state: StudioState
+  /** What keeps it from being sound, each where it is. */
+  readonly problems: readonly StudioItem[]
+  /** What still needs a value, by place. */
+  readonly todo: readonly StudioItem[]
+}
+
+/**
+ * The draft's state, from what the domain already decided: the review (the domain's checks), the
+ * output's structure, and the step's Transform version (boundary). Never a rule of its own.
+ */
+export function studioStatus(changes: boolean, structure: readonly string[], review: DraftReview, boundary: readonly string[], outputs: readonly OutputNode[], names: readonly string[], targetLabel: string): StudioStatus {
+  const problems: StudioItem[] = []
+  const todo: StudioItem[] = []
+  if (review.unsupported) problems.push({ text: review.unsupported, at: null, where: 'general' })
+  problems.push(...structure.map((text): StudioItem => ({ text, at: null, where: 'general' })))
+  const walk = (nodes: readonly OutputNode[]) => nodes.forEach((n) => {
+    const inside = problems.length
+    walk(n.children)
+    if (n.status === 'problem' && (n.problem || problems.length === inside)) problems.splice(inside, 0, { text: n.problem || 'Needs attention', at: n.path, where: 'mapping' })
+    if (n.status === 'not_mapped') todo.push({ text: 'Needs a value', at: n.path, where: 'mapping' })
+  })
+  if (!review.unsupported) walk(outputs)
+  // A mapping with no place to go: by its name, shortly.
+  problems.push(...review.extras.map((x): StudioItem => ({ text: `${names[x.index] || 'Unnamed'}: ${x.reason.startsWith(targetLabel) ? `not in ${targetLabel}` : x.reason.replace(/\.$/, '')}`, at: null, where: 'mapping' })))
+  problems.push(...boundary.map((text): StudioItem => ({ text, at: null, where: 'general' })))
+  // Anything the review counts as an error that no place above shows: said as it is, never dropped.
+  if (!problems.length && review.errors.length) problems.push(...review.errors.map((text): StudioItem => ({ text, at: null, where: 'mapping' })))
+  const state: StudioState = problems.length ? 'incompatible' : review.missing.length || todo.length ? 'incomplete' : !changes ? 'unchanged' : 'compatible'
+  return { state, problems, todo }
+}
+
 // --- The preview, as one object ---
 
 /** The object the preview would make: every value that could be made, absent ones left out. */

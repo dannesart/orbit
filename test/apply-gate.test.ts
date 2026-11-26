@@ -38,7 +38,7 @@ describe('Top-level completeness comes from the domain’s whole-Mapping check',
       const review = reviewDraft(properties, A1, B1, 'Definition B · v1', transformSupport(A1, B1, feature, resolve))
       expect(review.problems).toEqual([
         'fullName: Definition B · v1 needs text here, but this makes a number.',
-        'extra: Definition B · v1 has no field “extra”, so the Transform’s output would be rejected.',
+        'extra: Definition B · v1 has no field “extra”.',
       ])
     }
     expect(reviewDraft([], A1, B1).missing).toEqual(['fullName'])

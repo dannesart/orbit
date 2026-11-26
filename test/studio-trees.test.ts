@@ -76,7 +76,7 @@ describe('The output tree', () => {
     expect(tree.find((n) => n.path.join() === 'contact,email')!.status).toBe('not_mapped')
     const wrong = DRAFT.map((p) => (p.name === 'contact' ? { ...p, piece: { kind: 'construct', presence: { when: 'always' }, properties: [{ name: 'email', piece: nested('contact', 'email') }] } as Piece } : p))
     const bad = flatten(outputTree(APPLICANT, wrong, review(wrong), resolve)).find((n) => n.path.join() === 'contact,email')!
-    expect([bad.status, bad.problem]).toEqual(['problem', 'contact may be missing, but this property is required. Orbit won’t invent a value.'])
+    expect([bad.status, bad.problem]).toEqual(['problem', 'contact may be missing, but this property is required.'])
     const unchosen = DRAFT.map((p) => (p.name === 'home' ? { ...p, piece: { kind: 'copy', from: null } as Piece } : p))
     expect(outputTree(APPLICANT, unchosen, review(unchosen), resolve).find((n) => n.name === 'home')).toMatchObject({ status: 'problem', how: { kind: 'copy', words: 'Copied whole… (what to copy isn’t chosen yet)' } })
   })

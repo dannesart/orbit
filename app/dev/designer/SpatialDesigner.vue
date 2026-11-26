@@ -187,7 +187,7 @@ function discard() {
   const to = draftFrom(config.value)
   resetAfterAsking({
     title: 'Discard your changes?', intro: 'The Transform goes back to what’s applied. Discarding forgets:', confirm: 'Discard',
-    losing: draftLoses(draft.value, to), act: () => setDraft(to, false),
+    losing: draftLoses(draft.value, to, config.value.mappings), act: () => setDraft(to, false),
   })
 }
 
@@ -479,7 +479,7 @@ function cancelStudio() {
   const to = draftFrom(config.value)
   resetAfterAsking({
     title: 'Cancel your changes?', intro: 'The Mapping goes back to what’s applied. Cancelling forgets:', confirm: 'Discard changes',
-    losing: draftLoses(draft.value, to), act: () => { setDraft(to, false); closeStudio() },
+    losing: draftLoses(draft.value, to, config.value.mappings), act: () => { setDraft(to, false); closeStudio() },
   })
 }
 const inspector = ref<HTMLElement>()

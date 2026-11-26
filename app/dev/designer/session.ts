@@ -3,6 +3,7 @@
 // leaving loses whatever differs from how the playground started. Running, moving nodes and
 // opening panels aren't work: an untouched playground can be left without a question.
 import { sameData, sameDefinition, sameFields } from '#shared/features/definitions'
+import type { MappingProperty } from '#shared/features/mappings'
 import { INITIAL_MAPPING } from '../features/experiment'
 import { type Configuration, type TransformDraft, draftFrom, initialConfiguration, labelOf } from './config'
 import { type DraftProperty, fromPiece } from './parts'
@@ -13,12 +14,14 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
 /**
  * What resetting the draft to `to` (Discard, Start over) would lose that someone wrote: mappings
  * not in `to`, mappings set aside when switching Definitions, and changes to the Transform's own
- * output. Which Definition is selected isn't work. Empty when nothing would be lost.
+ * output. Which Definition is selected isn't work. Empty when nothing would be lost. A mapping set
+ * aside exactly as an applied Mapping version has it isn't lost either: that version keeps it.
  */
-export function draftLoses(draft: TransformDraft, to: TransformDraft): string[] {
+export function draftLoses(draft: TransformDraft, to: TransformDraft, applied: readonly { readonly properties: readonly MappingProperty[] }[] = []): string[] {
   const kept = (p: DraftProperty) => to.properties.some((q) => sameProperty(p, q))
+  const versioned = (p: DraftProperty) => applied.some((m) => m.properties.some((q) => q.name === p.name && sameData(fromPiece(p.piece), q.source)))
   const written = draft.properties.filter((p) => !kept(p)).length
-  const aside = (draft.aside ?? []).filter((p) => !kept(p)).length
+  const aside = (draft.aside ?? []).filter((p) => !kept(p) && !versioned(p)).length
   const at: string[] = []
   if (written) at.push(`${count(written, 'mapping', 'mappings')} you haven’t applied`)
   if (aside) at.push(`${count(aside, 'mapping', 'mappings')} set aside when you switched Definitions`)

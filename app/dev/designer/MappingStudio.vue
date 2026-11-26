@@ -15,18 +15,18 @@
 // leaving or moving between segments changes nothing. Apply and Cancel are always in view.
 import type { DefinitionRef, DefinitionVersion, PropertyPath } from '#shared/features/definitions'
 import type { Step } from '../features/experiment'
-import ApplyBar from './ApplyBar.vue'
 import StructureEditor from './StructureEditor.vue'
 import StudioConnections from './StudioConnections.vue'
 import StudioInspector from './StudioInspector.vue'
 import StudioInputTree from './StudioInputTree.vue'
 import StudioOutputTree from './StudioOutputTree.vue'
 import StudioPreview from './StudioPreview.vue'
+import StudioStatusBar from './StudioStatusBar.vue'
 import UnsupportedNotice from './UnsupportedNotice.vue'
 import { type Configuration, type Plan, type RunRecord, type TransformDraft, inputOf, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
 import { FLAT, READING } from './reading'
-import { type AppliedPreview, connections, inputTree, isWithin, outputTree } from './studio'
+import { type AppliedPreview, type StudioItem, connections, inputTree, isWithin, outputTree, studioStatus } from './studio'
 import { fromPiece } from './parts'
 import { describeSource } from './summary'
 
@@ -102,6 +102,16 @@ const reads = computed(() => new Set(lit.value.map((c) => JSON.stringify(c.from)
 // --- Narrow screens: one tree at a time, Output first (it's where editing happens) ---
 type Pane = 'output' | 'input'
 const pane = ref<Pane>('output')
+
+// --- Where the draft stands: the domain's checks, in one word, and what to do on demand ---
+const status = computed(() => studioStatus(props.plan.changes, props.structure, props.review, props.boundary, outputs.value, props.draft.properties.map((p) => p.name), props.target.label))
+/** Going to something to do: its place in the output (opened in the inspector), or General. */
+function go(item: StudioItem) {
+  if (item.where === 'general') return (segment.value = 'general')
+  segment.value = 'mapping'
+  pane.value = 'output'
+  if (item.at && !samePath(selected.value, item.at)) open(item.at)
+}
 
 // --- Moving between segments: arrow keys within the tab list ---
 const tabs = ref<HTMLElement>()
@@ -271,21 +281,9 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
       />
     </div>
 
-    <!-- Apply and Cancel, in every segment -->
-    <div class="sticky bottom-0 rounded-b-3xl border-t border-slate-100 bg-white/95 px-5 pt-3 pb-4 backdrop-blur sm:px-6">
-      <ApplyBar
-        :plan="plan"
-        :config="config"
-        :draft="draft"
-        :errors="[...structure, ...review.errors, ...boundary]"
-        :missing="review.missing"
-        :unsupported="review.unsupported"
-        :can-undo="canUndo"
-        cancel
-        @apply="emit('apply')"
-        @discard="emit('cancel')"
-        @undo="emit('undo')"
-      />
+    <!-- Where the draft stands, with Apply and Cancel, in every segment -->
+    <div class="sticky bottom-0 z-30 rounded-b-3xl border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
+      <StudioStatusBar :status="status" :plan="plan" :config="config" :draft="draft" :can-undo="canUndo" @apply="emit('apply')" @cancel="emit('cancel')" @undo="emit('undo')" @go="go" />
     </div>
   </section>
 </template>
