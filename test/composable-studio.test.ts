@@ -199,7 +199,7 @@ describe('References in the Studio: exact versions, chosen on purpose', () => {
   function setup() {
     let d = empty
     ;[d] = add(d, 'firstName')
-    const cand = createDefinition({ id: 'cand', workspaceId: W, name: 'Candidate', description: '', draft: d })
+    let cand = createDefinition({ id: 'cand', workspaceId: W, name: 'Candidate', description: '', draft: d })
     let d2 = draftFrom(cand.versions[0]!)
     ;[d2] = add(d2, 'email')
     cand = addVersion(cand, d2)
@@ -253,7 +253,7 @@ describe('References in the Studio: exact versions, chosen on purpose', () => {
 
 describe('The nested Preview: examples from the actual contract, judged by Orbit', () => {
   // Process: name, candidate → Candidate v1 (firstName, contact { email }), address? { street, city }
-  let cand = createDefinition({ id: 'cand', workspaceId: W, name: 'Candidate', description: '', draft: (() => {
+  const cand = createDefinition({ id: 'cand', workspaceId: W, name: 'Candidate', description: '', draft: (() => {
     let d = empty, contact
     ;[d] = add(d, 'firstName')
     ;[d, contact] = add(d, 'contact', 'object')
