@@ -239,7 +239,7 @@ describe('The preview: the Transform’s own evaluation, without a run', () => {
   it('never imports anything that invokes a Feature or records evidence', () => {
     const preview = readFileSync(join(import.meta.dirname, '../app/dev/designer/preview.ts'), 'utf8')
     const imports = [...preview.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1])
-    expect(imports).toEqual(['#shared/features/definitions', '#shared/features/mappings', './reading', '../features/experiment'])
+    expect(imports).toEqual(['#shared/features/definitions', '#shared/features/mappings', './problems', './reading', '../features/experiment'])
     expect(preview).not.toMatch(/\binvoke\s*\(|runExperiment|orbitTransformV\d|evidence\s*:/)
     // How the chosen version reads (reading.ts) is plain data and the domain's own checks: no Feature either.
     const reading = readFileSync(join(import.meta.dirname, '../app/dev/designer/reading.ts'), 'utf8')
@@ -279,9 +279,9 @@ describe('Reviewing a draft against Definition B', () => {
     const review = reviewDraft(draft, A1, B1)
     expect(review.fields[0]).toMatchObject({ index: 1, state: 'set' })
     expect(review.extras).toEqual([
-      { index: 0, reason: 'Definition B · v1 has no field “nickname”.' },
-      { index: 2, reason: 'Another value already makes fullName.' },
-      { index: 3, reason: 'It has no name.' },
+      { index: 0, why: 'unknown', reason: 'Definition B · v1 has no field “nickname”.' },
+      { index: 2, why: 'duplicate', reason: 'Another value already makes fullName.' },
+      { index: 3, why: 'unnamed', reason: 'It has no name.' },
     ])
     // Reviewing and round-tripping keep them, exactly.
     same(fromDraft(toDraft(draft)), draft)

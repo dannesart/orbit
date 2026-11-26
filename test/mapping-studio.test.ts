@@ -53,7 +53,7 @@ describe('Going to Mapping Studio and back', () => {
 
   it('applies only what Apply allows everywhere: the same apply, the same checks', () => {
     expect(page).toContain('@apply="apply"')
-    expect(read('app/dev/designer/MappingStudio.vue')).toContain('studioStatus(props.plan.changes, props.structure, props.review, props.boundary,')
+    expect(read('app/dev/designer/MappingStudio.vue')).toContain('studioStatus(props.plan.changes, props.findings)')
   })
 
   it('makes no version for a presentation-only change, such as the order of properties', () => {

@@ -40,12 +40,12 @@ import {
 import { summarize } from './summary'
 import { fromDraft } from './parts'
 import { exampleFrom, previewOutput, reviewDraft } from './preview'
-import { boundaryProblems, transformSupport } from './support'
+import { boundaryFindings, transformSupport } from './support'
 import { READING } from './reading'
 import { reconcile } from './switching'
 import {
   type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findDefinition, findMapping, inputOf,
-  initialConfiguration, labelOf, outputOf, planApply, structureProblems,
+  initialConfiguration, labelOf, outputOf, planApply, structureFindings, structureProblems,
 } from './config'
 
 // The page's title follows where you are (Mapping Studio, below).
@@ -156,7 +156,10 @@ const plan = computed(() => planApply(config.value, draft.value))
  * Transform version this step invokes (mappingCompatibility). The review already says why in its
  * own words; this is only what it might not have said, so nothing the step would refuse is applied.
  */
-const boundary = computed(() => (review.value.problems.length || review.value.unsupported ? [] : boundaryProblems(features.value.transform, draftProperties.value, input.value, target.value.definition, resolve)))
+const refused = computed(() => (review.value.problems.length || review.value.unsupported ? [] : boundaryFindings(features.value.transform, draftProperties.value, input.value, target.value.definition, resolve)))
+const boundary = computed(() => refused.value.map((p) => p.words))
+/** Everything that keeps the draft from being applied, as structured problems (problems.ts). */
+const findings = computed(() => [...structureFindings(draft.value), ...review.value.findings, ...refused.value])
 /**
  * The only place versions are made, and only from a sound draft: complete, with no errors, and
  * accepted by the step's Transform version as a whole. (What the boundary does with a Mapping it
@@ -823,6 +826,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           :input="input"
           :can-undo="history.length > 0"
           :boundary="boundary"
+          :findings="findings"
           :feature="featureWords('transform')"
           :applied="applied"
           :step="stepOf('transform')"

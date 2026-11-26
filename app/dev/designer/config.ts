@@ -39,6 +39,7 @@ export interface RunRecord {
 }
 import { A1, B1, DEFINITIONS, INITIAL_MAPPING, WORKSPACE, definitionLabel, describeNamingIssues } from '../features/experiment'
 import { type DraftProperty, fromDraft, toDraft } from './parts'
+import type { Problem } from './problems'
 
 /** The one Definition identity this Transform may define for itself. */
 export const LOCAL_ID = 'transform.output'
@@ -152,17 +153,20 @@ export function outputOf(config: Configuration, draft: TransformDraft): { defini
   return { definition, label: `${draft.local.name || 'This Transform’s output'} · v${version} (draft)`, isNew: true }
 }
 
-/** Why a local output can't be frozen as a Definition version yet. */
-export function structureProblems(draft: TransformDraft): string[] {
+/** Why a local output can't be frozen as a Definition version yet, as structured problems. */
+export function structureFindings(draft: TransformDraft): Problem[] {
   if (draft.use !== 'local') return []
   const { name, fields } = draft.local
-  const problems: string[] = []
-  if (!name.trim()) problems.push('Give the output a name.')
-  if (!fields.length) problems.push('Add at least one property.')
+  const words: string[] = []
+  if (!name.trim()) words.push('Give the output a name.')
+  if (!fields.length) words.push('Add at least one property.')
   // Orbit's naming rule, the one the Studio uses too.
-  problems.push(...describeNamingIssues(checkPropertyNames(fields.map((f) => f.name))))
-  return problems
+  words.push(...describeNamingIssues(checkPropertyNames(fields.map((f) => f.name))))
+  return words.map((w) => ({ kind: 'structure', category: 'invalid', at: null, index: null, words: w, short: w }))
 }
+
+/** Why a local output can't be frozen as a Definition version yet, in words. */
+export const structureProblems = (draft: TransformDraft): string[] => structureFindings(draft).map((p) => p.words)
 
 /** What the draft reads: its chosen input, or Definition A · v1. */
 export const inputOf = (draft: TransformDraft): DefinitionRef => draft.input ?? refOf(A1)

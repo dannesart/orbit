@@ -7,6 +7,7 @@ import { type DefinitionRef, type DefinitionVersion, type Field, MAX_OBJECT_LEVE
 import { type Argument, type Expression, type MappingProperty, objectPaths, readablePaths } from '#shared/features/mappings'
 import { type DraftProperty, type Piece, fromPiece } from './parts'
 import { type DraftReview, type Example, type OutputPreview, friendlyIssue } from './preview'
+import type { Problem, ProblemCategory } from './problems'
 import { type Reading, absenceWords, readables } from './reading'
 import { describeSource } from './summary'
 
@@ -206,16 +207,16 @@ export function outputTree(target: DefinitionVersion, properties: readonly Draft
 // --- Where the draft stands, in one word ---
 
 /**
- * incompatible  something keeps it from being a sound Mapping for these contracts (an error, the
- *               output's structure, or what the step's Transform version accepts)
+ * invalid       something in the configuration is wrong, whatever version runs it
+ * incompatible  the step's Transform version can't take it (another version might)
  * incomplete    sound so far, but something required isn't made yet
  * unchanged     exactly what's applied
  * compatible    changed, complete and sound: Apply is available
  */
-export type StudioState = 'incompatible' | 'incomplete' | 'unchanged' | 'compatible'
+export type StudioState = 'invalid' | 'incompatible' | 'incomplete' | 'unchanged' | 'compatible'
 
 /** One thing to do, where it is: an output place (opened in the inspector), or General. */
-export interface StudioItem { readonly text: string; readonly at: PropertyPath | null; readonly where: 'mapping' | 'general' }
+export interface StudioItem { readonly text: string; readonly at: PropertyPath | null; readonly where: 'mapping' | 'general'; readonly category: ProblemCategory }
 
 export interface StudioStatus {
   readonly state: StudioState
@@ -225,29 +226,18 @@ export interface StudioStatus {
   readonly todo: readonly StudioItem[]
 }
 
+/** Where a problem is dealt with: the contracts and the output's structure in General, the rest in Mapping. */
+const GENERAL: ReadonlySet<Problem['kind']> = new Set(['unsupported_contract', 'structure'])
+
 /**
- * The draft's state, from what the domain already decided: the review (the domain's checks), the
- * output's structure, and the step's Transform version (boundary). Never a rule of its own.
+ * The draft's state, from the structured problems alone (problems.ts): their categories decide it,
+ * their words are only shown. Never a rule of its own.
  */
-export function studioStatus(changes: boolean, structure: readonly string[], review: DraftReview, boundary: readonly string[], outputs: readonly OutputNode[], names: readonly string[], targetLabel: string): StudioStatus {
-  const problems: StudioItem[] = []
-  const todo: StudioItem[] = []
-  if (review.unsupported) problems.push({ text: review.unsupported, at: null, where: 'general' })
-  problems.push(...structure.map((text): StudioItem => ({ text, at: null, where: 'general' })))
-  const walk = (nodes: readonly OutputNode[]) => nodes.forEach((n) => {
-    const inside = problems.length
-    walk(n.children)
-    if (n.status === 'problem' && (n.problem || problems.length === inside)) problems.splice(inside, 0, { text: n.problem || 'Needs attention', at: n.path, where: 'mapping' })
-    if (n.status === 'not_mapped') todo.push({ text: 'Needs a value', at: n.path, where: 'mapping' })
-  })
-  if (!review.unsupported) walk(outputs)
-  // A mapping with no place to go: by its name, shortly.
-  problems.push(...review.extras.map((x): StudioItem => ({ text: `${names[x.index] || 'Unnamed'}: ${x.reason.startsWith(targetLabel) ? `not in ${targetLabel}` : x.reason.replace(/\.$/, '')}`, at: null, where: 'mapping' })))
-  problems.push(...boundary.map((text): StudioItem => ({ text, at: null, where: 'general' })))
-  // Anything the review counts as an error that no place above shows: said as it is, never dropped.
-  if (!problems.length && review.errors.length) problems.push(...review.errors.map((text): StudioItem => ({ text, at: null, where: 'mapping' })))
-  const state: StudioState = problems.length ? 'incompatible' : review.missing.length || todo.length ? 'incomplete' : !changes ? 'unchanged' : 'compatible'
-  return { state, problems, todo }
+export function studioStatus(changes: boolean, problems: readonly Problem[]): StudioStatus {
+  const item = (p: Problem): StudioItem => ({ text: p.short, at: p.kind === 'no_place' ? null : p.at, where: GENERAL.has(p.kind) ? 'general' : 'mapping', category: p.category })
+  const has = (c: ProblemCategory) => problems.some((p) => p.category === c)
+  const state: StudioState = has('invalid') ? 'invalid' : has('incompatible') ? 'incompatible' : has('unfinished') ? 'incomplete' : !changes ? 'unchanged' : 'compatible'
+  return { state, problems: problems.filter((p) => p.category !== 'unfinished').map(item), todo: problems.filter((p) => p.category === 'unfinished').map(item) }
 }
 
 // --- The preview, as one object ---

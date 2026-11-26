@@ -25,6 +25,7 @@ import StudioStatusBar from './StudioStatusBar.vue'
 import UnsupportedNotice from './UnsupportedNotice.vue'
 import { type Configuration, type Plan, type RunRecord, type TransformDraft, inputOf, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
+import type { Problem } from './problems'
 import { FLAT, READING } from './reading'
 import { type AppliedPreview, type StudioItem, connections, inputTree, isWithin, outputTree, studioStatus } from './studio'
 import { fromPiece } from './parts'
@@ -42,6 +43,8 @@ const props = defineProps<{
   input: DefinitionVersion
   canUndo: boolean
   boundary: readonly string[]
+  /** Everything that keeps the draft from being applied, as structured problems. */
+  findings: readonly Problem[]
   /** The exact Transform version the step invokes, in words. */
   feature: string
   applied: AppliedPreview
@@ -104,7 +107,7 @@ type Pane = 'output' | 'input'
 const pane = ref<Pane>('output')
 
 // --- Where the draft stands: the domain's checks, in one word, and what to do on demand ---
-const status = computed(() => studioStatus(props.plan.changes, props.structure, props.review, props.boundary, outputs.value, props.draft.properties.map((p) => p.name), props.target.label))
+const status = computed(() => studioStatus(props.plan.changes, props.findings))
 /** Going to something to do: its place in the output (opened in the inspector), or General. */
 function go(item: StudioItem) {
   if (item.where === 'general') return (segment.value = 'general')

@@ -5,6 +5,7 @@
 // and that property is left out of the object, never filled in.
 import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type PropertyType, type Resolve, type Scalar, checkContract, frozenCopy, kindOf, propertyPathWords, validate } from '#shared/features/definitions'
 import { type Expression, type LocatedMappingIssue, type MappingProperty, checkNestedMapping, evaluatePresent } from '#shared/features/mappings'
+import { type Problem, categoryOf } from './problems'
 import { FLAT, type Reading, type ReviewIssue, checkWith, presentIn } from './reading'
 import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData } from '../features/experiment'
 
@@ -83,6 +84,9 @@ export interface FieldReview {
 
 export interface ExtraReview {
   readonly index: number
+  /** Why it has no place, as a fact: no name, a name the target doesn't have, or one already made. */
+  readonly why: 'unnamed' | 'unknown' | 'duplicate'
+  /** The same, in words. */
   readonly reason: string
 }
 
@@ -91,6 +95,12 @@ export interface DraftReview {
   readonly extras: readonly ExtraReview[]
   /** Issues per draft property, as checkMapping reports them (paths start at the property). */
   readonly issues: readonly (readonly ReviewIssue[])[]
+  /**
+   * Everything that keeps the draft from being a sound Mapping for the target, as facts: kind,
+   * category (unfinished, incompatible, invalid) and place. `problems`, `missing` and `errors` are
+   * their words, made from these; nothing decides anything from the words.
+   */
+  readonly findings: readonly Problem[]
   /** Everything that keeps the draft from being a sound Mapping for the target, in words. */
   readonly problems: readonly string[]
   /**
@@ -139,7 +149,10 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   const checked = properties.map((p) => checkWith(support?.reading ?? FLAT, [p], input, target))
   const issues = checked.map((c) => c.issues)
   const firstIndex = (name: string) => properties.findIndex((p) => p.name === name)
-  const problems: string[] = []
+  // Every problem as a fact (problems.ts): its kind, category and place. The words below are made
+  // from those facts; nothing reads them back.
+  const findings: Problem[] = []
+  const add = (p: Omit<Problem, 'short'> & { readonly short?: string }) => findings.push({ ...p, short: p.short ?? p.words })
   // The output's own completeness (each required property made, of its type, nothing it doesn't
   // have, names unique) is the domain's rule, asked of the whole Mapping at once: never a rule of the
   // Designer's. Transform v3's boundary refuses an incomplete Mapping by exactly this check; v1 and v2
@@ -147,27 +160,30 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   const top = completeness(properties, input, target, support?.reading?.resolve)
   const at = (problem: LocatedMappingIssue['problem'], name: string) => top.find((i) => i.problem === problem && i.at.output[0] === name)
 
-  // A required property inside a built object that nothing makes yet: unfinished work, like a
-  // required property of the output itself, never an error (by path: "contact › email").
-  const inside: { readonly words: string; readonly problem: string }[] = []
+  if (unsupported) add({ kind: 'unsupported_contract', category: 'incompatible', at: null, index: null, words: unsupported })
   const fields = target.fields.map((field): FieldReview => {
     const index = firstIndex(field.name)
     const optional = field.optional === true
     if (cannotMake.has(field.name)) return { name: field.name, expected: field.type, optional, index, state: 'unsupported', problems: [] }
     if (index < 0) {
-      if (at('missing_output_property', field.name)) problems.push(`${field.name} isn’t set yet. ${targetLabel} needs it.`)
+      // Required, and nothing makes it yet: unfinished work, not an error.
+      if (at('missing_output_property', field.name)) add({ kind: 'not_made', category: 'unfinished', at: [field.name], index: null, words: `${field.name} isn’t set yet. ${targetLabel} needs it.`, short: 'Needs a value' })
       return { name: field.name, expected: field.type, optional, index, state: optional ? 'left_out' : 'not_set', problems: [] }
     }
     const own: string[] = []
     const wrong = at('wrong_output_type', field.name)
-    if (wrong?.problem === 'wrong_output_type') own.push(`${targetLabel} needs ${typeWords[wrong.expected]} here, but this makes ${typeWords[wrong.actual]}.`)
-    // Each problem where it is: inside a built object, by its path ("Contact › Email").
-    problems.push(...own.map((p) => `${field.name}: ${p}`))
+    if (wrong?.problem === 'wrong_output_type') {
+      const short = `${targetLabel} needs ${typeWords[wrong.expected]} here, but this makes ${typeWords[wrong.actual]}.`
+      own.push(short)
+      add({ kind: 'mapping', category: categoryOf(wrong), at: [field.name], index, issue: wrong, words: `${field.name}: ${short}`, short })
+    }
+    // Each problem where it is: inside a built object, by its path ("contact › email"). A required
+    // property in there that nothing makes yet is unfinished work, like one of the output's own.
     for (const i of issues[index]!) {
-      const words = 'at' in i ? propertyPathWords(i.at.output) : field.name
-      const problem = `${words}: ${friendlyIssue(i)}`
-      if ('at' in i && i.problem === 'missing_output_property') inside.push({ words, problem })
-      problems.push(problem)
+      const place = 'at' in i ? i.at.output : [field.name]
+      const short = friendlyIssue(i)
+      const unmade = 'at' in i && i.problem === 'missing_output_property'
+      add({ kind: unmade ? 'not_made' : 'mapping', category: categoryOf(i), at: place, index, issue: i, words: `${propertyPathWords(place)}: ${short}`, short: unmade ? 'Needs a value' : short })
     }
     return { name: field.name, expected: field.type, optional, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }
   })
@@ -176,20 +192,22 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   properties.forEach((p, index) => {
     if (fields.some((f) => f.index === index)) return
     // Why it has no place, as the domain's check says: no name, a name already made, or one the target doesn't have.
-    const reason = !p.name
-      ? 'It has no name.'
-      : at('unknown_output_property', p.name)
-        ? `${targetLabel} has no field “${p.name}”.`
-        : `Another value already makes ${p.name}.`
-    extras.push({ index, reason })
-    problems.push(`${p.name || 'An unnamed value'}: ${reason}`)
+    const why = !p.name ? 'unnamed' : at('unknown_output_property', p.name) ? 'unknown' : 'duplicate'
+    const reason = why === 'unnamed' ? 'It has no name.' : why === 'unknown' ? `${targetLabel} has no field “${p.name}”.` : `Another value already makes ${p.name}.`
+    const short = why === 'unnamed' ? 'it has no name' : why === 'unknown' ? `not in ${targetLabel}` : `another value already makes ${p.name}`
+    extras.push({ index, reason, why })
+    add({ kind: 'no_place', category: 'invalid', at: null, index, reason: why, words: `${p.name || 'An unnamed value'}: ${reason}`, short: `${p.name || 'Unnamed'}: ${short}` })
   })
 
-  const unmade = fields.filter((f) => f.state === 'not_set').map((f) => f.name)
-  const missing = [...unmade, ...inside.map((i) => i.words)]
-  const unset = new Set([...unmade.map((name) => `${name} isn’t set yet. ${targetLabel} needs it.`), ...inside.map((i) => i.problem)])
-  if (unsupported) problems.unshift(unsupported)
-  return { fields, extras, issues, problems, missing, errors: problems.filter((p) => !unset.has(p)), unsupported }
+  // Words, made from the facts: never the other way round.
+  const unfinished = findings.filter((f) => f.category === 'unfinished')
+  return {
+    fields, extras, issues, findings,
+    problems: findings.map((f) => f.words),
+    missing: unfinished.map((f) => propertyPathWords(f.at!)),
+    errors: findings.filter((f) => f.category !== 'unfinished').map((f) => f.words),
+    unsupported,
+  }
 }
 
 /**
