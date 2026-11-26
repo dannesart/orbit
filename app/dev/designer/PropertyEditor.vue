@@ -31,9 +31,9 @@ const isObject = computed(() => props.field.expected === 'object' || props.field
 <template>
   <div>
     <div class="mb-3 flex items-center gap-3">
-      <p class="mr-auto text-xs font-medium text-slate-500">{{ isObject ? 'How it’s built' : 'Where its value comes from' }}</p>
+      <p class="mr-auto text-xs font-medium text-slate-500">{{ isObject ? 'How it’s made' : 'Where its value comes from' }}</p>
       <template v-if="piece">
-        <button v-if="piece.kind !== 'advanced' && piece.kind !== 'construct'" type="button" class="link text-xs text-slate-500" :aria-label="`Edit ${field.name} as an expression`" @click="map({ kind: 'advanced', expression: fromPiece(piece) })">Advanced</button>
+        <button v-if="piece.kind !== 'advanced' && piece.kind !== 'construct' && piece.kind !== 'copy'" type="button" class="link text-xs text-slate-500" :aria-label="`Edit ${field.name} as an expression`" @click="map({ kind: 'advanced', expression: fromPiece(piece) })">Advanced</button>
         <button type="button" class="link text-xs text-slate-500" :aria-label="`Clear ${field.name}’s value`" @click="clear">Clear</button>
       </template>
     </div>
@@ -41,7 +41,7 @@ const isObject = computed(() => props.field.expected === 'object' || props.field
     <!-- A local object or a reference: built property by property, with its presence. -->
     <ConstructionEditor
       v-if="isObject && target"
-      :piece="piece?.kind === 'construct' ? piece : null"
+      :piece="piece?.kind === 'construct' || piece?.kind === 'copy' ? piece : null"
       :target="target"
       :path="[field.name]"
       :issues="issues"

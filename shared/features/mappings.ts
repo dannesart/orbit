@@ -808,7 +808,7 @@ export function formatSource(arg: Argument): string {
     case 'path':
       return arg.path.join(' › ')
     case 'copy':
-      return `copy(${arg.from.length ? arg.from.join(' › ') : 'the input'})`
+      return `copy(${!Array.isArray(arg.from) ? '?' : arg.from.length ? arg.from.join(' › ') : 'the input'})`
     case 'construct':
       return `object(${arg.presence.when === 'present' ? `when ${arg.presence.source.join(' › ')}` : 'always'}){ ${arg.properties.map((p) => `${p.name}: ${formatSource(p.source)}`).join(', ')} }`
     default:

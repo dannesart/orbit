@@ -24,7 +24,7 @@ function typeOf(property: DraftProperty, input: DefinitionVersion, reading: Read
 function fits(property: DraftProperty, field: Field, input: DefinitionVersion, reading: Reading): boolean {
   // An object property is built (a construction), never made from a value.
   if (property.name !== field.name) return false
-  if (!isScalarField(field)) return property.piece.kind === 'construct'
+  if (!isScalarField(field)) return property.piece.kind === 'construct' || property.piece.kind === 'copy'
   const type = typeOf(property, input, reading)
   return type === null || type === field.type
 }

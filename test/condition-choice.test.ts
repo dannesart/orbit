@@ -26,7 +26,7 @@ describe('A condition’s source object is chosen on purpose', () => {
 
   it('never picks one from the contract’s order in the Designer', () => {
     const editor = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/ConstructionEditor.vue'), 'utf8')
-    expect(editor).toContain("if (props.piece?.presence.when !== 'present') build({ when: 'present', source: [] })")
+    expect(editor).toContain("if (built.value?.presence.when !== 'present') build({ when: 'present', source: [] })")
     expect(editor).toContain('<option value="" disabled>Choose a source object…</option>')
     expect(editor).not.toMatch(/sources\.value\[0\]/)
   })

@@ -96,8 +96,9 @@ describe('The Designer shows and edits it calmly, with the domain’s rules', ()
 
   it('makes presence explicit, and passes the guarantee to the pickers through the domain’s rule', () => {
     const editor = read('app/dev/designer/ConstructionEditor.vue')
-    expect(editor).toMatch(/v-for="m in \(\['out', 'always', 'present'\] as const\)"/)
-    expect(editor).toContain("provide(GUARANTEED, computed(() => (props.piece?.presence.when === 'present' ? [...inherited.value, props.piece.presence.source] : inherited.value)))")
+    // A local object: left out, always, or when present; a reference chooses leaving out first, then building's presence.
+    expect(editor).toContain("v-for=\"m in (isReference ? ['always', 'present'] as const : ['out', 'always', 'present'] as const)\"")
+    expect(editor).toContain("provide(GUARANTEED, computed(() => (built.value?.presence.when === 'present' ? [...inherited.value, built.value.presence.source] : inherited.value)))")
     for (const picker of ['ValuePicker.vue', 'ScalarEditor.vue']) expect(read(`app/dev/designer/${picker}`)).toContain('notGuaranteed(r.optional, guaranteed.value)')
     expect(read('app/dev/designer/PropertyEditor.vue')).toContain('<ConstructionEditor')
     expect(read('app/dev/designer/PreviewObject.vue')).toContain('<ObservedTree :data="r.value.object"')

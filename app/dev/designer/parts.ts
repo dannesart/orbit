@@ -16,6 +16,8 @@ import type { ReviewIssue } from './reading'
  *   literal   a fixed number, or true or false
  *   combine   values joined in order, with an optional separator between them (join)
  *   construct an output object built property by property, with its presence (Transform v3)
+ *   copy      a whole value of exactly the target's Definition version (Transform v3); `from` is null
+ *             until what to copy is chosen (draft work the check refuses)
  *   advanced  any other tree, kept exactly as it is
  * `trim` is "Remove spaces from both ends" (the trim function) applied to the value.
  */
@@ -26,6 +28,7 @@ export type Piece =
   | { readonly kind: 'literal'; readonly value: number | boolean }
   | { readonly kind: 'combine'; readonly parts: readonly Piece[]; readonly separator: string; readonly trim: boolean }
   | { readonly kind: 'construct'; readonly presence: Presence; readonly properties: readonly DraftProperty[] }
+  | { readonly kind: 'copy'; readonly from: PropertyPath | null }
   | { readonly kind: 'advanced'; readonly expression: Expression }
 
 /** A Mapping property while it is being edited: its name and its value as a Piece. */
@@ -48,6 +51,9 @@ export function toPiece(e: Expression): Piece {
   }
   if (e?.kind === 'path' && hasKeys(e, ['kind', 'path']) && Array.isArray(e.path) && e.path.length >= 2 && e.path.every((n) => typeof n === 'string')) {
     return { kind: 'nested', path: e.path, trim: false }
+  }
+  if (e?.kind === 'copy' && hasKeys(e, ['kind', 'from']) && Array.isArray(e.from) && e.from.every((n) => typeof n === 'string')) {
+    return { kind: 'copy', from: e.from }
   }
   if (e?.kind === 'construct' && hasKeys(e, ['kind', 'presence', 'properties']) && Array.isArray(e.properties)) {
     return { kind: 'construct', presence: e.presence, properties: toDraft(e.properties) }
@@ -84,6 +90,8 @@ export function fromPiece(piece: Piece): Expression {
   switch (piece.kind) {
     case 'advanced': return piece.expression
     case 'construct': return { kind: 'construct', presence: piece.presence, properties: fromDraft(piece.properties) }
+    // Nothing chosen yet stays visibly unchosen: the check refuses it (malformed_copy), so it's never applied.
+    case 'copy': return { kind: 'copy', from: piece.from as PropertyPath }
     case 'literal': return { kind: 'literal', value: piece.value }
     case 'field': e = { kind: 'property', name: piece.name }; break
     case 'nested': e = { kind: 'path', path: [...piece.path] }; break
