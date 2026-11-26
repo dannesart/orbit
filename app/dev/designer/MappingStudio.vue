@@ -5,8 +5,9 @@
 //
 //   General  the Mapping's exact contracts (what it reads and makes), and the Feature version the
 //            step invokes it with, shown apart: the Mapping doesn't belong to a Feature version
-//   Mapping  the input contract and the output contract side by side; an output property opens
-//            the existing editor for it in place
+//   Mapping  the input contract and the output contract side by side, staying where they are; an
+//            output property opens the existing editor for it in a floating inspector beside them
+//            (Phase 4.5B). On narrow screens, one contract at a time, Output first
 //   Preview  the example input and what the draft would make from it (not executed), beside the
 //            applied Mapping's preview and what actually ran (evidence)
 //
@@ -15,8 +16,8 @@
 import type { DefinitionRef, DefinitionVersion, PropertyPath } from '#shared/features/definitions'
 import type { Step } from '../features/experiment'
 import ApplyBar from './ApplyBar.vue'
-import PropertyEditor from './PropertyEditor.vue'
 import StructureEditor from './StructureEditor.vue'
+import StudioInspector from './StudioInspector.vue'
 import StudioInputTree from './StudioInputTree.vue'
 import StudioOutputTree from './StudioOutputTree.vue'
 import StudioPreview from './StudioPreview.vue'
@@ -24,7 +25,7 @@ import UnsupportedNotice from './UnsupportedNotice.vue'
 import { type Configuration, type Plan, type RunRecord, type TransformDraft, inputOf, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
 import { FLAT, READING } from './reading'
-import { type AppliedPreview, inputTree, outputTree } from './studio'
+import { type AppliedPreview, connections, inputTree, isWithin, outputTree } from './studio'
 import { fromPiece } from './parts'
 import { describeSource } from './summary'
 
@@ -63,29 +64,43 @@ const outputs = computed(() => outputTree(props.target.definition, props.draft.p
 const mapped = computed(() => props.review.fields.filter((f) => f.state === 'set').length)
 const needed = computed(() => props.review.fields.filter((f) => f.state !== 'left_out' && f.state !== 'unsupported').length)
 
-// --- Editing one output property, in place ---
-const editing = ref<string | null>(null)
+// --- The selected output property, in the inspector ---
+// The trees never change shape while a property is edited: the inspector floats beside them. Its
+// editor is the top-level property's (a built object is edited whole), opened at the place chosen.
+const selected = ref<PropertyPath | null>(null)
+const editing = computed(() => selected.value?.[0] ?? null)
 const field = computed(() => props.review.fields.find((f) => f.name === editing.value) ?? null)
-/** Opening a row: its top-level property's editor, at the place chosen. The open one closes again. */
+const node = computed(() => outputs.value.find((o) => o.name === editing.value) ?? null)
+const samePath = (a: PropertyPath | null, b: PropertyPath) => !!a && a.join(' › ') === b.join(' › ')
+/** Selecting a row: the inspector, at that place. Selecting it again closes it. */
 function open(path: PropertyPath) {
-  const name = path[0]!
-  if (path.length === 1 && editing.value === name) {
-    editing.value = null
-    return
-  }
-  editing.value = name
+  if (samePath(selected.value, path)) return close()
+  selected.value = path
   nextTick(() => {
-    const at = path.join(' › ')
-    const place = document.querySelector<HTMLElement>(`[data-construction-property="${CSS.escape(at)}"]`) ?? document.querySelector<HTMLElement>(`[data-output-node="${CSS.escape(name)}"]`)
+    const inspector = document.querySelector<HTMLElement>('[data-studio-inspector]')
+    const place = path.length > 1 ? inspector?.querySelector<HTMLElement>(`[data-construction-property="${CSS.escape(path.join(' › '))}"]`) : null
     place?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    place?.querySelector<HTMLElement>('button, select, input')?.focus({ preventScroll: true })
+    ;(place ?? inspector?.querySelector<HTMLElement>('[data-inspector-body]'))?.querySelector<HTMLElement>('button, select, input')?.focus({ preventScroll: true })
   })
 }
-/** What the property being edited reads, pointed out in the input. */
-const reads = computed(() => {
-  const i = field.value?.index ?? -1
-  return new Set(i >= 0 ? outputs.value.find((o) => o.name === editing.value)?.reads.map((p) => JSON.stringify(p)) ?? [] : [])
-})
+/** Closing the inspector: focus goes back to the row it was opened from. */
+function close() {
+  const at = selected.value
+  selected.value = null
+  if (at) nextTick(() => document.querySelector<HTMLElement>(`[data-output-node="${CSS.escape(at.join(' › '))}"] > button`)?.focus())
+}
+// A property that's no longer part of the output (the output changed in General) closes.
+watch(outputs, (nodes) => { if (editing.value && !nodes.some((n) => n.name === editing.value)) selected.value = null })
+
+/** Every dependency the draft has; those of the selected property (and inside it) are lit. */
+const links = computed(() => connections(outputs.value, inputs.value))
+const lit = computed(() => (selected.value ? links.value.filter((c) => isWithin(c.to, selected.value!)) : []))
+/** What the selected property reads, pointed out in the input. */
+const reads = computed(() => new Set(lit.value.map((c) => JSON.stringify(c.from))))
+
+// --- Narrow screens: one tree at a time, Output first (it's where editing happens) ---
+type Pane = 'output' | 'input'
+const pane = ref<Pane>('output')
 
 // --- Moving between segments: arrow keys within the tab list ---
 const tabs = ref<HTMLElement>()
@@ -102,7 +117,7 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
 </script>
 
 <template>
-  <section class="flex flex-col rounded-3xl border border-slate-200/80 bg-white shadow-sm" aria-labelledby="studio-heading" data-mapping-studio @keydown.escape="editing = null">
+  <section class="flex flex-col rounded-3xl border border-slate-200/80 bg-white shadow-sm" aria-labelledby="studio-heading" data-mapping-studio @keydown.escape="close">
     <!-- What's being edited: always in view -->
     <div class="flex flex-wrap items-center gap-x-3 gap-y-3 border-b border-slate-100 px-5 py-4 sm:px-6">
       <button type="button" class="link mr-1 text-sm" data-studio-back @click="emit('back')">‹ Designer</button>
@@ -159,31 +174,42 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
         </div>
       </div>
 
-      <!-- Mapping: the input and the output, side by side -->
-      <div v-else-if="segment === 'mapping'" class="grid gap-6 lg:grid-cols-2">
-        <section :class="panel" aria-labelledby="studio-input-heading" data-studio-input>
-          <div class="mb-3 flex items-baseline gap-2">
-            <h2 id="studio-input-heading" class="text-sm font-semibold text-slate-900">Input</h2>
-            <span class="truncate text-xs text-slate-500">{{ label(inputOf(draft)) }}</span>
+      <!-- Mapping: the input and the output, side by side, and the selected property beside them -->
+      <div v-else-if="segment === 'mapping'" class="flex items-start gap-6">
+        <div class="min-w-0 flex-1">
+          <!-- Narrow screens: one tree at a time, Output first -->
+          <div class="mb-4 flex rounded-full bg-slate-200/60 p-1 lg:hidden" role="tablist" aria-label="Which contract" data-studio-pane-switch>
+            <button
+              v-for="p in (['output', 'input'] as const)"
+              :key="p"
+              type="button"
+              role="tab"
+              :aria-selected="pane === p"
+              :data-studio-pane="p"
+              :class="[tab, 'flex-1', pane === p ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600']"
+              @click="pane = p"
+            >
+              {{ p === 'output' ? 'Output' : 'Input' }}
+            </button>
           </div>
-          <StudioInputTree :nodes="inputs" :label="versionWords" :highlight="reads" />
-          <p v-if="!inputs.length" class="text-sm text-slate-500">It has no properties.</p>
-        </section>
+          <div class="relative grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(4rem,7rem)_minmax(0,1fr)] lg:gap-0" data-studio-workspace>
+            <section :class="[panel, 'lg:col-start-1 lg:row-start-1', pane === 'input' ? '' : 'max-lg:hidden']" aria-labelledby="studio-input-heading" data-studio-input>
+              <div class="mb-3 flex flex-wrap items-baseline gap-x-2" data-input-root>
+                <h2 id="studio-input-heading" class="text-sm font-semibold text-slate-900">Input</h2>
+                <span class="text-xs text-slate-500">{{ label(inputOf(draft)) }}</span>
+              </div>
+              <StudioInputTree :nodes="inputs" :label="versionWords" :highlight="reads" />
+              <p v-if="!inputs.length" class="text-sm text-slate-500">It has no properties.</p>
+            </section>
 
-        <section :class="panel" aria-labelledby="studio-output-heading" data-studio-output>
-          <div class="mb-2 flex items-baseline gap-2">
-            <h2 id="studio-output-heading" class="text-sm font-semibold text-slate-900">Output</h2>
-            <span class="truncate text-xs text-slate-500">{{ target.label }}</span>
-            <span class="ml-auto shrink-0 text-xs text-slate-500" :aria-label="`${mapped} of ${needed} mapped`">{{ mapped }}/{{ needed }}</span>
-          </div>
-          <StudioOutputTree :nodes="outputs" :label="versionWords" :editing="editing" class="-mx-2" @open="open">
-            <template #editor>
-              <p v-if="field?.state === 'unsupported'" class="text-sm text-slate-600" data-unsupported-property>This Transform version can’t make {{ field.name }}, so there’s nothing to map here.</p>
-              <PropertyEditor v-else-if="field" :output="target.definition" :draft="draft" :field="field" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" />
-              <button type="button" class="mt-4 rounded-full px-4 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" data-editor-done @click="editing = null">Done</button>
-            </template>
-          </StudioOutputTree>
-          <p v-if="!outputs.length" class="text-sm text-slate-500">The output has no properties yet. Add some in General.</p>
+            <section :class="[panel, 'lg:col-start-3 lg:row-start-1', pane === 'output' ? '' : 'max-lg:hidden']" aria-labelledby="studio-output-heading" data-studio-output>
+              <div class="mb-2 flex flex-wrap items-baseline gap-x-2">
+                <h2 id="studio-output-heading" class="text-sm font-semibold text-slate-900">Output</h2>
+                <span class="text-xs text-slate-500">{{ target.label }}</span>
+                <span class="ml-auto shrink-0 text-xs text-slate-500" :aria-label="`${mapped} of ${needed} mapped`">{{ mapped }}/{{ needed }}</span>
+              </div>
+              <StudioOutputTree :nodes="outputs" :label="versionWords" :selected="selected" class="-mx-2" @open="open" />
+              <p v-if="!outputs.length" class="text-sm text-slate-500">The output has no properties yet. Add some in General.</p>
           <div v-if="review.extras.length" class="mt-4 rounded-2xl bg-amber-50/70 p-3 text-sm ring-1 ring-amber-200" data-studio-extras>
             <p class="font-medium text-slate-900">{{ review.extras.length === 1 ? 'One mapping has' : `${review.extras.length} mappings have` }} no property to fill</p>
             <ul class="mt-1 flex flex-col gap-1">
@@ -196,7 +222,28 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
             <p class="mt-1">They don’t fit {{ target.label }}, so they aren’t part of this draft. They come back if you choose a Definition they fit again.</p>
             <ul class="mt-1"><li v-for="(p, i) in draft.aside" :key="i" class="font-mono">{{ p.name || 'Unnamed' }} ← {{ describeSource(fromPiece(p.piece)) }}</li></ul>
           </details>
-        </section>
+            </section>
+          </div>
+        </div>
+
+        <!-- The selected property: docked beside the trees on very wide screens, floating over the output below that, a sheet on phones -->
+        <StudioInspector
+          v-if="node && field"
+          :key="node.name"
+          class="fixed inset-0 z-50 animate-rise lg:inset-auto lg:top-4 lg:right-4 lg:bottom-24 lg:w-[26rem] lg:rounded-3xl lg:border lg:border-slate-200/80 lg:shadow-xl lg:shadow-slate-900/10 xl:sticky xl:top-4 xl:right-auto xl:bottom-auto xl:z-20 xl:max-h-[calc(100dvh-8rem)] xl:shrink-0"
+          data-floating-surface
+          :node="node"
+          :field="field"
+          :draft="draft"
+          :review="review"
+          :input="input"
+          :example="example"
+          :output="target.definition"
+          :label="versionWords"
+          @update:draft="emit('update:draft', $event)"
+          @close="close"
+        />
+        <p v-else class="sticky top-4 hidden w-[26rem] shrink-0 rounded-3xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500 xl:block" data-inspector-placeholder>Select an output property to choose how it’s made.</p>
       </div>
 
       <!-- Preview: the example, and what would be made from it -->

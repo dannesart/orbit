@@ -29,7 +29,7 @@ const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
 <template>
   <ul class="flex flex-col" :data-input-level="level">
     <li v-for="n in nodes" :key="n.name" :data-input-node="n.path.join(' › ')">
-      <div class="flex min-h-9 items-center gap-2.5 rounded-lg py-1 pr-1 text-sm transition" :class="lit(n) ? 'bg-accent-50 ring-1 ring-accent-200' : ''" :data-reads="lit(n) || undefined">
+      <div class="flex min-h-9 flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-lg py-1 pr-1 text-sm transition" :class="lit(n) ? 'bg-accent-50 ring-1 ring-accent-200' : ''" :data-reads="lit(n) || undefined" :data-input-row="n.path.join(' › ')">
         <button
           v-if="n.children.length"
           type="button"
@@ -44,10 +44,10 @@ const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
         <span class="grid size-6 shrink-0 place-items-center rounded-md" :class="n.type === 'object' || n.type === 'reference' ? 'bg-accent-50 text-accent-600' : 'bg-slate-100 text-slate-500'">
           <DefinitionsIcon :name="n.type" class="size-3.5" />
         </span>
-        <span class="min-w-0 truncate font-mono" :class="n.readable || n.type === 'object' || n.type === 'reference' ? 'text-slate-900' : 'text-slate-400'">{{ n.name }}</span>
-        <span class="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 text-xs text-slate-500">
+        <span class="min-w-0 font-mono [overflow-wrap:anywhere]" :class="n.readable || n.type === 'object' || n.type === 'reference' ? 'text-slate-900' : 'text-slate-400'">{{ n.name }}</span>
+        <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-xs text-slate-500">
           <span v-if="n.type === 'reference' && n.unresolved" class="font-medium text-red-700">{{ label(n.definition!) }} can’t be found here</span>
-          <span v-else-if="n.type === 'reference'" class="truncate font-medium text-slate-700" data-input-version>{{ label(n.definition!) }}</span>
+          <span v-else-if="n.type === 'reference'" class="font-medium [overflow-wrap:anywhere] text-slate-700" data-input-version>{{ label(n.definition!) }}</span>
           <span v-else-if="n.type === 'object'">Object<span class="max-sm:hidden"> · {{ count(n.children.length) }}</span></span>
           <span v-else-if="!n.readable" :title="`This Transform version reads only top-level values`">{{ typeWords[n.type] }} · not readable here</span>
           <span v-else>{{ typeWords[n.type] }}</span>

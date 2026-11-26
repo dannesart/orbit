@@ -70,6 +70,48 @@ export function readsOf(source: Expression | Argument): PropertyPath[] {
   }
 }
 
+// --- What an output place depends on in the input ---
+
+/**
+ * value     the value is made from it (a field, a nested value, or one of an expression's arguments)
+ * copy      the whole value is copied from it
+ * presence  a built object is made only when it's present: a condition, not a value
+ */
+export type LinkKind = 'value' | 'copy' | 'presence'
+export interface Link { readonly from: PropertyPath; readonly kind: LinkKind }
+
+/** One place's own dependencies, exactly as the draft has them: nothing for what isn't mapped. */
+function linksOf(piece: Piece | null): Link[] {
+  if (!piece) return []
+  if (piece.kind === 'construct') return piece.presence.when === 'present' && piece.presence.source.length ? [{ from: piece.presence.source, kind: 'presence' }] : []
+  if (piece.kind === 'copy') return piece.from ? [{ from: piece.from, kind: 'copy' }] : []
+  const seen = new Set<string>()
+  return readsOf(fromPiece(piece)).filter((p) => !seen.has(key(p)) && seen.add(key(p))).map((from) => ({ from, kind: 'value' }))
+}
+
+/** A line between an input place and an output place. `from` [] is the whole input. */
+export interface Connection extends Link { readonly to: PropertyPath; readonly key: string }
+
+/**
+ * Every dependency the draft has, as lines to draw: only from input places that exist (a source
+ * that reads something the input doesn't have is a problem, shown on its row, never a line).
+ */
+export function connections(outputs: readonly OutputNode[], inputs: readonly InputNode[]): Connection[] {
+  const exists = new Set<string>([key([])])
+  const walkIn = (nodes: readonly InputNode[]) => nodes.forEach((n) => { exists.add(key(n.path)); walkIn(n.children) })
+  walkIn(inputs)
+  const out: Connection[] = []
+  const walkOut = (nodes: readonly OutputNode[]) => nodes.forEach((n) => {
+    for (const l of n.links) if (exists.has(key(l.from))) out.push({ ...l, to: n.path, key: `${key(l.from)}>${key(n.path)}:${l.kind}` })
+    walkOut(n.children)
+  })
+  walkOut(outputs)
+  return out
+}
+
+/** Whether `path` is `within` or inside it. */
+export const isWithin = (path: PropertyPath, within: PropertyPath) => within.length <= path.length && within.every((p, i) => p === path[i])
+
 // --- The output ---
 
 /**
@@ -102,6 +144,8 @@ export interface OutputNode {
   readonly problem: string
   /** What its source reads, by input path. */
   readonly reads: readonly PropertyPath[]
+  /** What this place itself depends on in the input (a built object's properties have their own). */
+  readonly links: readonly Link[]
   /** A built object's properties, as its contract has them. Copied values and values have none. */
   readonly children: readonly OutputNode[]
 }
@@ -144,8 +188,10 @@ export function outputTree(target: DefinitionVersion, properties: readonly Draft
         optional: field.optional === true,
         status,
         how: howOf(piece),
-        problem: (top === 'problem' && path.length === 1 ? f.problems[0] : undefined) ?? here[0] ?? '',
+        // Only a real problem is said here: what isn't made yet already says so by its status.
+        problem: (top === 'problem' && path.length === 1 ? f.problems[0] : undefined) ?? (status === 'problem' ? here[0] : undefined) ?? '',
         reads: piece ? readsOf(fromPiece(piece)) : [],
+        links: linksOf(piece),
         children: built && level < MAX_OBJECT_LEVELS
           ? fields.map((c) => node(c, [...path, c.name], built.properties.find((p) => p.name === c.name)?.piece ?? null, level + 1, null))
           : [],
