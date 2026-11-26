@@ -24,16 +24,17 @@ export interface PropertyRow {
 }
 
 export const typeWords: Record<PropertyType, string> = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object', reference: 'Definition' }
-export const stateWords: Record<RowState, string> = { not_set: 'Not mapped', left_out: 'Left out (optional)', problem: 'Needs attention', set: 'Mapped' }
+export const stateWords: Record<RowState, string> = { not_set: 'Not mapped', left_out: 'Left out (optional)', problem: 'Needs attention', set: 'Mapped', unsupported: 'Not supported by this Transform version' }
 
 export function propertyRows(draft: TransformDraft, review: DraftReview): PropertyRow[] {
   return review.fields.map((f) => {
     const piece = f.index >= 0 ? draft.properties[f.index]!.piece : null
-    const summary = piece ? describeSource(fromPiece(piece)) : stateWords[f.state]
+    // What this Transform version can't make says so, whatever was mapped to it.
+    const summary = piece && f.state !== 'unsupported' ? describeSource(fromPiece(piece)) : stateWords[f.state]
     const inside = f.index >= 0 ? review.issues[f.index]?.[0] : undefined
     const problem = f.state === 'problem' ? (f.problems[0] ?? (inside ? friendlyIssue(inside) : '')) : ''
     const type = typeWords[f.expected]
-    const shown = `${f.name || '(no name)'}, ${type}, ${stateWords[f.state]}${piece ? `: ${summary}` : ''}.${problem ? ` ${problem}` : ''}`
+    const shown = `${f.name || '(no name)'}, ${type}, ${stateWords[f.state]}${piece && f.state !== 'unsupported' ? `: ${summary}` : ''}.${problem ? ` ${problem}` : ''}`
     return {
       name: f.name,
       type,

@@ -12,6 +12,7 @@ import PreviewObject from './PreviewObject.vue'
 import PropertyRows from './PropertyRows.vue'
 import RunHistory from './RunHistory.vue'
 import RunStatus from './RunStatus.vue'
+import UnsupportedNotice from './UnsupportedNotice.vue'
 import { type Configuration, type Plan, type RunRecord, type TransformDraft, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
 
@@ -45,8 +46,9 @@ const label = (ref: DefinitionRef) => labelOf(props.config, ref)
 const problems = computed(() => [...props.structure, ...props.review.problems])
 const mapped = computed(() => props.review.fields.filter((f) => f.state === 'set').length)
 // Optional properties left out aren't unfinished work: the count is of the properties that need a value.
+// Nor is what this Transform version can't make: no value would do.
 const leftOut = computed(() => props.review.fields.filter((f) => f.state === 'left_out').length)
-const needed = computed(() => props.review.fields.length - leftOut.value)
+const needed = computed(() => props.review.fields.filter((f) => f.state !== 'left_out' && f.state !== 'unsupported').length)
 const back = ref<HTMLButtonElement>()
 function showEvidence() {
   details.value = true
@@ -83,6 +85,8 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
           <span class="font-medium text-slate-900">{{ target.label }}</span>
         </p>
 
+        <UnsupportedNotice v-if="review.unsupported" class="mt-4" :text="review.unsupported" />
+
         <section aria-labelledby="output-heading" class="mt-6">
           <div class="mb-2 flex items-center gap-2">
             <h3 id="output-heading" class="text-sm font-semibold text-slate-900">Output</h3>
@@ -111,7 +115,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
     </div>
 
     <div class="border-t border-slate-100 px-5 pt-3 pb-4">
-      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
+      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :unsupported="review.unsupported" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
     </div>
   </div>
 </template>

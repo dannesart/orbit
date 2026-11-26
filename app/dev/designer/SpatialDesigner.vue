@@ -39,6 +39,7 @@ import {
 import { summarize } from './summary'
 import { fromDraft } from './parts'
 import { exampleFrom, previewOutput, reviewDraft } from './preview'
+import { transformSupport } from './support'
 import { reconcile } from './switching'
 import {
   type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findMapping,
@@ -114,7 +115,7 @@ const target = computed(() => outputOf(config.value, draft.value))
 const draftProperties = computed(() => fromDraft(draft.value.properties))
 const structure = computed(() => structureProblems(draft.value))
 const example = computed(() => exampleFrom(recordText.value, A1))
-const review = computed(() => reviewDraft(draftProperties.value, A1, target.value.definition, target.value.label))
+const review = computed(() => reviewDraft(draftProperties.value, A1, target.value.definition, target.value.label, transformSupport(A1, target.value.definition)))
 const output = computed(() => previewOutput(draftProperties.value, A1, target.value.definition, example.value))
 const plan = computed(() => planApply(config.value, draft.value))
 /**

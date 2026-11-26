@@ -3,7 +3,7 @@
 // never invokes a Feature, so there is no outcome and no evidence. Nothing here mutates its input.
 // Absence follows the domain's rule: a source reading an absent optional property has no value,
 // and that property is left out of the object, never filled in.
-import { type Data, type DefinitionVersion, type FieldType, type PropertyType, type Scalar, frozenCopy, validate } from '#shared/features/definitions'
+import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type PropertyType, type Scalar, frozenCopy, propertyPathWords, validate } from '#shared/features/definitions'
 import { type Expression, type MappingIssue, type MappingProperty, checkMapping, evaluatePresent } from '#shared/features/mappings'
 import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData } from '../features/experiment'
 
@@ -64,8 +64,10 @@ export interface FieldReview {
   /**
    * not_set   required, and nothing makes it yet: unfinished work
    * left_out  optional, and nothing makes it: allowed, it's left out of the output (not work)
+   * unsupported  a local object or a referenced Definition, which this Transform version can't make
+   *              at all: not work either, since no Mapping could make it
    */
-  readonly state: 'not_set' | 'left_out' | 'problem' | 'set'
+  readonly state: 'not_set' | 'left_out' | 'problem' | 'set' | 'unsupported'
   /** Problems with the property as a whole (its issues inside are shown where they are). */
   readonly problems: readonly string[]
 }
@@ -86,10 +88,38 @@ export interface DraftReview {
   readonly missing: readonly string[]
   /** The problems that are actual errors: everything except what's still missing. */
   readonly errors: readonly string[]
+  /**
+   * Why this Transform version can't be used with these contracts at all (the same refusal the
+   * boundary makes before running: contractCompatibility), in words; null when it can. Then no
+   * Mapping is complete or applicable, whatever is mapped.
+   */
+  readonly unsupported: string | null
+}
+
+/**
+ * What the Transform version runs use can't take in these contracts: the paths the boundary's own
+ * check (contractCompatibility, in support.ts) refuses, on each side. Plain data, so the preview
+ * never touches a Feature. None refused: the contracts are supported.
+ */
+export interface ContractSupport {
+  readonly version: number
+  readonly reads: readonly PropertyPath[]
+  readonly makes: readonly PropertyPath[]
 }
 
 /** The draft's properties checked against the input Definition and the target Definition. */
-export function reviewDraft(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, targetLabel = definitionLabel(target)): DraftReview {
+export function reviewDraft(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, targetLabel = definitionLabel(target), support?: ContractSupport): DraftReview {
+  // Contracts the version can't take are refused whole, before any Mapping is looked at: the
+  // properties it can't make aren't unfinished mapping work, and never flattened into something it can.
+  const cannotMake = new Set(support?.makes.map((p) => p[0]))
+  const sides = [
+    ...(support?.reads.length ? [`what it reads (${support.reads.map(propertyPathWords).join(', ')})`] : []),
+    ...(support?.makes.length ? [`what it makes (${support.makes.map(propertyPathWords).join(', ')})`] : []),
+  ]
+  const unsupported = support && sides.length
+    ? `Transform v${support.version} doesn’t support objects or other Definitions inside ${sides.join(' or ')}. It can’t be applied or run with ${targetLabel}.`
+    : null
+
   // Checked against the target too, as the boundary checks it: a required property fed by an
   // optional input is refused (may_be_absent).
   const checked = properties.map((p) => checkMapping({ properties: [p] }, input, target))
@@ -100,15 +130,13 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
   const fields = target.fields.map((field): FieldReview => {
     const index = firstIndex(field.name)
     const optional = field.optional === true
+    if (cannotMake.has(field.name)) return { name: field.name, expected: field.type, optional, index, state: 'unsupported', problems: [] }
     if (index < 0) {
       if (!optional) problems.push(`${field.name} isn’t set yet. ${targetLabel} needs it.`)
       return { name: field.name, expected: field.type, optional, index, state: optional ? 'left_out' : 'not_set', problems: [] }
     }
     const own: string[] = []
-    // No nested output yet: a Mapping can't make a local object or a referenced Definition, so saying so beats a confusing type clash.
-    const nested = field.type === 'object' || field.type === 'reference'
-    if (nested) own.push(`${field.name} is an object. A Transform can’t make objects yet.`)
-    const type = nested ? null : checked[index]!.types[0]
+    const type = checked[index]!.types[0]
     if (type && type !== field.type) own.push(`${targetLabel} needs ${typeWords[field.type]} here, but this makes ${typeWords[type]}.`)
     problems.push(...own.map((p) => `${field.name}: ${p}`), ...issues[index]!.map((i) => `${field.name}: ${friendlyIssue(i)}`))
     return { name: field.name, expected: field.type, optional, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }
@@ -128,16 +156,18 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
 
   const missing = fields.filter((f) => f.state === 'not_set').map((f) => f.name)
   const unset = new Set(missing.map((name) => `${name} isn’t set yet. ${targetLabel} needs it.`))
-  return { fields, extras, issues, problems, missing, errors: problems.filter((p) => !unset.has(p)) }
+  if (unsupported) problems.unshift(unsupported)
+  return { fields, extras, issues, problems, missing, errors: problems.filter((p) => !unset.has(p)), unsupported }
 }
 
 /**
  * The properties Mapping still has work for (a required one with no value yet, or one with a
  * problem), once the structure is sound: what "Continue to Mapping" offers. An optional property
- * left unmapped isn't work: it's allowed to be left out. Empty when there's nothing to do there.
+ * left unmapped isn't work: it's allowed to be left out. Empty when there's nothing to do there, or
+ * when this Transform version can't take the contracts at all (no mapping would complete it).
  */
 export const mappingWork = (review: DraftReview, structure: readonly string[]): string[] =>
-  structure.length ? [] : review.fields.filter((f) => f.name && (f.state === 'not_set' || f.state === 'problem')).map((f) => f.name)
+  structure.length || review.unsupported ? [] : review.fields.filter((f) => f.name && (f.state === 'not_set' || f.state === 'problem')).map((f) => f.name)
 
 export interface OutputPreview {
   /** Each property's value from the example, or why it has none. */

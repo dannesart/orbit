@@ -180,7 +180,8 @@ describe('The minimal inspector: a tool, not a report', () => {
   it('keeps Undo as an icon button and says what Apply does only when there is something to apply', () => {
     const bar = source('ApplyBar.vue')
     expect(bar).toMatch(/aria-label="Undo"\s*title="Undo"\s*:disabled="!canUndo"\s*@click="emit\('undo'\)"\s*>\s*<DesignerIcon name="undo"/)
-    expect(bar).toMatch(/:class="plan\.changes \? 'font-medium text-amber-800' : 'sr-only'"/)
+    // ...and not when this Transform version can't take the contracts: then nothing can be applied.
+    expect(bar).toMatch(/:class="plan\.changes && !unsupported \? 'font-medium text-amber-800' : 'sr-only'"/)
     expect(bar).toMatch(/to fix before applying/)
   })
 })

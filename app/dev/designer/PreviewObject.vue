@@ -19,9 +19,10 @@ const rows = computed(() => {
   const names = props.draft.properties.map((p) => p.name)
   const required = props.target.definition.fields.map((f) => {
     const index = names.indexOf(f.name)
-    return { name: f.name, value: index >= 0 ? props.output.values[index]! : null, optional: f.optional === true, extra: false }
+    const unsupported = props.review.fields.some((r) => r.name === f.name && r.state === 'unsupported')
+    return { name: f.name, value: index >= 0 && !unsupported ? props.output.values[index]! : null, optional: f.optional === true, extra: false, unsupported }
   })
-  const extras = props.review.extras.map((x) => ({ name: props.draft.properties[x.index]!.name || 'unnamed', value: props.output.values[x.index]!, optional: false, extra: true }))
+  const extras = props.review.extras.map((x) => ({ name: props.draft.properties[x.index]!.name || 'unnamed', value: props.output.values[x.index]!, optional: false, extra: true, unsupported: false }))
   return [...required, ...extras]
 })
 const about = ref(false)
@@ -44,7 +45,8 @@ const fit = computed(() => (!props.output.fits || 'problem' in props.example || 
       <span class="text-slate-400">{</span>
       <div v-for="r in rows" :key="r.name" class="flex min-w-0 items-center gap-2 pl-3">
         <span class="shrink-0" :class="r.extra ? 'text-amber-800 line-through' : 'text-slate-600'">{{ r.name }}:</span>
-        <ShownText v-if="r.value && 'value' in r.value" :value="r.value.value" />
+        <span v-if="r.unsupported" class="font-sans text-slate-500">not supported by this Transform version</span>
+        <ShownText v-else-if="r.value && 'value' in r.value" :value="r.value.value" />
         <span v-else-if="r.value && 'problems' in r.value" class="font-sans text-red-700">can’t be made: {{ r.value.problems[0] }}</span>
         <span v-else-if="r.value && 'absent' in r.value" class="font-sans text-slate-500">left out: the example has no {{ r.value.absent.join(', ') }}</span>
         <span v-else-if="!r.value && r.optional" class="font-sans text-slate-500">left out (optional)</span>

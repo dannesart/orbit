@@ -9,6 +9,7 @@ import ApplyBar from './ApplyBar.vue'
 import PreviewObject from './PreviewObject.vue'
 import PropertyEditor from './PropertyEditor.vue'
 import StructureEditor from './StructureEditor.vue'
+import UnsupportedNotice from './UnsupportedNotice.vue'
 import type { Configuration, Plan, TransformDraft } from './config'
 import { type DraftReview, type Example, type OutputPreview, mappingWork } from './preview'
 
@@ -54,6 +55,7 @@ const status = {
   left_out: { icon: '–', label: 'Left out (optional)', tone: 'text-slate-400' },
   problem: { icon: '!', label: 'Needs attention', tone: 'text-red-600' },
   set: { icon: '✓', label: 'Mapped', tone: 'text-accent-600' },
+  unsupported: { icon: '×', label: 'Not supported by this Transform version', tone: 'text-slate-400' },
 }
 const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500'
 </script>
@@ -79,6 +81,7 @@ const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visib
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+      <UnsupportedNotice v-if="review.unsupported" class="mb-5" :text="review.unsupported" />
       <!-- Mapping: one property at a time, with room -->
       <div v-if="mode === 'mapping'" class="grid gap-5 lg:grid-cols-[14rem_minmax(0,1fr)]">
         <nav aria-label="Output properties" class="hidden lg:block">
@@ -114,7 +117,8 @@ const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visib
               <h3 class="font-mono text-base font-semibold text-slate-900">{{ selected.name }}</h3>
               <span class="text-xs text-slate-500">{{ typeWords[selected.expected] }}</span>
             </div>
-            <PropertyEditor :draft="draft" :field="selected" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" />
+            <p v-if="selected.state === 'unsupported'" class="text-sm text-slate-600" data-unsupported-property>{{ selected.name }} is {{ selected.expected === 'reference' ? 'another Definition' : 'an object' }}. This Transform version can’t make it, so there’s nothing to map here.</p>
+            <PropertyEditor v-else :draft="draft" :field="selected" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" />
           </section>
           <p v-else-if="selected" class="text-sm text-slate-500">This property has no name yet. Name it in Structure first.</p>
           <p v-else class="text-sm text-slate-500">The output has no properties yet. Add some in Structure.</p>
@@ -136,7 +140,7 @@ const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visib
     </div>
 
     <div class="border-t border-slate-100 px-5 pt-3 pb-4 sm:px-6">
-      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
+      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors]" :missing="review.missing" :unsupported="review.unsupported" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
     </div>
   </div>
 </template>

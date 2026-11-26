@@ -16,6 +16,7 @@ const icon = {
   left_out: { mark: '–', tone: 'text-slate-400' },
   problem: { mark: '!', tone: 'text-red-600' },
   set: { mark: '✓', tone: 'text-accent-600' },
+  unsupported: { mark: '×', tone: 'text-slate-400' },
 }
 </script>
 
@@ -35,9 +36,9 @@ const icon = {
             <span class="truncate font-mono text-sm font-semibold text-slate-900">{{ r.name || '(no name)' }}</span>
             <span class="text-xs text-slate-400">{{ r.type }}</span>
           </span>
-          <span class="mt-1.5 flex items-center gap-2 pl-5 text-sm" :class="r.state === 'not_set' ? 'text-amber-700' : 'text-slate-700'">
-            <!-- The arrow reads "made from"; an optional property left out is made from nothing. -->
-            <span v-if="r.state !== 'left_out'" aria-hidden="true" class="text-slate-400">←</span>
+          <span class="mt-1.5 flex items-center gap-2 pl-5 text-sm" :class="r.state === 'not_set' ? 'text-amber-700' : r.state === 'unsupported' ? 'text-slate-500' : 'text-slate-700'">
+            <!-- The arrow reads "made from"; an optional property left out, or one this version can't make, is made from nothing. -->
+            <span v-if="r.state !== 'left_out' && r.state !== 'unsupported'" aria-hidden="true" class="text-slate-400">←</span>
             <span class="min-w-0 truncate">{{ r.summary }}</span>
           </span>
           <span v-if="r.problem" class="mt-1 block pl-5 text-xs text-red-700">{{ r.problem }}</span>

@@ -6,7 +6,7 @@ import type { DefinitionRef } from '#shared/features/definitions'
 import DesignerIcon from './DesignerIcon.vue'
 import { type Configuration, type Plan, type TransformDraft, labelOf } from './config'
 
-const props = defineProps<{ plan: Plan; config: Configuration; draft: TransformDraft; errors: readonly string[]; missing: readonly string[]; canUndo: boolean }>()
+const props = defineProps<{ plan: Plan; config: Configuration; draft: TransformDraft; errors: readonly string[]; missing: readonly string[]; canUndo: boolean; unsupported?: string | null }>()
 const emit = defineEmits<{ apply: []; discard: []; undo: [] }>()
 
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
@@ -32,7 +32,7 @@ const words = computed(() => {
   <div>
     <div class="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
       <!-- What Apply would do, only when there's something to apply (unchanged: said to screen readers only) -->
-      <p class="mr-auto basis-full text-xs sm:basis-auto sm:max-w-[60%]" :class="plan.changes ? 'font-medium text-amber-800' : 'sr-only'" aria-live="polite">{{ words }}</p>
+      <p class="mr-auto basis-full text-xs sm:basis-auto sm:max-w-[60%]" :class="plan.changes && !unsupported ? 'font-medium text-amber-800' : 'sr-only'" aria-live="polite">{{ words }}</p>
       <button
         type="button"
         class="grid size-9 shrink-0 place-items-center rounded-xl text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-40 disabled:hover:bg-transparent"
@@ -47,7 +47,9 @@ const words = computed(() => {
       <button type="button" class="btn-primary w-auto rounded-full px-5 py-1.5 text-sm disabled:cursor-default disabled:opacity-40" :disabled="!plan.changes || blocked" @click="emit('apply')">Apply</button>
     </div>
     <p v-if="plan.changes && blocked" class="mt-2 text-xs text-slate-600">
-      <span v-if="errors.length" class="text-red-700">{{ errors.length === 1 ? 'One thing' : `${errors.length} things` }} to fix before applying: {{ errors[0] }}<template v-if="missing.length"> {{ missing.length === 1 ? 'One property still needs' : `${missing.length} properties still need` }} a value.</template></span>
+      <!-- Not something to fix here: the Transform version can't take these contracts (said above). -->
+      <span v-if="unsupported" class="text-slate-600" data-apply-unsupported>Apply isn’t available: this Transform version doesn’t support these contracts.</span>
+      <span v-else-if="errors.length" class="text-red-700">{{ errors.length === 1 ? 'One thing' : `${errors.length} things` }} to fix before applying: {{ errors[0] }}<template v-if="missing.length"> {{ missing.length === 1 ? 'One property still needs' : `${missing.length} properties still need` }} a value.</template></span>
       <span v-else>{{ next }} Apply is available once every property has one.</span>    </p>
   </div>
 </template>

@@ -325,14 +325,14 @@ describe('The Designer marks optional properties', () => {
 
   it('without a source arrow on rows that are left out', () => {
     const source = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/PropertyRows.vue'), 'utf8')
-    expect(source).toContain(`<span v-if="r.state !== 'left_out'" aria-hidden="true" class="text-slate-400">←</span>`)
+    expect(source).toContain(`<span v-if="r.state !== 'left_out' && r.state !== 'unsupported'" aria-hidden="true" class="text-slate-400">←</span>`)
   })
 })
 
 describe('The Designer’s Output count', () => {
   it('counts the properties that need a value, not optional ones left out', () => {
     const inspector = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/TransformInspector.vue'), 'utf8')
-    expect(inspector).toMatch(/const needed = computed\(\(\) => props\.review\.fields\.length - leftOut\.value\)/)
+    expect(inspector).toMatch(/const needed = computed\(\(\) => props\.review\.fields\.filter\(\(f\) => f\.state !== 'left_out' && f\.state !== 'unsupported'\)\.length\)/)
     expect(inspector).toMatch(/\{\{ mapped \}\}\/\{\{ needed \}\}/)
   })
 })
