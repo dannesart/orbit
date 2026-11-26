@@ -17,10 +17,9 @@ import {
 } from '@xyflow/vue'
 import '@xyflow/vue/dist/style.css'
 import type { Data, DefinitionRef } from '#shared/features/definitions'
-import { orbitConsole } from '#shared/features/features'
 import {
-  A1, CONSOLES, DEFINITIONS, INITIAL_DATA, PINS, RECORD_ID, WORKSPACE, type Step,
-  definitionLabel, outcomeLabel, parseRecordData, shapeOf,
+  A1, CONSOLES, DEFINITIONS, INITIAL_DATA, PINS, RECORD_ID, TRANSFORMS, WORKSPACE, type Step,
+  definitionLabel, featureKey, outcomeLabel, parseRecordData, shapeOf,
 } from '../features/experiment'
 import RunResult from './RunResult.vue'
 import DesignerToolbar from './DesignerToolbar.vue'
@@ -33,7 +32,7 @@ import TransformInspector from './TransformInspector.vue'
 import StepNode, { type StepView } from './StepNode.vue'
 import { drawEdges, initialNodes, nodeLabel, resetPositions } from './graph'
 import {
-  type Connection, type Contracts, type FlowRun, INITIAL_CONNECTIONS, type StepId, checkConnection, connectionKey,
+  type Connection, type Contracts, type FeatureStep, type FlowRun, INITIAL_CONNECTIONS, INITIAL_STEP_FEATURES, type StepFeatures, type StepId, checkConnection, connectionKey,
   connectionProblems, flowOutcome, pathOf, runFlow, stepBadge, stepTitle,
 } from './flow'
 import { summarize } from './summary'
@@ -53,7 +52,16 @@ useHead({ title: 'Spatial designer (experiment) · Orbit' })
 // Apply makes versions (Experiments #3 and #4) ---
 const pinKey = ref('a1')
 const recordText = ref(JSON.stringify(INITIAL_DATA, null, 2))
-const consoleId = ref(orbitConsole.id)
+// The exact Feature version each step invokes (featureKey). Each changes only when someone picks another.
+const stepFeatures = ref<Record<FeatureStep, string>>({ ...INITIAL_STEP_FEATURES })
+const consoleOf = (key: string) => CONSOLES.find((c) => featureKey(c.feature) === key)!
+const transformOf = (key: string) => TRANSFORMS.find((t) => featureKey(t.feature) === key)!
+const features = computed<StepFeatures>(() => ({
+  'console-in': consoleOf(stepFeatures.value['console-in']).feature,
+  'transform': transformOf(stepFeatures.value.transform).feature,
+  'console-out': consoleOf(stepFeatures.value['console-out']).feature,
+}))
+const featureWords = (step: FeatureStep) => (step === 'transform' ? transformOf(stepFeatures.value.transform) : consoleOf(stepFeatures.value[step])).label
 // Experiment #7: the workspace this Designer works in (when opened from one of its pages in this
 // tab), and the Definition versions it may use besides its samples: those made there, and those
 // Orbit provides. Fixed for this visit; Definitions are made in their own place, not here.
@@ -84,7 +92,7 @@ const contracts = computed<Contracts>(() => ({
 const path = computed(() => pathOf(connections.value))
 const problems = computed(() => connectionProblems(connections.value, contracts.value))
 // What a run depends on. The draft isn't part of it: runs use the applied versions.
-const snapshot = computed(() => JSON.stringify([pinKey.value, recordText.value, consoleId.value, config.value.mapping, connections.value.map(connectionKey)]))
+const snapshot = computed(() => JSON.stringify([pinKey.value, recordText.value, stepFeatures.value, config.value.mapping, connections.value.map(connectionKey)]))
 const stale = computed(() => snapshot.value !== ranWith.value)
 
 // --- The draft: edited freely, previewed, and only applied on purpose ---
@@ -115,7 +123,7 @@ const target = computed(() => outputOf(config.value, draft.value))
 const draftProperties = computed(() => fromDraft(draft.value.properties))
 const structure = computed(() => structureProblems(draft.value))
 const example = computed(() => exampleFrom(recordText.value, A1))
-const review = computed(() => reviewDraft(draftProperties.value, A1, target.value.definition, target.value.label, transformSupport(A1, target.value.definition)))
+const review = computed(() => reviewDraft(draftProperties.value, A1, target.value.definition, target.value.label, transformSupport(A1, target.value.definition, features.value.transform)))
 const output = computed(() => previewOutput(draftProperties.value, A1, target.value.definition, example.value))
 const plan = computed(() => planApply(config.value, draft.value))
 /**
@@ -165,7 +173,7 @@ function run() {
       mappings: applied.mappings,
     }, runsIn),
     connections.value,
-    { console: CONSOLES.find((c) => c.feature.id === consoleId.value)!.feature, mapping: applied.mapping, workspaceId: runsIn },
+    { features: features.value, mapping: applied.mapping, workspaceId: runsIn },
   )
   ranWith.value = snapshot.value
   runNumber.value++
@@ -178,13 +186,14 @@ const connectionsChanged = computed(() => connections.value.map(connectionKey).j
 function startOver() {
   const to = { ...draftFrom(initialConfiguration(offered)), local: draft.value.local }
   const record = recordText.value !== JSON.stringify(INITIAL_DATA, null, 2) || pinKey.value !== 'a1' ? ['Your edits to Record A'] : []
+  const versions = JSON.stringify(stepFeatures.value) !== JSON.stringify(INITIAL_STEP_FEATURES) ? ['The Feature versions you chose for its steps'] : []
   resetAfterAsking({
     title: 'Start over?', intro: 'Record A, the Console, the connections and the Transform’s draft go back to how they started. Applied versions stay. Starting over forgets:', confirm: 'Start over',
-    losing: [...record, ...(connectionsChanged.value ? ['Your connections'] : []), ...draftLoses(draft.value, to)],
+    losing: [...record, ...versions, ...(connectionsChanged.value ? ['Your connections'] : []), ...draftLoses(draft.value, to)],
     act: () => {
       pinKey.value = 'a1'
       recordText.value = JSON.stringify(INITIAL_DATA, null, 2)
-      consoleId.value = orbitConsole.id
+      stepFeatures.value = { ...INITIAL_STEP_FEATURES }
       connections.value = INITIAL_CONNECTIONS
       setDraft(to, false)
     },
@@ -372,7 +381,7 @@ const views = computed<Record<StepId, StepView>>(() => {
     const kind = step.evidence.outcome.kind
     return { label: outcomeLabel(step.evidence.outcome), tone: kind === 'succeeded' ? 'ok' : kind === 'failed' ? 'bad' : 'warn' }
   }
-  const variant = CONSOLES.find((c) => c.feature.id === consoleId.value)!
+  const misbehaving = (step: FeatureStep) => !features.value[step].id.startsWith('orbit.')
   const mapping = summarize(appliedMapping.value.properties)
   const p = path.value
   return {
@@ -382,18 +391,18 @@ const views = computed<Record<StepId, StepView>>(() => {
       more: 0, note: pinKey.value === 'a1' ? null : 'Pinned to a different Definition', problem: null, outcome: null, stale: false,
     },
     'console-in': {
-      badge: stepBadge('console-in', p), kind: 'Feature', title: stepTitle('console-in'),
+      badge: stepBadge('console-in', p), kind: `Feature · ${featureWords('console-in')}`, title: stepTitle('console-in'),
       lines: ['Shows what arrives and passes it on, unchanged'], more: 0,
-      note: variant.feature.id === orbitConsole.id ? null : 'Misbehaving on purpose', problem: problemInto('console-in'), outcome: outcome('console-in'), stale: stale.value,
+      note: misbehaving('console-in') ? 'Misbehaving on purpose' : null, problem: problemInto('console-in'), outcome: outcome('console-in'), stale: stale.value,
     },
     'transform': {
-      badge: stepBadge('transform', p), kind: `Feature · Mapping v${config.value.mapping.version}`, title: stepTitle('transform'),
+      badge: stepBadge('transform', p), kind: `Feature · ${featureWords('transform')} · Mapping v${config.value.mapping.version}`, title: stepTitle('transform'),
       lines: [`${label(appliedMapping.value.from)} → ${label(config.value.output)}`, ...(mapping.lines.length ? mapping.lines : ['Makes nothing yet'])], more: mapping.more,
       note: plan.value.changes ? 'Unapplied changes. Runs use the applied versions' : null, problem: problemInto('transform'), outcome: outcome('transform'), stale: stale.value,
     },
     'console-out': {
-      badge: stepBadge('console-out', p), kind: 'Feature', title: stepTitle('console-out'),
-      lines: ['Shows what arrives and passes it on, unchanged'], more: 0, note: null, problem: problemInto('console-out'), outcome: outcome('console-out'), stale: stale.value,
+      badge: stepBadge('console-out', p), kind: `Feature · ${featureWords('console-out')}`, title: stepTitle('console-out'),
+      lines: ['Shows what arrives and passes it on, unchanged'], more: 0, note: misbehaving('console-out') ? 'Misbehaving on purpose' : null, problem: problemInto('console-out'), outcome: outcome('console-out'), stale: stale.value,
     },
   }
 })
@@ -479,9 +488,9 @@ const back = computed(() => safeDestination(useRoute().query.back))
 // first (Stay in Designer / Leave and discard); an untouched playground just leaves. One guard
 // covers every way out inside Orbit (the back action, List view, the browser's back button); a
 // reload or closing the tab gets the browser's own question, only when there's work to lose.
-const START = { pinKey: 'a1', recordText: JSON.stringify(INITIAL_DATA, null, 2), consoleId: orbitConsole.id } as const
+const START = { pinKey: 'a1', recordText: JSON.stringify(INITIAL_DATA, null, 2), features: INITIAL_STEP_FEATURES } as const
 const atRisk = computed(() => [
-  ...workAtRisk({ pinKey: pinKey.value, recordText: recordText.value, consoleId: consoleId.value, config: config.value, unapplied: plan.value.changes }, START),
+  ...workAtRisk({ pinKey: pinKey.value, recordText: recordText.value, features: stepFeatures.value, config: config.value, unapplied: plan.value.changes }, START),
   ...(connectionsChanged.value ? ['Your connections'] : []),
 ])
 const leaving = ref<string | null>(null)
@@ -638,7 +647,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         @close="closeInspector"
       />
       <div v-else class="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-        <section v-if="selectedId !== 'console-out'" aria-labelledby="setup-heading">
+        <section aria-labelledby="setup-heading">
           <h3 id="setup-heading" class="text-sm font-semibold text-slate-900">Setup</h3>
           <p class="mt-0.5 text-xs text-slate-500">Changes take effect the next time you run.</p>
 
@@ -658,16 +667,22 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
             </p>
           </div>
 
-          <div v-else-if="selectedId === 'console-in'" :class="[card, 'mt-3']">
-            <label for="console-variant" class="block text-xs font-medium text-slate-600">Misbehave on purpose: run this Console instead</label>
-            <select id="console-variant" v-model="consoleId" :class="[control, 'mt-1 w-full']">
-              <option v-for="c in CONSOLES" :key="c.feature.id" :value="c.feature.id">{{ c.label }}</option>
+          <!-- The exact Feature version this step invokes: changed only by choosing another here. -->
+          <div v-else-if="selectedId === 'console-in' || selectedId === 'console-out'" :class="[card, 'mt-3']">
+            <label for="console-variant" class="block text-xs font-medium text-slate-600">Feature version</label>
+            <select id="console-variant" v-model="stepFeatures[selectedId]" :class="[control, 'mt-1 w-full']" data-feature-version>
+              <optgroup label="Orbit">
+                <option v-for="c in CONSOLES.filter((x) => x.feature.id.startsWith('orbit.'))" :key="featureKey(c.feature)" :value="featureKey(c.feature)">{{ c.label }}</option>
+              </optgroup>
+              <optgroup label="Misbehaving on purpose">
+                <option v-for="c in CONSOLES.filter((x) => !x.feature.id.startsWith('orbit.'))" :key="featureKey(c.feature)" :value="featureKey(c.feature)">{{ c.label }}</option>
+              </optgroup>
             </select>
           </div>
         </section>
 
         <!-- What happened: read-only, from an actual run. -->
-        <section aria-labelledby="run-heading" class="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200/70" :class="{ 'mt-0': selectedId === 'console-out' }">
+        <section aria-labelledby="run-heading" class="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200/70">
           <div class="flex flex-wrap items-baseline justify-between gap-2">
             <h3 id="run-heading" class="text-sm font-semibold text-slate-900">What happened</h3>
             <p class="text-xs text-slate-500">{{ runLabel }}</p>

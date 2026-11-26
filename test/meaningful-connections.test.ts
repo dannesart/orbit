@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { type Data, type DefinitionRef, deepFreeze, refOf } from '../shared/features/definitions'
-import { type Catalog, type PassThroughFeature, orbitConsole } from '../shared/features/features'
+import { type Catalog, type PassThroughFeature, orbitConsole, orbitTransformV2 } from '../shared/features/features'
 import { A1, B1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, definitionLabel } from '../app/dev/features/experiment'
 import {
   type Connection, type Contracts, INITIAL_CONNECTIONS, type StepId, checkConnection, connectionProblems, flowOutcome,
@@ -27,7 +27,7 @@ const contracts = (pinned: DefinitionRef = refOf(A1)): Contracts => ({
   label: definitionLabel,
 })
 const run = (connections: readonly Connection[], cat = catalog(), console: PassThroughFeature = orbitConsole) =>
-  runFlow(cat, connections, { console, mapping: { id: INITIAL_MAPPING.id, version: INITIAL_MAPPING.version }, workspaceId: WORKSPACE })
+  runFlow(cat, connections, { features: { 'console-in': console, 'transform': orbitTransformV2, 'console-out': orbitConsole }, mapping: { id: INITIAL_MAPPING.id, version: INITIAL_MAPPING.version }, workspaceId: WORKSPACE })
 const outcomes = (r: ReturnType<typeof run>) =>
   Object.fromEntries(Object.entries(r.steps).map(([step, result]) => [step, result!.evidence.outcome.kind]))
 

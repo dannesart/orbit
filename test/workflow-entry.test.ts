@@ -79,7 +79,7 @@ describe('Leaving the designer never silently discards work', async () => {
   const { workAtRisk } = await import('../app/dev/designer/session')
   const { applyConfiguration, draftFrom, initialConfiguration } = await import('../app/dev/designer/config')
   const { INITIAL_DATA } = await import('../app/dev/features/experiment')
-  const start = { pinKey: 'a1', recordText: JSON.stringify(INITIAL_DATA, null, 2), consoleId: 'orbit.console' }
+  const start = { pinKey: 'a1', recordText: JSON.stringify(INITIAL_DATA, null, 2), features: { 'console-in': 'orbit.console@1', 'transform': 'orbit.transform@2', 'console-out': 'orbit.console@1' } }
   const untouched = { ...start, config: initialConfiguration(), unapplied: false }
 
   it('asks nothing for an untouched playground (running and moving nodes aren’t work)', () => {
@@ -96,8 +96,8 @@ describe('Leaving the designer never silently discards work', async () => {
   })
 
   it('names unapplied changes and edits to the setup', () => {
-    expect(workAtRisk({ ...untouched, unapplied: true, recordText: '{}', consoleId: 'playground.console-that-edits' }, start)).toEqual([
-      'Changes to the Transform you haven’t applied', 'Your edits to Record A', 'The Console you chose to misbehave',
+    expect(workAtRisk({ ...untouched, unapplied: true, recordText: '{}', features: { ...start.features, 'console-in': 'playground.console-that-edits@1' } }, start)).toEqual([
+      'Changes to the Transform you haven’t applied', 'Your edits to Record A', 'The Feature versions you chose for its steps',
     ])
     expect(workAtRisk({ ...untouched, pinKey: 'a2' }, start)).toEqual(['Your edits to Record A'])
   })

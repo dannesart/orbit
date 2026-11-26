@@ -232,9 +232,11 @@ describe('Feature versions guarantee behaviour: Orbit.Transform v1 and v2', () =
     const [, transform] = runExperiment({ definitions: DEFINITIONS, records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: refOf(A1), data: INITIAL_DATA }], mappings: [INITIAL_MAPPING] }, { console: orbitConsole, mapping: { id: INITIAL_MAPPING.id, version: 1 } })
     expect(transform!.evidence.feature).toEqual({ id: 'orbit.transform', version: 2 })
     const root = join(import.meta.dirname, '..')
-    for (const file of ['app/dev/features/experiment.ts', 'app/dev/designer/flow.ts']) {
-      expect(readFileSync(join(root, file), 'utf8')).toMatch(/feature: orbitTransformV2\b/)
-    }
+    expect(readFileSync(join(root, 'app/dev/features/experiment.ts'), 'utf8')).toMatch(/feature: orbitTransformV2\b/)
+    // The Designer's flow assumes no version: each step names its own, and the Transform's is v2.
+    const flow = readFileSync(join(root, 'app/dev/designer/flow.ts'), 'utf8')
+    expect(flow).not.toMatch(/orbitTransformV\d|orbitConsole\b/)
+    expect(flow).toContain("'transform': 'orbit.transform@2',")
   })
 })
 

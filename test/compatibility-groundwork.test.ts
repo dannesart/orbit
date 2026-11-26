@@ -3,11 +3,14 @@
 // malformed one), never crashing and never reinterpreting it. Sources they support mean exactly
 // what they always meant. And the location type for future nested Mapping problems keeps the
 // output property apart from the place in its source.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { type Data, deepFreeze, refOf } from '../shared/features/definitions'
 import { type Catalog, type MappingFeature, invoke, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
 import { type Expression, type ExpressionPath, type Mapping, type MappingProblemLocation, checkMapping, formatSource } from '../shared/features/mappings'
-import { A1, B1, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, describeMappingIssue } from '../app/dev/features/experiment'
+import { A1, B1, CONSOLES, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, TRANSFORMS, WORKSPACE, describeMappingIssue, featureKey } from '../app/dev/features/experiment'
+import { INITIAL_CONNECTIONS, INITIAL_STEP_FEATURES, type StepFeatures, runFlow } from '../app/dev/designer/flow'
 import type { PropertyPath } from '../shared/features/definitions'
 
 const withSource = (source: unknown): Mapping => deepFreeze({ ...INITIAL_MAPPING, version: 9, properties: [{ name: 'fullName', source: source as Expression }] })
@@ -80,5 +83,40 @@ describe('Locations for future nested Mapping problems', () => {
     expectTypeOf<MappingProblemLocation['expression']>().toEqualTypeOf<ExpressionPath>()
     const at: MappingProblemLocation = { output: ['contact', 'email'], expression: ['join', 0, 1] }
     expect(at.output).not.toBe(at.expression)
+  })
+})
+
+describe('Each Designer step names the exact Feature version it invokes', () => {
+  const root = join(import.meta.dirname, '..')
+  const designer = readFileSync(join(root, 'app/dev/designer/SpatialDesigner.vue'), 'utf8')
+  const pick = (key: string) => [...CONSOLES, ...TRANSFORMS].find((c) => featureKey(c.feature) === key)!.feature
+  const stepsFrom = (keys: Record<string, string>) => ({ 'console-in': pick(keys['console-in']!), 'transform': pick(keys.transform!), 'console-out': pick(keys['console-out']!) }) as StepFeatures
+  const flow = (keys: Record<string, string>) => runFlow(catalog(INITIAL_MAPPING), INITIAL_CONNECTIONS, { features: stepsFrom(keys), mapping: { id: INITIAL_MAPPING.id, version: 1 }, workspaceId: WORKSPACE })
+
+  it('keeps the versions the steps have always run: Console v1, Transform v2, Console v1', () => {
+    expect(INITIAL_STEP_FEATURES).toEqual({ 'console-in': 'orbit.console@1', 'transform': 'orbit.transform@2', 'console-out': 'orbit.console@1' })
+    const run = flow(INITIAL_STEP_FEATURES)
+    expect(['console-in', 'transform', 'console-out'].map((s) => run.steps[s as 'transform']!.evidence.feature)).toEqual([
+      { id: 'orbit.console', version: 1 }, { id: 'orbit.transform', version: 2 }, { id: 'orbit.console', version: 1 },
+    ])
+    expect(run.steps['console-out']!.output!.data).toEqual({ fullName: 'Ada Lovelace' })
+  })
+
+  it('invokes, and names in evidence, exactly the version chosen for each step; an earlier run keeps its own', () => {
+    const before = flow(INITIAL_STEP_FEATURES)
+    const after = flow({ ...INITIAL_STEP_FEATURES, 'console-out': 'playground.console-that-swaps@1' })
+    expect(after.steps['console-out']!.evidence).toMatchObject({ feature: { id: 'playground.console-that-swaps', version: 1 }, outcome: { kind: 'failed', reason: 'pass_through_broken' } })
+    expect(before.steps['console-out']!.evidence).toMatchObject({ feature: { id: 'orbit.console', version: 1 }, outcome: { kind: 'succeeded' } })
+    expect(Object.isFrozen(before.steps['console-out']!.evidence)).toBe(true)
+  })
+
+  it('assumes no version in the flow, and changes one only when someone picks another', () => {
+    expect(designer).not.toMatch(/import \{[^}]*orbitConsole[^}]*\} from '#shared\/features\/features'/)
+    expect(designer).toContain('const stepFeatures = ref<Record<FeatureStep, string>>({ ...INITIAL_STEP_FEATURES })')
+    expect(designer).toMatch(/<select id="console-variant" v-model="stepFeatures\[selectedId\]"/)
+    expect(designer).not.toMatch(/stepFeatures\.value(\[[^\]]+\]|\.\w+) =/)
+    // Choosing another version makes the last run stale, and starting over or leaving says so.
+    expect(designer).toContain('JSON.stringify([pinKey.value, recordText.value, stepFeatures.value,')
+    expect(designer).toContain("['The Feature versions you chose for its steps']")
   })
 })

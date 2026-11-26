@@ -29,7 +29,8 @@ export function draftLoses(draft: TransformDraft, to: TransformDraft): string[] 
 export interface Setup {
   readonly pinKey: string
   readonly recordText: string
-  readonly consoleId: string
+  /** The Feature version each step invokes, by key (featureKey). */
+  readonly features: Readonly<Record<string, string>>
 }
 
 export interface Session extends Setup {
@@ -53,6 +54,6 @@ export function workAtRisk(session: Session, start: Setup): string[] {
   }
   if (session.unapplied) at.push('Changes to the Transform you haven’t applied')
   if (session.recordText !== start.recordText || session.pinKey !== start.pinKey) at.push('Your edits to Record A')
-  if (session.consoleId !== start.consoleId) at.push('The Console you chose to misbehave')
+  if (Object.keys(start.features).some((step) => session.features[step] !== start.features[step])) at.push('The Feature versions you chose for its steps')
   return at
 }

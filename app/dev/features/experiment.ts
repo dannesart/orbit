@@ -10,7 +10,7 @@ import {
   type ArgumentType, type Expression, type Mapping, type MappingIssue, type MappingProperty, type Path, checkMapping,
 } from '#shared/features/mappings'
 import {
-  type Catalog, type FeatureRef, type InvocationResult, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitTransformV2,
+  type Catalog, type FeatureRef, type InvocationResult, type MappingFeature, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitTransformV2,
 } from '#shared/features/features'
 
 export const WORKSPACE = 'ws-playground'
@@ -60,7 +60,7 @@ export const INITIAL_MAPPING: Mapping = deepFreeze({
  * evidence names the Feature that actually ran.
  */
 export const CONSOLES: readonly { feature: PassThroughFeature; label: string }[] = [
-  { feature: orbitConsole, label: 'Orbit.Console' },
+  { feature: orbitConsole, label: 'Orbit.Console v1' },
   {
     label: 'A Console that tries to change the value',
     feature: { id: 'playground.console-that-edits', version: 1, contract: 'pass-through', localObjects: 'unsupported', references: 'unsupported', run(input, { inspect }) {
@@ -77,6 +77,17 @@ export const CONSOLES: readonly { feature: PassThroughFeature; label: string }[]
     } },
   },
 ]
+
+/**
+ * The Transform versions a step may invoke here: those the Designer can review a draft for (its
+ * preview and review follow v2's rules for absence), so only v2 for now. Each by its exact version.
+ */
+export const TRANSFORMS: readonly { feature: MappingFeature; label: string }[] = [
+  { feature: orbitTransformV2, label: 'Orbit.Transform v2' },
+]
+
+/** A Feature version as one key ("orbit.console@1"): identity and version, never a "current" alias. */
+export const featureKey = (f: FeatureRef) => `${f.id}@${f.version}`
 
 /** One step of the chain: its result, or null when it was never invoked. */
 export type Step = InvocationResult | null

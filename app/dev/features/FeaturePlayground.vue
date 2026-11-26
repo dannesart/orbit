@@ -7,7 +7,7 @@ import { type Mapping, type MappingProperty, formatSource, reviseMapping } from 
 import { orbitConsole } from '#shared/features/features'
 import {
   A1, B1, CONSOLES, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, PINS, RECORD_ID, WORKSPACE, type Step,
-  definitionLabel, mappingHints, parseRecordData, runExperiment, shapeOf,
+  definitionLabel, featureKey, mappingHints, parseRecordData, runExperiment, shapeOf,
 } from './experiment'
 import SourceEditor from './SourceEditor.vue'
 import StepResult from './StepResult.vue'
@@ -18,7 +18,7 @@ const plain = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 
 const pinKey = ref('a1')
 const recordText = ref(JSON.stringify(INITIAL_DATA, null, 2))
-const consoleId = ref(orbitConsole.id)
+const consoleId = ref(featureKey(orbitConsole))
 const draft = ref<MappingProperty[]>(plain([...INITIAL_MAPPING.properties]))
 const versions = shallowRef<Mapping[]>([INITIAL_MAPPING])
 const steps = shallowRef<[Step, Step, Step]>([null, null, null])
@@ -44,7 +44,7 @@ function run() {
       records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: pin.value.ref, data: record.data as Data }],
       mappings: versions.value,
     },
-    { console: CONSOLES.find((c) => c.feature.id === consoleId.value)!.feature, mapping: { id: latest.value.id, version: latest.value.version } },
+    { console: CONSOLES.find((c) => featureKey(c.feature) === consoleId.value)!.feature, mapping: { id: latest.value.id, version: latest.value.version } },
   )
   ranWith.value = snapshot.value
 }
@@ -52,7 +52,7 @@ function run() {
 function startOver() {
   pinKey.value = 'a1'
   recordText.value = JSON.stringify(INITIAL_DATA, null, 2)
-  consoleId.value = orbitConsole.id
+  consoleId.value = featureKey(orbitConsole)
   draft.value = plain([...INITIAL_MAPPING.properties])
 }
 
@@ -121,7 +121,7 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
           <summary class="text-sm text-slate-600">Misbehave on purpose</summary>
           <label for="console-variant" class="mt-3 block text-sm font-medium text-slate-700">Run this Console instead</label>
           <select id="console-variant" v-model="consoleId" :class="[control, 'mt-1.5 w-full sm:w-auto']">
-            <option v-for="c in CONSOLES" :key="c.feature.id" :value="c.feature.id">{{ c.label }}</option>
+            <option v-for="c in CONSOLES" :key="featureKey(c.feature)" :value="featureKey(c.feature)">{{ c.label }}</option>
           </select>
         </details>
         <StepResult :step="steps[0]" :stale="stale" pass-through />

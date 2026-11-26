@@ -12,7 +12,7 @@
 // The boundary (shared/features, invoke) still checks every invocation; this only says ahead of
 // time what it would say. Nothing here changes a contract, a Mapping or a Definition.
 import { type DefinitionRef, type DefinitionVersion, sameDefinition, sameFields } from '#shared/features/definitions'
-import { type Catalog, type FeatureRef, type Input, type InvocationResult, type PassThroughFeature, invoke, orbitConsole, orbitTransformV2 } from '#shared/features/features'
+import { type Catalog, type FeatureRef, type Input, type InvocationResult, type MappingFeature, type PassThroughFeature, invoke } from '#shared/features/features'
 import { RECORD_ID } from '../features/experiment'
 
 export const STEPS = ['record', 'console-in', 'transform', 'console-out'] as const
@@ -128,6 +128,22 @@ export function connectionProblems(connections: readonly Connection[], contracts
   return problems
 }
 
+/**
+ * The exact Feature version each step invokes. Every step names its own: nothing here assumes a
+ * version, and none changes unless someone chooses another. Evidence names the version that ran.
+ */
+export interface StepFeatures {
+  readonly 'console-in': PassThroughFeature
+  readonly 'transform': MappingFeature
+  readonly 'console-out': PassThroughFeature
+}
+/** The versions the playground's steps have always invoked, by key (featureKey): Console v1, Transform v2, Console v1. */
+export const INITIAL_STEP_FEATURES: Readonly<Record<FeatureStep, string>> = Object.freeze({
+  'console-in': 'orbit.console@1',
+  'transform': 'orbit.transform@2',
+  'console-out': 'orbit.console@1',
+})
+
 /** One run of the path: which steps were on it, in order, and each invoked step's result. */
 export interface FlowRun {
   readonly path: readonly StepId[]
@@ -142,16 +158,16 @@ export interface FlowRun {
 export function runFlow(
   catalog: Catalog,
   connections: readonly Connection[],
-  options: { console: PassThroughFeature; mapping: FeatureRef; workspaceId: string },
+  options: { features: StepFeatures; mapping: FeatureRef; workspaceId: string },
 ): FlowRun {
   const path = Object.freeze(pathOf(connections))
   const steps: Partial<Record<FeatureStep, InvocationResult>> = {}
   let input: Input = { record: RECORD_ID }
   for (const step of path.slice(1) as FeatureStep[]) {
-    const { workspaceId } = options
+    const { workspaceId, features } = options
     const result: InvocationResult = step === 'transform'
-      ? invoke(catalog, { workspaceId, feature: orbitTransformV2, input, mapping: options.mapping })
-      : invoke(catalog, { workspaceId, feature: step === 'console-in' ? options.console : orbitConsole, input })
+      ? invoke(catalog, { workspaceId, feature: features.transform, input, mapping: options.mapping })
+      : invoke(catalog, { workspaceId, feature: features[step], input })
     steps[step] = result
     if (!result.output) break
     input = result.output
