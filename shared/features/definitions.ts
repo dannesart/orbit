@@ -23,7 +23,24 @@
  * Versions are forever. A published version (one defineVersion has made) is never modified and
  * never deleted, by anyone, for any reason. Deprecating or archiving a Definition may hide it
  * from new choices, but every version must stay resolvable by its exact identity, so historical
- * Records, Mappings and evidence keep meaning exactly what they meant. The order of fields is
+ * Records, Mappings and evidence keep meaning exactly what they meant.
+ *
+ * Decided, not built yet (no deprecation exists here):
+ *   - A deprecated version may still be referenced by a new version, deliberately and with a
+ *     warning, never by default. The rule is the same whoever owns the deprecated version: the
+ *     referencing workspace's own, another's it may see, or Orbit's.
+ *   - Archival is deferred: no archived state, and no rule for it, until it's needed.
+ *
+ * Names. A version's name (DefinitionVersion.name) is the name it was published with, frozen with
+ * it: a later rename never changes it. Whatever a catalogue keeps beside the versions (a current
+ * name, a description, an appearance) is metadata for people, mutable, and never part of a version.
+ * Words about a historical version should use its own publication-time name. What is guaranteed
+ * today: each version's name is frozen with it (renaming in the Studio changes only its catalogue
+ * metadata), and the playground's and Designer's words for their own sample and applied versions
+ * use those versions' own names. Not yet: the Studio labels a reference with the Definition's
+ * current catalogue name, and the Designer labels a Definition handed over from the Studio with the
+ * name it had when handed over. Evidence records identities and versions only, never names, so no
+ * history needs rewriting: only the words made from it. The order of fields is
  * presentation, never part of a contract: two versions are the same contract when sameFields says
  * so, and reordering alone never makes a version.
  *

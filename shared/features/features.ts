@@ -32,6 +32,11 @@ import { type Mapping, type MappingIssue, checkMapping, evaluate, evaluatePresen
  * the version that actually ran (the Feature object invoked, never a "current" alias), so earlier
  * evidence is never relabelled.
  *
+ * Choosing a version is explicit. Mappings name no Feature version: a Mapping is judged against
+ * whichever version is invoked with it, before it runs (mappingCompatibility), so the same Mapping may
+ * suit one version and be refused by another. Which version a step invokes changes only when someone
+ * chooses another: nothing upgrades a step, a Mapping or a Definition by itself.
+ *
  * Nothing here persists or logs anything.
  */
 

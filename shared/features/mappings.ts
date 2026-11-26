@@ -26,7 +26,18 @@ import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, 
  *
  * Local objects and references. A source reads only top-level value properties: never a local object
  * or a referenced Definition, and nothing inside one (object_property). Nested reads and nested
- * output are future work.
+ * output are future work, for a later Transform version. Decided for it, not built:
+ *   - A whole value may be copied only between references to exactly the same Definition identity
+ *     and version. Between different identities or versions it isn't supported, however alike they
+ *     look; building the target property by property, explicitly, stays possible.
+ *   - Copying a whole local object is deferred, not ruled out: an explicit structural transformation
+ *     may come later, but no local object is ever given an identity of its own to make it possible.
+ *   - An object is never left out automatically because it ended up empty: absent, empty ({}) and
+ *     incomplete stay distinct, exactly as the validator tells them apart.
+ *   - Open, for building objects (4.3): when an optional output object is built only while an
+ *     optional source object is present, the source object's required properties may be guaranteed
+ *     available within that condition. Its semantics are to be established before it is accepted
+ *     or refused.
  *
  * The source language is closed. A source of any other kind (one a later Transform version may
  * understand, or something malformed) is refused before anything runs (unsupported_source), never
