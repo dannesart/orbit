@@ -46,7 +46,8 @@ export function checkWith(reading: Reading, properties: readonly MappingProperty
     const c = checkMapping({ properties }, input, output)
     return { issues: c.issues, types: c.types, absent: c.absent.map((names) => names.map((n) => [n])) }
   }
-  const c = checkNestedMapping({ properties }, input, output, { resolve: reading.resolve })
+  // Some properties on their own: the output's own completeness is the review's (it has them all).
+  const c = checkNestedMapping({ properties }, input, output, { resolve: reading.resolve, partial: true })
   const indexOf = (name: string) => Math.max(0, properties.findIndex((p) => p.name === name))
   return {
     // [output property, ...deeper output properties, ...place in the source]: a construction has no

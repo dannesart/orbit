@@ -192,9 +192,9 @@ describe('Compatibility, before execution', () => {
     expect(checkMapping({ properties }, A1, B1).issues).toEqual([{ problem: 'unsupported_source', path: ['a'] }])
   })
 
-  it('at the top level, a required object nothing builds fails after running, as a flat property always has', () => {
+  it('at the top level too, a required object nothing builds is refused before running (Phase 4.4: completeness at every level)', () => {
     const composedOut = defineVersion({ id: 'out-composed', version: 1, name: 'Out', workspaceId: W, fields: [{ name: 'where', type: 'reference', definition: refOf(ADDRESS) }] }, only(ADDRESS))
-    expect(run(orbitTransformV3, [], composedOut).evidence.outcome).toEqual({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'missing', path: ['where'], expected: 'object' }] })
+    expect(run(orbitTransformV3, [], composedOut).evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'invalid_mapping', issues: [{ problem: 'missing_output_property', at: { output: ['where'], expression: [] }, name: 'where' }] })
   })
 
   it('evidence of an earlier run keeps the version that ran when the step changes version', () => {

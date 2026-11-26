@@ -67,9 +67,17 @@ import {
  * Presence. A required output object is always built. An optional one is left out (not in the
  * Mapping), always built, or built when a source object is present ({ when: 'present', source }).
  * Never left out because its properties ended up absent, and never filled in: an object always built
- * may be empty ({}) when its contract allows that. Inside a construction, every required property
- * must be made (missing_output_property) by something that can't be absent there (may_be_absent),
- * of the right type, and nothing the object doesn't have: decided before running.
+ * may be empty ({}) when its contract allows that.
+ *
+ * Completeness, at every level. For Transform v3, every object (the output itself, and each built
+ * object) is checked against its own contract before running: every required property made
+ * (missing_output_property) by something that can't be absent there (may_be_absent), of the right
+ * type (wrong_output_type), and nothing the object doesn't have (unknown_output_property). So an
+ * incomplete or mismatched Mapping is refused before running (invalid_mapping) rather than run and
+ * refused afterwards (failed, invalid_output), as v1 and v2 still do: an intentional change in
+ * provisional v3, for invalid Mappings only; a valid Mapping makes exactly what it made before.
+ * A check of some of a Mapping's properties on their own (`partial`, as an editor reviewing one
+ * property at a time does) leaves the output's own completeness to whoever has them all.
  *
  * Presence guarantees. Within a construction built when source object P is present, P and every
  * property on its path are known to be present; anything a source reads that is optional only
@@ -229,6 +237,8 @@ type Checked = { type: ArgumentType | 'invalid'; issues: FoundMappingIssue[]; re
 interface Accepts {
   readonly nested: boolean
   readonly resolve?: Resolve
+  /** Only some of a Mapping's properties: the output's own completeness isn't judged (see above). */
+  readonly partial?: boolean
 }
 
 /** Whether something is a source of a kind this language has, with each part of the shape that kind needs. */
@@ -475,8 +485,8 @@ export function checkMapping(mapping: Pick<Mapping, 'properties'>, input: Defini
  * through the input contract with `resolve`, absence through every optional property along them,
  * problems located in two parts (the output property, and the place in its source).
  */
-export function checkNestedMapping(mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output: DefinitionVersion | undefined, options: { absence?: 'unsupported' | 'omitted'; resolve?: Resolve } = {}) {
-  const { found, types, absent } = checkProperties(mapping, input, output, options.absence ?? 'omitted', { nested: true, resolve: options.resolve })
+export function checkNestedMapping(mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output: DefinitionVersion | undefined, options: { absence?: 'unsupported' | 'omitted'; resolve?: Resolve; partial?: boolean } = {}) {
+  const { found, types, absent } = checkProperties(mapping, input, output, options.absence ?? 'omitted', { nested: true, resolve: options.resolve, partial: options.partial })
   const issues = found.map(({ output, issue }): LocatedMappingIssue => {
     const { path, ...rest } = issue
     return { ...rest, at: { output, expression: path.slice(1) } } as LocatedMappingIssue
@@ -497,6 +507,9 @@ function checkProperties(mapping: Pick<Mapping, 'properties'>, input: Definition
 
   function level(properties: readonly MappingProperty[], fields: readonly Field[] | null, owner: string | null, at: PropertyPath, guaranteed: readonly PropertyPath[], inside: boolean) {
     const seen = new Set<string>()
+    // Each object against its own contract: inside every construction, and (for nested versions,
+    // unless only some properties are being checked) the output itself.
+    const strict = inside || (accepts.nested && !accepts.partial)
     for (const [i, { name, source }] of properties.entries()) {
       const out = [...at, name]
       const path = [name || i]
@@ -505,7 +518,7 @@ function checkProperties(mapping: Pick<Mapping, 'properties'>, input: Definition
       else if (seen.has(name)) add({ problem: 'duplicate_name', path })
       seen.add(name)
       const target = fields?.find((field) => field.name === name)
-      if (inside && fields && name && !target) add({ problem: 'unknown_output_property', path, name })
+      if (strict && fields && name && !target) add({ problem: 'unknown_output_property', path, name })
 
       if (accepts.nested && isConstruction(source)) {
         if (!inside) { types.push(null); absent.push([]) }
@@ -518,12 +531,12 @@ function checkProperties(mapping: Pick<Mapping, 'properties'>, input: Definition
       if (!inside) { types.push(checked.type); absent.push(reads) }
       // An object property is built, never made from a value (at any level, for versions that build objects).
       if (accepts.nested && target && (target.type === 'object' || target.type === 'reference')) add({ problem: 'value_into_object', path })
-      else if (inside && target && isScalarField(target) && checked.type && checked.type !== target.type) add({ problem: 'wrong_output_type', path, expected: target.type, actual: checked.type })
+      else if (strict && target && isScalarField(target) && checked.type && checked.type !== target.type) add({ problem: 'wrong_output_type', path, expected: target.type, actual: checked.type })
       if (reads.length && absence === 'unsupported') add({ problem: 'absence_unsupported', path, optional: reads })
       else if (reads.length && target && target.optional !== true) add({ problem: 'may_be_absent', path, optional: reads })
     }
-    // A constructed object never misses a required property: nothing is invented to fill one.
-    if (inside && fields) {
+    // No object misses a required property: nothing is invented to fill one.
+    if (strict && fields) {
       for (const field of fields) {
         if (field.optional !== true && !properties.some((p) => p.name === field.name)) {
           found.push({ output: [...at, field.name], issue: { problem: 'missing_output_property', path: [field.name], name: field.name } })
