@@ -321,9 +321,43 @@ export function resolveObjectPath(input: DefinitionVersion, path: unknown, resol
 
 /** Whether `prefix` is `path` or one of the properties on its way. */
 const isPrefix = (prefix: PropertyPath, path: PropertyPath) => prefix.length <= path.length && prefix.every((n, i) => n === path[i])
-/** The optional properties a guarantee doesn't cover: those not on the path of an object known to be present. */
-const notGuaranteed = (optional: readonly PropertyPath[], guaranteed: readonly PropertyPath[]) =>
+/**
+ * The optional properties a guarantee doesn't cover: those not on the path of an object known to be
+ * present (presence guarantees). The one rule, for checking and for anything that shows availability.
+ */
+export const notGuaranteed = (optional: readonly PropertyPath[], guaranteed: readonly PropertyPath[]) =>
   optional.filter((o) => !guaranteed.some((g) => isPrefix(o, g)))
+
+/** A source object a presence condition may name: a local object or a reference, at any depth. */
+export interface ObjectPath {
+  readonly path: PropertyPath
+  /** The referenced version, when it's a reference. */
+  readonly definition?: DefinitionRef
+  /** The optional properties along its path, itself included. */
+  readonly optional: readonly PropertyPath[]
+}
+
+/** Every source object in a contract, depth-first: what a construction may be conditioned on. */
+export function objectPaths(input: DefinitionVersion, resolve?: Resolve): ObjectPath[] {
+  const out: ObjectPath[] = []
+  const walk = (fields: readonly Field[], owner: string | null, at: PropertyPath, optional: readonly PropertyPath[], level: number) => {
+    if (level > MAX_OBJECT_LEVELS) return
+    for (const f of fields) {
+      const here = [...at, f.name]
+      const absent = f.optional === true ? [...optional, here] : optional
+      if (f.type === 'object') {
+        out.push({ path: here, optional: absent })
+        walk(f.fields, owner, here, absent, level + 1)
+      } else if (f.type === 'reference') {
+        out.push({ path: here, definition: f.definition, optional: absent })
+        const found = resolveReference(f.definition, owner, resolve)
+        if (!('problem' in found)) walk(found.version.fields, found.version.workspaceId, here, absent, level + 1)
+      }
+    }
+  }
+  walk(input.fields, input.workspaceId, [], [], 1)
+  return out
+}
 
 const isConstruction = (source: unknown): source is Extract<Expression, { kind: 'construct' }> =>
   kindOf(source) === 'object' && (source as { kind?: unknown }).kind === 'construct'
