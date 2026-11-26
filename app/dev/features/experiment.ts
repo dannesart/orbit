@@ -226,6 +226,15 @@ export function describeMappingIssue(issue: AnyMappingIssue): string {
     case 'wrong_output_type': return `This needs ${kindWords[issue.expected]}, not ${kindWords[issue.actual]}.`
     case 'condition_not_object': return 'An object is built when a source object is present: this names a value.'
     case 'condition_not_chosen': return 'Choose the source object it’s built when present.'
+    case 'malformed_copy': return 'A copy needs the exact path of what it copies.'
+    case 'copy_in_expression': return 'A whole value can only be copied as a property’s whole value, not inside a function or a group.'
+    case 'copy_into_value': return 'This property is a value: only a whole value of a referenced Definition can be copied.'
+    case 'copy_into_local_object': return 'This property is a local object: build it property by property (copying a whole local object isn’t available).'
+    case 'copy_from_local_object': return 'That is a local object: it has no Definition of its own, so it can’t be copied whole.'
+    case 'copy_from_value': return 'That is a single value, not a whole value of a Definition.'
+    case 'copy_identity_mismatch': return issue.expected.id === issue.actual.id
+      ? `That is version ${issue.actual.version} of this Definition, and this property needs version ${issue.expected.version}. Only the exact version can be copied: build it instead.`
+      : 'That is a different Definition. Only exactly the same Definition and version can be copied, whatever it contains: build it instead.'
     case 'unresolved_output': return 'The Definition this object should be can’t be found here.'
   }
 }

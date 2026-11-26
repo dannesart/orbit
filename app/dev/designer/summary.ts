@@ -24,6 +24,7 @@ export function describeSource(source: Expression | Argument): string {
   switch (source.kind) {
     case 'property': return source.name || 'an unnamed property'
     case 'path': return source.path.join(' › ')
+    case 'copy': return `copied whole from ${source.from.length ? source.from.join(' › ') : 'the whole input'}`
     case 'construct': return source.presence.when === 'present' ? `built when ${source.presence.source.join(' › ')} is present` : 'built'
     case 'literal': return literalWords(source.value)
     case 'list': return source.items.map(part).join(' + ')

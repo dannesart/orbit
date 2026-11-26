@@ -1,6 +1,6 @@
 import {
   type DefinitionRef, type DefinitionVersion, type Data, type Field, type FieldType, type PropertyPath, type Resolve, type Scalar,
-  MAX_OBJECT_LEVELS, deepFreeze, frozenCopy, isScalarField, kindOf, resolveReference, sameData,
+  MAX_OBJECT_LEVELS, deepFreeze, frozenCopy, isScalarField, kindOf, refOf, resolveReference, sameData, sameDefinition,
 } from './definitions'
 
 /**
@@ -88,7 +88,18 @@ import {
  * of optional properties along what it reads; a guarantee only removes the ones it covers. At run
  * time the construction is only made when P is present, so evaluation agrees.
  *
- * Whole-value copying is reserved (Phase 4.4): no source of that kind exists yet.
+ * Copying a whole value (Transform v3, provisional). An output property that references a
+ * Definition version may be a copy of a whole value of exactly that version: { kind: 'copy', from }.
+ * `from` is the exact path of a reference in the input, or [] for the whole input value. Its
+ * Definition identity and version must be exactly the target's: matching names, matching
+ * structures, another version of the same Definition or another Definition are never enough (for
+ * those, build the value explicitly). A local object has no identity of its own, so it is never
+ * copied whole (deferred), nor copied into. Availability is the same model as everywhere: a source
+ * that may be absent (any optional property on its path, less what a presence guarantee covers)
+ * can't fill a required property; an optional one is then left out. The value is copied exactly as
+ * validated: nested values, absent optional properties and empty objects as they are; never rebuilt,
+ * flattened or filled in. A copy is a property's whole source, never part of an expression, and a
+ * property is a copy or a construction, never both: they are different operations, never equal.
  *
  * The source language is closed. A source of any other kind (one a later Transform version may
  * understand, or something malformed) is refused before anything runs (unsupported_source), never
@@ -104,6 +115,8 @@ export type Expression =
   | { readonly kind: 'path'; readonly path: PropertyPath }
   /** An output object built property by property (Transform v3): a property's whole source, never a value inside one. */
   | { readonly kind: 'construct'; readonly presence: Presence; readonly properties: readonly MappingProperty[] }
+  /** A whole value of exactly the target's Definition version, copied (Transform v3): a reference's exact path, or [] for the whole input. */
+  | { readonly kind: 'copy'; readonly from: PropertyPath }
 
 /** When a constructed object is made: always, or only when a source object (by exact path, one name or more) is present. */
 export type Presence = { readonly when: 'always' } | { readonly when: 'present'; readonly source: PropertyPath }
@@ -224,6 +237,20 @@ export type FoundMappingIssue =
   | { readonly problem: 'condition_not_object'; readonly path: Path }
   /** A presence condition whose source object hasn't been chosen yet (an empty path). */
   | { readonly problem: 'condition_not_chosen'; readonly path: Path }
+  /** A copy whose source isn't a path of exact names. */
+  | { readonly problem: 'malformed_copy'; readonly path: Path }
+  /** A copy used as a value inside an expression: it can only be a property's whole source. */
+  | { readonly problem: 'copy_in_expression'; readonly path: Path }
+  /** A copy for an output property that is a value: only a referenced Definition's value is copied. */
+  | { readonly problem: 'copy_into_value'; readonly path: Path }
+  /** A copy for a local object: it has no identity to match, so it is built instead (copying deferred). */
+  | { readonly problem: 'copy_into_local_object'; readonly path: Path }
+  /** A copy from a local object: it has no identity, so it is never copied whole. */
+  | { readonly problem: 'copy_from_local_object'; readonly path: Path }
+  /** A copy from a value: only a referenced Definition's value (or the whole input) is copied. */
+  | { readonly problem: 'copy_from_value'; readonly path: Path }
+  /** A copy from another Definition, or another version of it, than the target's. */
+  | { readonly problem: 'copy_identity_mismatch'; readonly path: Path; readonly expected: DefinitionRef; readonly actual: DefinitionRef }
   /** An output reference that doesn't resolve here (missing, or not allowed). */
   | { readonly problem: 'unresolved_output'; readonly path: Path }
 
@@ -374,6 +401,43 @@ export function objectPaths(input: DefinitionVersion, resolve?: Resolve): Object
 
 const isConstruction = (source: unknown): source is Extract<Expression, { kind: 'construct' }> =>
   kindOf(source) === 'object' && (source as { kind?: unknown }).kind === 'construct'
+const isCopy = (source: unknown): source is Extract<Expression, { kind: 'copy' }> =>
+  kindOf(source) === 'object' && (source as { kind?: unknown }).kind === 'copy'
+
+type CopyResolved = { readonly value: { readonly definition: DefinitionRef; readonly optional: readonly PropertyPath[] } }
+  | { readonly problem: 'malformed_copy' | 'copy_from_local_object' | 'copy_from_value' }
+  | { readonly problem: 'unknown_path_property' | 'path_through_value' | 'unresolved_path'; readonly step: number }
+
+/**
+ * What a copy's source is: a value of exactly which Definition version, and the optional properties
+ * on its way; or why it can't be copied. [] is the whole input, of the input's own version.
+ * References along the way (and the one copied) resolve exactly, with the owner rules as everywhere.
+ */
+export function resolveCopySource(input: DefinitionVersion, from: unknown, resolve?: Resolve): CopyResolved {
+  if (!Array.isArray(from) || from.length > MAX_OBJECT_LEVELS || !from.every((n) => typeof n === 'string')) return { problem: 'malformed_copy' }
+  if (!from.length) return { value: { definition: refOf(input), optional: [] } }
+  let fields: readonly Field[] = input.fields
+  let owner = input.workspaceId
+  const optional: PropertyPath[] = []
+  for (const [step, name] of from.entries()) {
+    const field = fields.find((f) => f.name === name)
+    if (!field) return { problem: 'unknown_path_property', step }
+    if (field.optional === true) optional.push(from.slice(0, step + 1))
+    const last = step === from.length - 1
+    if (field.type === 'object') {
+      if (last) return { problem: 'copy_from_local_object' }
+      fields = field.fields
+    } else if (field.type === 'reference') {
+      const found = resolveReference(field.definition, owner, resolve)
+      if ('problem' in found) return { problem: 'unresolved_path', step }
+      if (last) return { value: { definition: refOf(field.definition), optional } }
+      fields = found.version.fields
+      owner = found.version.workspaceId
+    } else return last ? { problem: 'copy_from_value' } : { problem: 'path_through_value', step }
+  }
+  return { problem: 'malformed_copy' }
+}
+
 /** A construction with each part of its shape: a presence, and properties with names. */
 function wellFormedConstruction(node: Extract<Expression, { kind: 'construct' }>): boolean {
   const presence = node.presence as unknown as Record<string, unknown> | undefined
@@ -406,9 +470,11 @@ export function readablePaths(input: DefinitionVersion, resolve?: Resolve): Read
 
 function checkArgument(arg: Argument, input: DefinitionVersion, path: Path, accepts: Accepts): Checked {
   if (accepts.nested && isConstruction(arg)) return { type: 'invalid', issues: [{ problem: 'construction_in_expression', path }], reads: [] }
+  if (accepts.nested && isCopy(arg)) return { type: 'invalid', issues: [{ problem: 'copy_in_expression', path }], reads: [] }
   if (!wellFormed(arg, accepts)) return { type: 'invalid', issues: [{ problem: 'unsupported_source', path }], reads: [] }
   switch (arg.kind) {
     case 'construct': return { type: 'invalid', issues: [{ problem: 'construction_in_expression', path }], reads: [] }
+    case 'copy': return { type: 'invalid', issues: [{ problem: 'copy_in_expression', path }], reads: [] }
     case 'literal': {
       const kind = kindOf(arg.value)
       return kind === 'string' || kind === 'number' || kind === 'boolean'
@@ -523,6 +589,11 @@ function checkProperties(mapping: Pick<Mapping, 'properties'>, input: Definition
       const target = fields?.find((field) => field.name === name)
       if (strict && fields && name && !target) add({ problem: 'unknown_output_property', path, name })
 
+      if (accepts.nested && isCopy(source)) {
+        const reads = copy(source, path, target, owner, guaranteed, add)
+        if (!inside) { types.push(null); absent.push(reads) }
+        continue
+      }
       if (accepts.nested && isConstruction(source)) {
         if (!inside) { types.push(null); absent.push([]) }
         construction(source, path, out, target, owner, guaranteed, add)
@@ -546,6 +617,31 @@ function checkProperties(mapping: Pick<Mapping, 'properties'>, input: Definition
         }
       }
     }
+  }
+
+  /** A whole-value copy: exactly the target's Definition version, available where it's needed. Returns what may make it absent. */
+  function copy(node: Extract<Expression, { kind: 'copy' }>, path: Path, target: Field | undefined, owner: string | null, guaranteed: readonly PropertyPath[], add: (issue: FoundMappingIssue) => void): PropertyPath[] {
+    if (target && isScalarField(target)) { add({ problem: 'copy_into_value', path }); return [] }
+    if (target?.type === 'object') { add({ problem: 'copy_into_local_object', path }); return [] }
+    const source = resolveCopySource(input, node.from, accepts.resolve)
+    if (!('value' in source)) {
+      if (source.problem === 'unknown_path_property') add({ problem: 'unknown_path_property', path, step: source.step, name: String(node.from[source.step]) })
+      else if ('step' in source) add({ problem: source.problem, path, step: source.step })
+      else add({ problem: source.problem, path })
+      return []
+    }
+    if (target?.type === 'reference') {
+      if ('problem' in resolveReference(target.definition, owner, accepts.resolve)) { add({ problem: 'unresolved_output', path }); return [] }
+      // Exact identity and version: nothing else makes two Definitions the same.
+      if (!sameDefinition(source.value.definition, target.definition)) {
+        add({ problem: 'copy_identity_mismatch', path, expected: refOf(target.definition), actual: source.value.definition })
+        return []
+      }
+    }
+    const reads = notGuaranteed(source.value.optional, guaranteed)
+    if (reads.length && absence === 'unsupported') add({ problem: 'absence_unsupported', path, optional: reads })
+    else if (reads.length && target && target.optional !== true) add({ problem: 'may_be_absent', path, optional: reads })
+    return reads
   }
 
   function construction(node: Extract<Expression, { kind: 'construct' }>, path: Path, out: PropertyPath, target: Field | undefined, owner: string | null, guaranteed: readonly PropertyPath[], add: (issue: FoundMappingIssue) => void) {
@@ -605,6 +701,8 @@ function evaluateArgument(arg: Argument, input: Data): Scalar | Scalar[] {
     }
     case 'construct':
       throw new Error('A construction is a property’s whole source, never a value inside one')
+    case 'copy':
+      throw new Error('A copy is a property’s whole source, never a value inside one')
   }
 }
 
@@ -618,6 +716,7 @@ function propertiesRead(arg: Argument): PropertyPath[] {
     case 'property': return [[arg.name]]
     case 'path': return [arg.path]
     case 'construct': return []
+    case 'copy': return []
     case 'list': return arg.items.flatMap(propertiesRead)
     case 'call': return arg.args.flatMap(propertiesRead)
   }
@@ -644,6 +743,11 @@ function valueAt(data: Data, path: PropertyPath): { readonly present: true; read
  */
 export function evaluatePresent(source: Expression, input: Data): { readonly present: true; readonly value: Scalar | Data } | { readonly present: false } {
   if (source.kind === 'construct') return construct(source, input)
+  // A copy is the value as it is (validated input, never changed): the boundary hands on a private frozen copy of the result.
+  if (source.kind === 'copy') {
+    const found = valueAt(input, source.from)
+    return found.present ? { present: true, value: found.value as Data } : { present: false }
+  }
   if (propertiesRead(source).some((path) => !valueAt(input, path).present)) return { present: false }
   return { present: true, value: evaluate(source, input) }
 }
@@ -703,6 +807,8 @@ export function formatSource(arg: Argument): string {
       return `${arg.fn}(${arg.args.map(formatSource).join(', ')})`
     case 'path':
       return arg.path.join(' › ')
+    case 'copy':
+      return `copy(${arg.from.length ? arg.from.join(' › ') : 'the input'})`
     case 'construct':
       return `object(${arg.presence.when === 'present' ? `when ${arg.presence.source.join(' › ')}` : 'always'}){ ${arg.properties.map((p) => `${p.name}: ${formatSource(p.source)}`).join(', ')} }`
     default:
