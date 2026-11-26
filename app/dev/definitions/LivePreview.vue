@@ -128,7 +128,6 @@ const iconButton = 'grid size-8 place-items-center rounded-lg text-slate-500 tra
           </div>
           <p v-if="!anything && !extra?.name.trim()" class="py-3 text-sm text-slate-400">Nothing given</p>
         </div>
-        <p v-if="result.left.length" class="border-t border-slate-100 px-4 py-2 text-xs text-slate-500" data-left-out>Not given: {{ result.left.join(', ') }}</p>
         <!-- A contract that can't be resolved here: not the information's fault, so not red -->
         <div v-if="result.unavailable.length" class="border-t border-amber-100 bg-amber-50/70 px-4 py-3 text-sm text-amber-900" role="status" data-verdict data-unavailable>
           <p class="font-medium">Can’t be checked here yet</p>

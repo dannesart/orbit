@@ -360,3 +360,23 @@ describe('Catalogue and inspector: composed Definitions inspected, never flatten
     expect(place).toContain('{{ uses(d.versions.at(-1)!.fields) }}')
   })
 })
+
+describe('Refinements (Phase 3.1)', () => {
+  const read = (path: string) => readFileSync(new URL(`../app/dev/definitions/${path}`, import.meta.url), 'utf8')
+  const toolbox = read('PropertyToolbox.vue')
+  const builder = read('ModelBuilder.vue')
+
+  it('keeps the toolbox’s version picker compact: a fixed width, short labels', () => {
+    expect(toolbox).toMatch(/data-block-version\s+class="w-14 /)
+    expect(toolbox).toContain(':value="v.version">v{{ v.version }}</option>')
+  })
+
+  it('focuses the name when a row is opened, never when contents are merely unfolded', () => {
+    expect(builder).toMatch(/toggle: \(key\) => \{[\s\S]*?if \(open\.value === key\) nextTick\(\(\) => nameInput\(key\)\?\.focus\(\)\)/)
+    expect(builder).toMatch(/unfold: \(key\) => \(unfolded\.value = flip\(unfolded\.value, key\)\),/)
+  })
+
+  it('doesn’t repeat in the Preview’s result what the inputs already show', () => {
+    expect(read('LivePreview.vue')).not.toContain('Not given:')
+  })
+})

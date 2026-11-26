@@ -162,7 +162,11 @@ function handleKey(event: KeyboardEvent, key: number) {
 
 const builder: Builder = {
   draft, idPrefix: props.idPrefix, catalogue, open, folded, unfolded, target, dragging, dropAt, update, where,
-  toggle: (key) => (open.value = open.value === key ? null : key),
+  // Opening a row is to edit it, so its name has focus; folding or unfolding contents never moves it.
+  toggle: (key) => {
+    open.value = open.value === key ? null : key
+    if (open.value === key) nextTick(() => nameInput(key)?.focus())
+  },
   fold: (key) => (folded.value = flip(folded.value, key)),
   unfold: (key) => (unfolded.value = flip(unfolded.value, key)),
   setTarget: (key) => {
