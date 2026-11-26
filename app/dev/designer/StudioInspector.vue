@@ -33,7 +33,7 @@ const typeWords: Record<string, string> = { string: 'Text', number: 'Number', bo
     </header>
     <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4" data-inspector-body>
       <p v-if="field.state === 'unsupported'" class="text-sm text-slate-600" data-unsupported-property>This Transform version can’t make {{ field.name }}.</p>
-      <PropertyEditor v-else :output="output" :draft="draft" :field="field" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" />
+      <PropertyEditor v-else :key="field.name" :output="output" :draft="draft" :field="field" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" />
     </div>
     <footer class="flex justify-end border-t border-slate-100 px-5 py-3">
       <button type="button" class="rounded-full px-4 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" data-editor-done @click="emit('close')">Done</button>

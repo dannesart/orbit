@@ -17,6 +17,7 @@ import type { DefinitionRef, DefinitionVersion, PropertyPath } from '#shared/fea
 import type { Step } from '../features/experiment'
 import ApplyBar from './ApplyBar.vue'
 import StructureEditor from './StructureEditor.vue'
+import StudioConnections from './StudioConnections.vue'
 import StudioInspector from './StudioInspector.vue'
 import StudioInputTree from './StudioInputTree.vue'
 import StudioOutputTree from './StudioOutputTree.vue'
@@ -117,7 +118,7 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
 </script>
 
 <template>
-  <section class="flex flex-col rounded-3xl border border-slate-200/80 bg-white shadow-sm" aria-labelledby="studio-heading" data-mapping-studio @keydown.escape="close">
+  <section class="flex min-h-[calc(100dvh-3rem)] flex-col rounded-3xl border border-slate-200/80 bg-white shadow-sm sm:min-h-[calc(100dvh-3.5rem)] lg:min-h-[calc(100dvh-4rem)]" aria-labelledby="studio-heading" data-mapping-studio @keydown.escape="close">
     <!-- What's being edited: always in view -->
     <div class="flex flex-wrap items-center gap-x-3 gap-y-3 border-b border-slate-100 px-5 py-4 sm:px-6">
       <button type="button" class="link mr-1 text-sm" data-studio-back @click="emit('back')">‹ Designer</button>
@@ -147,7 +148,7 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
       </div>
     </div>
 
-    <div id="studio-panel" role="tabpanel" :aria-labelledby="`studio-segment-${segment}`" class="bg-slate-50/60 px-4 py-6 sm:px-6">
+    <div id="studio-panel" role="tabpanel" :aria-labelledby="`studio-segment-${segment}`" class="flex-1 bg-slate-50/60 px-4 py-6 sm:px-6">
       <UnsupportedNotice v-if="review.unsupported" class="mb-5" :text="review.unsupported" />
 
       <!-- General: the contracts, and the Feature version that invokes the Mapping -->
@@ -223,14 +224,20 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
             <ul class="mt-1"><li v-for="(p, i) in draft.aside" :key="i" class="font-mono">{{ p.name || 'Unnamed' }} ← {{ describeSource(fromPiece(p.piece)) }}</li></ul>
           </details>
             </section>
+            <StudioConnections :connections="links" :selected="selected" />
           </div>
+          <!-- What the lines mean: only where they're drawn -->
+          <p v-if="links.length" class="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs text-slate-400 max-lg:hidden" data-connections-legend>
+            <span class="flex items-center gap-1.5"><svg width="22" height="6" aria-hidden="true"><path d="M1 3h20" stroke="currentColor" stroke-width="1.5" /></svg>Value</span>
+            <span class="flex items-center gap-1.5"><svg width="22" height="6" aria-hidden="true"><path d="M1 3h20" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>Copied whole</span>
+            <span class="flex items-center gap-1.5"><svg width="22" height="6" aria-hidden="true"><path d="M1 3h20" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" /></svg>Built when present</span>
+          </p>
         </div>
 
         <!-- The selected property: docked beside the trees on very wide screens, floating over the output below that, a sheet on phones -->
         <StudioInspector
           v-if="node && field"
-          :key="node.name"
-          class="fixed inset-0 z-50 animate-rise lg:inset-auto lg:top-4 lg:right-4 lg:bottom-24 lg:w-[26rem] lg:rounded-3xl lg:border lg:border-slate-200/80 lg:shadow-xl lg:shadow-slate-900/10 xl:sticky xl:top-4 xl:right-auto xl:bottom-auto xl:z-20 xl:max-h-[calc(100dvh-8rem)] xl:shrink-0"
+          class="fixed inset-0 z-50 animate-rise lg:inset-auto lg:top-4 lg:right-4 lg:bottom-28 lg:w-[26rem] lg:rounded-3xl lg:border lg:border-slate-200/80 lg:shadow-xl lg:shadow-slate-900/10 xl:sticky xl:top-4 xl:right-auto xl:bottom-auto xl:z-20 xl:max-h-[calc(100dvh-8rem)] xl:shrink-0"
           data-floating-surface
           :node="node"
           :field="field"

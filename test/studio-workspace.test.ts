@@ -58,6 +58,26 @@ describe('The lines are the draft’s own dependencies', () => {
   })
 })
 
+describe('The lines are drawn where their rows are, and only there', () => {
+  const lines = read('app/dev/designer/StudioConnections.vue')
+  it('are one SVG measured from the rows, redrawn when the layout or the draft changes', () => {
+    expect(lines).toContain('new ResizeObserver(schedule)')
+    expect(lines).toContain('mutation.observe(el, { childList: true, subtree: true })')
+    expect(lines).toContain('watch(() => [props.connections, props.selected], () => nextTick(schedule))')
+  })
+  it('are not interactive, say nothing to assistive technology, and aren’t drawn on narrow screens', () => {
+    expect(lines).toMatch(/<svg[^>]*pointer-events-none[^>]*max-lg:hidden[^>]*aria-hidden="true"/)
+    expect(lines).toContain('if (!left.width || !right.width || right.left - left.right < 24) return (drawn.value = [])')
+  })
+  it('go to the folded object that holds a source, open-ended, rather than nowhere', () => {
+    expect(lines).toContain('for (; at > 0 && !from; at--)')
+    expect(lines).toContain(":fill=\"l.folded ? 'white' : 'currentColor'\"")
+  })
+  it('come only from the draft', () => {
+    expect(read('app/dev/designer/MappingStudio.vue')).toContain('const links = computed(() => connections(outputs.value, inputs.value))')
+  })
+})
+
 describe('The workspace keeps its shape while a property is edited', () => {
   const studio = read('app/dev/designer/MappingStudio.vue')
   const tree = read('app/dev/designer/StudioOutputTree.vue')
