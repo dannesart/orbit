@@ -7,7 +7,7 @@ import {
   deepFreeze, defineVersion, propertyPathWords, sameDefinition,
 } from '#shared/features/definitions'
 import {
-  type ArgumentType, type Expression, type Mapping, type MappingIssue, type MappingProperty, type Path, checkMapping,
+  type AnyMappingIssue, type ArgumentType, type Expression, type Mapping, type MappingIssue, type MappingProblemLocation, type MappingProperty, type Path, checkMapping,
 } from '#shared/features/mappings'
 import {
   type Catalog, type FeatureRef, type InvocationResult, type MappingFeature, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitConsoleV2, orbitTransformV2,
@@ -188,7 +188,14 @@ export function formatPath(path: Path): string {
   }).join(' › ')
 }
 
-export function describeMappingIssue(issue: MappingIssue): string {
+/** Where a problem located in two parts is: the output property, then the place in its source. */
+export const formatLocation = (at: MappingProblemLocation): string =>
+  [propertyPathWords(at.output), ...formatPath([at.output.at(-1) ?? '', ...at.expression]).split(' › ').slice(1)].join(' › ')
+
+/** Optional properties a source depends on: names (flat versions) or full paths (nested ones). */
+const optionalWords = (optional: readonly (string | readonly string[])[]) => optional.map((o) => (typeof o === 'string' ? o : propertyPathWords(o))).join(', ')
+
+export function describeMappingIssue(issue: AnyMappingIssue): string {
   switch (issue.problem) {
     case 'empty_name': return 'Give this property a name.'
     case 'duplicate_name': return 'Another property already has this name.'
@@ -199,10 +206,15 @@ export function describeMappingIssue(issue: MappingIssue): string {
     case 'list_item_type': return `Only strings can be joined; this is ${kindWords[issue.actual]}.`
     case 'list_not_allowed': return 'A property can’t be a list.'
     case 'invalid_literal': return 'That isn’t a usable number.'
-    case 'may_be_absent': return `${issue.optional.join(', ')} may be missing, but this property is required. Orbit won’t invent a value.`
+    case 'may_be_absent': return `${optionalWords(issue.optional)} may be missing, but this property is required. Orbit won’t invent a value.`
     case 'object_property': return `${issue.name} is an object. A source can read text, numbers and yes or no, not a whole object.`
-    case 'absence_unsupported': return `${issue.optional.join(', ')} may be missing, and this version of the Transform has no behaviour for that.`
+    case 'absence_unsupported': return `${optionalWords(issue.optional)} may be missing, and this version of the Transform has no behaviour for that.`
     case 'unsupported_source': return 'This version of the Transform doesn’t understand this kind of source.'
+    case 'malformed_path': return 'A nested source needs a path of at least two property names.'
+    case 'unknown_path_property': return `The input has no property “${issue.name}” there.`
+    case 'path_through_value': return 'This path goes on past a value, as if it were an object.'
+    case 'path_to_object': return 'This path ends at an object. A source can read text, numbers and yes or no, not a whole object.'
+    case 'unresolved_path': return 'A Definition along this path can’t be found here.'
   }
 }
 
@@ -239,7 +251,7 @@ export function describeDefinitionIssue(issue: DefinitionIssue, label: (ref: Def
 
 export const outcomeIssues = (outcome: Outcome): string[] => {
   if (!('issues' in outcome)) return []
-  if (outcome.reason === 'invalid_mapping') return outcome.issues.map((i) => `${formatPath(i.path)}: ${describeMappingIssue(i)}`)
+  if (outcome.reason === 'invalid_mapping') return outcome.issues.map((i) => `${'at' in i ? formatLocation(i.at) : formatPath(i.path)}: ${describeMappingIssue(i)}`)
   if (outcome.reason === 'invalid_contract') return outcome.issues.map((i) => describeDefinitionIssue(i))
   return outcome.issues.map(describeIssue)
 }

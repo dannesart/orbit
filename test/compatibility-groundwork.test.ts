@@ -60,7 +60,7 @@ describe('Transform v1 and v2 refuse sources they don’t have, before running',
   it('says so in words, without quoting what the source held', () => {
     const words = describeMappingIssue({ problem: 'unsupported_source', path: ['fullName'] })
     expect(words).toBe('This version of the Transform doesn’t understand this kind of source.')
-    expect(formatSource({ kind: 'path', path: ['a'] } as unknown as Expression)).toBe('?')
+    expect(formatSource({ kind: 'script', code: '1' } as unknown as Expression)).toBe('?')
   })
 
   it('runs the sources they support exactly as before', () => {

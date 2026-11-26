@@ -2,7 +2,7 @@ import {
   type Data, type DefinitionIssue, type DefinitionRef, type DefinitionVersion, type Issue, type PropertyPath, type Resolve, type Value, type WorkspaceRecord,
   checkContract, frozenCopy, localObjectPaths, refOf, referencePaths, sameData, sameDefinition, validate, visibleIn,
 } from './definitions'
-import { type Mapping, type MappingIssue, checkMapping, evaluate, evaluatePresent } from './mappings'
+import { type AnyMappingIssue, type Mapping, checkMapping, checkNestedMapping, evaluate, evaluatePresent } from './mappings'
 
 /**
  * Features perform work; Orbit's execution boundary (invoke) does everything around them.
@@ -37,6 +37,14 @@ import { type Mapping, type MappingIssue, checkMapping, evaluate, evaluatePresen
  * suit one version and be refused by another. Which version a step invokes changes only when someone
  * chooses another: nothing upgrades a step, a Mapping or a Definition by itself.
  *
+ * Provisional versions. A Feature version still being built on an experimental branch is marked
+ * `provisional`: it has never been published, so nothing outside the experiment invokes it, and its
+ * capabilities may still grow there (Transform v3: nested reads now; building objects and copying
+ * whole values in later phases). Publishing it freezes it: the capabilities it has at that moment
+ * become its behaviour for good, the mark is removed, and any later change is a new version. This is
+ * no exception to "Feature versions guarantee behaviour": that guarantee starts at publication, and
+ * a published version is never changed, provisional or not before.
+ *
  * Nothing here persists or logs anything.
  */
 
@@ -50,22 +58,30 @@ export interface InspectContext {
   readonly inspect: (data: Data) => void
 }
 
+/**
+ * Whether a version accepts a kind of contract: not at all, on both sides, or only in what it
+ * reads (a mapping Feature that reads composed Definitions but makes flat ones: Transform v3).
+ */
+export type ContractAcceptance = 'unsupported' | 'supported' | 'input-only'
+
 /** What every Feature version declares, whatever its kind of contract. */
 interface FeatureVersion extends FeatureRef {
+  /** Still being built on an experimental branch, never published (see above). Absent once published. */
+  readonly provisional?: true
   /**
    * Whether it accepts Definitions that contain local objects. The versions made when Definitions
    * were flat (Console v1, Transform v1 and v2) don't: a Definition with a local object, on either
    * side, is refused before they run (unsupported_contract). Accepting them changes what a version
    * accepts, so only a new version may (Console v2).
    */
-  readonly localObjects: 'unsupported' | 'supported'
+  readonly localObjects: ContractAcceptance
   /**
    * Whether it accepts Definitions that contain references to other Definitions (anywhere, local
    * objects included). Likewise only versions made to: the others refuse them before running
    * (unsupported_contract). Accepting them, the whole pinned contract is resolved and checked by
    * the boundary first (invalid_contract when it doesn't resolve), then the data validated against it.
    */
-  readonly references: 'unsupported' | 'supported'
+  readonly references: ContractAcceptance
 }
 
 export interface PassThroughFeature extends FeatureVersion {
@@ -84,6 +100,13 @@ export interface MappingFeature extends FeatureVersion {
    *                  before it runs (may_be_absent)
    */
   readonly absence: 'unsupported' | 'omitted'
+  /**
+   * Which sources it reads: 'flat' (top-level properties: v1, v2), or 'nested' too (paths into local
+   * objects and referenced Definitions: v3). A version reading flat sources refuses a path source
+   * before running (unsupported_source); one reading nested sources reports problems located in two
+   * parts (MappingProblemLocation).
+   */
+  readonly sources: 'flat' | 'nested'
   readonly run: (input: Data, mapping: Mapping) => Data
 }
 
@@ -131,6 +154,7 @@ export const orbitTransformV1: MappingFeature = Object.freeze<MappingFeature>({
   version: 1,
   contract: 'mapping',
   absence: 'unsupported',
+  sources: 'flat',
   localObjects: 'unsupported',
   references: 'unsupported',
   run: (input, mapping) => Object.fromEntries(mapping.properties.map((p) => [p.name, evaluate(p.source, input)])),
@@ -147,12 +171,43 @@ export const orbitTransformV2: MappingFeature = Object.freeze<MappingFeature>({
   version: 2,
   contract: 'mapping',
   absence: 'omitted',
+  sources: 'flat',
   localObjects: 'unsupported',
   references: 'unsupported',
-  run: (input, mapping) => Object.fromEntries(mapping.properties.flatMap((p) => {
+  run: (input, mapping) => buildPresent(input, mapping),
+})
+
+/**
+ * What Transform v2 does, and v3 with it: each property from its source, left out when the source
+ * reads something absent. The very same function for both: v3 adds what it may be handed (nested
+ * sources, composed inputs), checked before running, not a different way of building.
+ */
+function buildPresent(input: Data, mapping: Mapping): Data {
+  return Object.fromEntries(mapping.properties.flatMap((p) => {
     const result = evaluatePresent(p.source, input)
     return result.present ? [[p.name, result.value]] : []
-  })),
+  }))
+}
+
+/**
+ * Orbit.Transform v3 (provisional): v2, plus nested reads. Its Mappings may read values inside local
+ * objects and referenced Definitions by structured path ({ kind: 'path' }), resolved through the
+ * complete pinned input contract; absence follows every optional property along a path, by v2's
+ * rule. It accepts composed input Definitions and still makes flat ones only (composed output is
+ * refused before running). Every flat Mapping v2 accepts, v3 accepts and runs to exactly the same
+ * result (the same building function); only how problems are located differs (in two parts). Still
+ * being built here: see "Provisional versions".
+ */
+export const orbitTransformV3: MappingFeature = Object.freeze<MappingFeature>({
+  id: 'orbit.transform',
+  version: 3,
+  provisional: true,
+  contract: 'mapping',
+  absence: 'omitted',
+  sources: 'nested',
+  localObjects: 'input-only',
+  references: 'input-only',
+  run: buildPresent,
 })
 
 /**
@@ -160,10 +215,11 @@ export const orbitTransformV2: MappingFeature = Object.freeze<MappingFeature>({
  * references it can't take (none: it can), local objects first. Decided from the Definition alone,
  * never calling run and never resolving a reference: a reference is refused for what it is.
  */
-export function contractCompatibility(feature: Feature, definition: DefinitionVersion): readonly PropertyPath[] {
+export function contractCompatibility(feature: Feature, definition: DefinitionVersion, side: 'input' | 'output' = 'input'): readonly PropertyPath[] {
+  const accepts = (support: ContractAcceptance) => support === 'supported' || (support === 'input-only' && side === 'input')
   return [
-    ...(feature.localObjects === 'unsupported' ? localObjectPaths(definition.fields) : []),
-    ...(feature.references === 'unsupported' ? referencePaths(definition.fields) : []),
+    ...(accepts(feature.localObjects) ? [] : localObjectPaths(definition.fields)),
+    ...(accepts(feature.references) ? [] : referencePaths(definition.fields)),
   ]
 }
 
@@ -174,8 +230,10 @@ export function contractCompatibility(feature: Feature, definition: DefinitionVe
  * absence (MappingFeature['absence']): v1 can't take a Mapping that reads an optional property;
  * for v2 a required output can't be fed by a source that may have no value.
  */
-export function mappingCompatibility(feature: MappingFeature, mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output: DefinitionVersion): readonly MappingIssue[] {
-  return checkMapping(mapping, input, output, feature.absence).issues
+export function mappingCompatibility(feature: MappingFeature, mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output: DefinitionVersion, resolve?: Resolve): readonly AnyMappingIssue[] {
+  return feature.sources === 'nested'
+    ? checkNestedMapping(mapping, input, output, { absence: feature.absence, resolve }).issues
+    : checkMapping(mapping, input, output, feature.absence).issues
 }
 
 /** What the boundary can resolve references against. In this experiment, plain in-memory lists. */
@@ -205,7 +263,8 @@ export type Outcome =
   | { readonly kind: 'not_attempted'; readonly reason: 'not_found' }
   | { readonly kind: 'not_attempted'; readonly reason: 'invalid_input'; readonly issues: readonly Issue[] }
   | { readonly kind: 'not_attempted'; readonly reason: 'contract_mismatch'; readonly expected: DefinitionRef; readonly actual: DefinitionRef }
-  | { readonly kind: 'not_attempted'; readonly reason: 'invalid_mapping'; readonly issues: readonly MappingIssue[] }
+  /** Path-located issues from flat versions (v1, v2); two-part located ones from nested versions (v3). */
+  | { readonly kind: 'not_attempted'; readonly reason: 'invalid_mapping'; readonly issues: readonly AnyMappingIssue[] }
   /** The Definition doesn't resolve here as a contract (a reference missing, unavailable or cyclic, or too deep): nothing was checked against it. */
   | { readonly kind: 'not_attempted'; readonly reason: 'invalid_contract'; readonly definition: DefinitionRef; readonly issues: readonly DefinitionIssue[] }
   /** The Feature version doesn't accept this Definition at all: `paths` are the local objects and references it has no behaviour for. */
@@ -272,13 +331,13 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
   if (!inputDefinition) return end({ kind: 'not_attempted', reason: 'not_found' })
   // The whole contract must resolve here (every reference exactly, allowed, acyclic, within the
   // depth limit) and be one this Feature version accepts, before any data is looked at.
-  const unusable = (d: DefinitionVersion) => {
+  const unusable = (d: DefinitionVersion, side: 'input' | 'output') => {
     const issues = checkContract(d, definition)
     if (issues.length) return end({ kind: 'not_attempted', reason: 'invalid_contract', definition: refOf(d), issues })
-    const paths = contractCompatibility(feature, d)
+    const paths = contractCompatibility(feature, d, side)
     return paths.length ? end({ kind: 'not_attempted', reason: 'unsupported_contract', definition: refOf(d), paths }) : null
   }
-  const inputUnusable = unusable(inputDefinition)
+  const inputUnusable = unusable(inputDefinition, 'input')
   if (inputUnusable) return inputUnusable
 
   // 2. The input must be what it claims to be, whoever made it.
@@ -312,10 +371,10 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
   if (!sameDefinition(mapping.from, value.definition)) {
     return end({ kind: 'not_attempted', reason: 'contract_mismatch', expected: refOf(mapping.from), actual: refOf(value.definition) })
   }
-  const outputUnusable = unusable(outputDefinition)
+  const outputUnusable = unusable(outputDefinition, 'output')
   if (outputUnusable) return outputUnusable
   // Compatibility, before execution: does this Feature version accept this Mapping at all?
-  const mappingIssues = mappingCompatibility(invocation.feature, mapping, inputDefinition, outputDefinition)
+  const mappingIssues = mappingCompatibility(invocation.feature, mapping, inputDefinition, outputDefinition, definition)
   if (mappingIssues.length) return end({ kind: 'not_attempted', reason: 'invalid_mapping', issues: mappingIssues })
 
   let produced: unknown

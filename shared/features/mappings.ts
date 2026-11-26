@@ -1,4 +1,7 @@
-import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, type PropertyPath, type Scalar, deepFreeze, frozenCopy, kindOf, sameData } from './definitions'
+import {
+  type DefinitionRef, type DefinitionVersion, type Data, type Field, type FieldType, type PropertyPath, type Resolve, type Scalar,
+  MAX_OBJECT_LEVELS, deepFreeze, frozenCopy, kindOf, resolveReference, sameData,
+} from './definitions'
 
 /**
  * Mappings: how Orbit.Transform builds one object from another.
@@ -39,6 +42,20 @@ import { type DefinitionRef, type DefinitionVersion, type Data, type FieldType, 
  *     available within that condition. Its semantics are to be established before it is accepted
  *     or refused.
  *
+ * Nested reads (Transform v3, provisional). A source may read a value inside a local object or a
+ * referenced Definition by its structured path: { kind: 'path', path: ['contact', 'email'] }. A
+ * path is a list of exact property names, at least two (a top-level read is a 'property' source, so
+ * each read has one way to be written). Names are matched exactly, case included, and never split,
+ * trimmed or corrected: a property literally named "a.b" is ['a.b'], never ['a', 'b']. The path is
+ * resolved through the input contract (local objects, and references resolved exactly with the
+ * domain's resolver) and must end at a value: reading a whole object as a value stays unsupported.
+ * Absence follows the contract, never example data: a nested read may be absent when any property
+ * along its path is optional (the leaf, or any parent), and then v2's rule applies unchanged (an
+ * optional output is left out; a required one fed that way is refused before running). Only the
+ * Feature versions that declare nested sources (MappingFeature['sources']) check them; the others
+ * refuse a path source like any source they don't have (unsupported_source), and their problems keep
+ * their Path. Problems checked for nested sources are located by MappingProblemLocation.
+ *
  * The source language is closed. A source of any other kind (one a later Transform version may
  * understand, or something malformed) is refused before anything runs (unsupported_source), never
  * guessed at and never evaluated: a version only runs what it was published to run. Sources of the
@@ -49,6 +66,8 @@ export type Expression =
   | { readonly kind: 'literal'; readonly value: Scalar }
   | { readonly kind: 'property'; readonly name: string }
   | { readonly kind: 'call'; readonly fn: string; readonly args: readonly Argument[] }
+  /** A value inside a local object or a referenced Definition: exact names, at least two (Transform v3). */
+  | { readonly kind: 'path'; readonly path: PropertyPath }
 
 /** A function's argument: one expression, or a list of them where the function takes a list. */
 export type Argument = Expression | { readonly kind: 'list'; readonly items: readonly Expression[] }
@@ -130,11 +149,42 @@ export interface MappingProblemLocation {
 /** Steps into a source: a function's name, then an argument's or a list item's position. */
 export type ExpressionPath = readonly (string | number)[]
 
-/** `reads`: the optional input properties the argument depends on (absent if any of them is). */
-type Checked = { type: ArgumentType | 'invalid'; issues: MappingIssue[]; reads: string[] }
+/**
+ * A problem as the checker finds it, before it's reported the way the Feature version reports
+ * problems: Path for flat versions (MappingIssue), MappingProblemLocation for nested ones.
+ */
+export type FoundMappingIssue =
+  | Exclude<MappingIssue, { readonly problem: 'may_be_absent' | 'absence_unsupported' }>
+  /** The optional properties the source depends on, each by its full path (the leaf or a parent). */
+  | { readonly problem: 'may_be_absent' | 'absence_unsupported'; readonly path: Path; readonly optional: readonly PropertyPath[] }
+  /** A path source that isn't a list of at least two names. */
+  | { readonly problem: 'malformed_path'; readonly path: Path }
+  /** No property with exactly this name at that step of the path (`step`: its position, from 0). */
+  | { readonly problem: 'unknown_path_property'; readonly path: Path; readonly step: number; readonly name: string }
+  /** The path goes on past a value, as if it were an object. */
+  | { readonly problem: 'path_through_value'; readonly path: Path; readonly step: number }
+  /** The path ends at a local object or a referenced Definition: a source reads values only. */
+  | { readonly problem: 'path_to_object'; readonly path: Path }
+  /** A reference along the path doesn't resolve here (missing, or not allowed). */
+  | { readonly problem: 'unresolved_path'; readonly path: Path; readonly step: number }
+
+type Locate<T> = T extends { readonly path: Path } ? { readonly [K in keyof T as K extends 'path' ? never : K]: T[K] } & { readonly at: MappingProblemLocation } : never
+/** A problem with a Mapping checked for nested sources (Transform v3): located in two parts. */
+export type LocatedMappingIssue = Locate<FoundMappingIssue>
+/** A Mapping problem in either representation: Path (flat versions) or located (nested ones). */
+export type AnyMappingIssue = MappingIssue | LocatedMappingIssue
+
+/** `reads`: the optional input properties the argument depends on, by full path (absent if any of them is). */
+type Checked = { type: ArgumentType | 'invalid'; issues: FoundMappingIssue[]; reads: PropertyPath[] }
+
+/** What a check may accept: nested sources (and how references resolve for them), or flat ones only. */
+interface Accepts {
+  readonly nested: boolean
+  readonly resolve?: Resolve
+}
 
 /** Whether something is a source of a kind this language has, with each part of the shape that kind needs. */
-function wellFormed(arg: unknown): arg is Argument {
+function wellFormed(arg: unknown, accepts: Accepts): arg is Argument {
   if (kindOf(arg) !== 'object') return false
   const a = arg as Record<string, unknown>
   switch (a.kind) {
@@ -142,12 +192,80 @@ function wellFormed(arg: unknown): arg is Argument {
     case 'property': return typeof a.name === 'string'
     case 'list': return Array.isArray(a.items)
     case 'call': return typeof a.fn === 'string' && Array.isArray(a.args)
+    // Its shape is checked where it's resolved (malformed_path), so that problem can say so.
+    case 'path': return accepts.nested
     default: return false
   }
 }
 
-function checkArgument(arg: Argument, input: DefinitionVersion, path: Path): Checked {
-  if (!wellFormed(arg)) return { type: 'invalid', issues: [{ problem: 'unsupported_source', path }], reads: [] }
+/** One value a source may read, wherever it is in the input contract. */
+export interface ReadablePath {
+  /** Exact names, outermost first. */
+  readonly path: PropertyPath
+  readonly type: FieldType
+  /** The optional properties along the path (the leaf or any parent), each by its full path: it may be absent if any is. */
+  readonly optional: readonly PropertyPath[]
+}
+
+type Resolved = { readonly readable: ReadablePath } | { readonly problem: 'malformed_path' | 'path_to_object' } | { readonly problem: 'unknown_path_property' | 'path_through_value' | 'unresolved_path'; readonly step: number }
+
+/**
+ * Where a path leads in a contract: a value (its type, and what may make it absent), or why it
+ * doesn't. Through local objects, and through references resolved exactly (the containing version's
+ * owner decides what it may reference, as everywhere). Names match exactly; nothing is guessed.
+ */
+export function resolvePath(input: DefinitionVersion, path: unknown, resolve?: Resolve): Resolved {
+  if (!Array.isArray(path) || path.length < 2 || path.length > MAX_OBJECT_LEVELS || !path.every((n) => typeof n === 'string')) return { problem: 'malformed_path' }
+  let fields: readonly Field[] = input.fields
+  let owner = input.workspaceId
+  const optional: PropertyPath[] = []
+  for (const [step, name] of path.entries()) {
+    const field = fields.find((f) => f.name === name)
+    if (!field) return { problem: 'unknown_path_property', step }
+    if (field.optional === true) optional.push(path.slice(0, step + 1))
+    const last = step === path.length - 1
+    if (field.type === 'object') {
+      if (last) return { problem: 'path_to_object' }
+      fields = field.fields
+    } else if (field.type === 'reference') {
+      if (last) return { problem: 'path_to_object' }
+      const found = resolveReference(field.definition, owner, resolve)
+      if ('problem' in found) return { problem: 'unresolved_path', step }
+      fields = found.version.fields
+      owner = found.version.workspaceId
+    } else {
+      if (!last) return { problem: 'path_through_value', step }
+      return { readable: { path: [...path], type: field.type, optional } }
+    }
+  }
+  return { problem: 'malformed_path' }
+}
+
+/**
+ * Every value a source may read in a contract, depth-first in the contract's order: top-level ones
+ * (read as 'property') and nested ones (read as 'path'). A reference that doesn't resolve here
+ * offers nothing inside it. For choosing a source; the check is still resolvePath.
+ */
+export function readablePaths(input: DefinitionVersion, resolve?: Resolve): ReadablePath[] {
+  const out: ReadablePath[] = []
+  const walk = (fields: readonly Field[], owner: string | null, at: PropertyPath, optional: readonly PropertyPath[], level: number) => {
+    if (level > MAX_OBJECT_LEVELS) return
+    for (const f of fields) {
+      const here = [...at, f.name]
+      const absent = f.optional === true ? [...optional, here] : optional
+      if (f.type === 'object') walk(f.fields, owner, here, absent, level + 1)
+      else if (f.type === 'reference') {
+        const found = resolveReference(f.definition, owner, resolve)
+        if (!('problem' in found)) walk(found.version.fields, found.version.workspaceId, here, absent, level + 1)
+      } else out.push({ path: here, type: f.type, optional: absent })
+    }
+  }
+  walk(input.fields, input.workspaceId, [], [], 1)
+  return out
+}
+
+function checkArgument(arg: Argument, input: DefinitionVersion, path: Path, accepts: Accepts): Checked {
+  if (!wellFormed(arg, accepts)) return { type: 'invalid', issues: [{ problem: 'unsupported_source', path }], reads: [] }
   switch (arg.kind) {
     case 'literal': {
       const kind = kindOf(arg.value)
@@ -159,10 +277,20 @@ function checkArgument(arg: Argument, input: DefinitionVersion, path: Path): Che
       const field = input.fields.find((f) => f.name === arg.name)
       if (!field) return { type: 'invalid', issues: [{ problem: 'unknown_property', path, name: arg.name }], reads: [] }
       if (field.type === 'object' || field.type === 'reference') return { type: 'invalid', issues: [{ problem: 'object_property', path, name: arg.name }], reads: [] }
-      return { type: field.type, issues: [], reads: field.optional === true ? [field.name] : [] }
+      return { type: field.type, issues: [], reads: field.optional === true ? [[field.name]] : [] }
+    }
+    case 'path': {
+      const found = resolvePath(input, arg.path, accepts.resolve)
+      if ('readable' in found) return { type: found.readable.type, issues: [], reads: [...found.readable.optional] }
+      const issue: FoundMappingIssue = !('step' in found)
+        ? { problem: found.problem, path }
+        : found.problem === 'unknown_path_property'
+          ? { problem: 'unknown_path_property', path, step: found.step, name: arg.path[found.step]! }
+          : { problem: found.problem, path, step: found.step }
+      return { type: 'invalid', issues: [issue], reads: [] }
     }
     case 'list': {
-      const items = arg.items.map((item, i) => checkArgument(item, input, [...path, i]))
+      const items = arg.items.map((item, i) => checkArgument(item, input, [...path, i], accepts))
       const issues = items.flatMap((c) => c.issues)
       for (const [i, c] of items.entries()) {
         if (c.type !== 'invalid' && c.type !== 'string') issues.push({ problem: 'list_item_type', path: [...path, i], expected: 'string', actual: c.type })
@@ -176,10 +304,10 @@ function checkArgument(arg: Argument, input: DefinitionVersion, path: Path): Che
       if (arg.args.length !== spec.params.length) {
         return { type: 'invalid', issues: [{ problem: 'argument_count', path: here, fn: arg.fn, expected: spec.params.length, actual: arg.args.length }], reads: [] }
       }
-      const issues: MappingIssue[] = []
-      const reads: string[] = []
+      const issues: FoundMappingIssue[] = []
+      const reads: PropertyPath[] = []
       for (const [i, a] of arg.args.entries()) {
-        const c = checkArgument(a, input, [...here, i])
+        const c = checkArgument(a, input, [...here, i], accepts)
         issues.push(...c.issues)
         reads.push(...c.reads)
         if (c.type !== 'invalid' && c.type !== spec.params[i]) issues.push({ problem: 'argument_type', path: [...here, i], fn: arg.fn, expected: spec.params[i]!, actual: c.type })
@@ -190,9 +318,9 @@ function checkArgument(arg: Argument, input: DefinitionVersion, path: Path): Che
 }
 
 /** Checks one property's source: its type (or why it has none) and the optional input it reads. */
-function checkSource(source: Expression, input: DefinitionVersion, path: Path): { type: FieldType | null; issues: MappingIssue[]; reads: string[] } {
-  const c = checkArgument(source, input, path)
-  const reads = [...new Set(c.reads)]
+function checkSource(source: Expression, input: DefinitionVersion, path: Path, accepts: Accepts): { type: FieldType | null; issues: FoundMappingIssue[]; reads: PropertyPath[] } {
+  const c = checkArgument(source, input, path, accepts)
+  const reads = [...new Map(c.reads.map((r) => [JSON.stringify(r), r])).values()]
   if (c.type === 'string[]') return { type: null, issues: [...c.issues, { problem: 'list_not_allowed', path }], reads }
   return { type: c.type === 'invalid' ? null : c.type, issues: c.issues, reads }
 }
@@ -207,24 +335,46 @@ function checkSource(source: Expression, input: DefinitionVersion, path: Path): 
  * question, answered by validating the output (the boundary never trusts a Feature's result).
  */
 export function checkMapping(mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output?: DefinitionVersion, absence: 'unsupported' | 'omitted' = 'omitted') {
-  const issues: MappingIssue[] = []
+  const { found, types, absent } = checkProperties(mapping, input, output, absence, { nested: false })
+  // Flat sources read top-level properties only, so each optional one is named as it always was.
+  const issues = found.map(({ issue }) => ('optional' in issue ? { ...issue, optional: issue.optional.map((p) => p[0]!) } : issue) as MappingIssue)
+  return { issues, types, absent: absent.map((reads) => reads.map((p) => p[0]!)) }
+}
+
+/**
+ * checkMapping for a Feature version that reads nested sources (Transform v3): paths resolved
+ * through the input contract with `resolve`, absence through every optional property along them,
+ * problems located in two parts (the output property, and the place in its source).
+ */
+export function checkNestedMapping(mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output: DefinitionVersion | undefined, options: { absence?: 'unsupported' | 'omitted'; resolve?: Resolve } = {}) {
+  const { found, types, absent } = checkProperties(mapping, input, output, options.absence ?? 'omitted', { nested: true, resolve: options.resolve })
+  const issues = found.map(({ name, issue }): LocatedMappingIssue => {
+    const { path, ...rest } = issue
+    return { ...rest, at: { output: [name], expression: path.slice(1) } } as LocatedMappingIssue
+  })
+  return { issues, types, absent }
+}
+
+function checkProperties(mapping: Pick<Mapping, 'properties'>, input: DefinitionVersion, output: DefinitionVersion | undefined, absence: 'unsupported' | 'omitted', accepts: Accepts) {
+  const found: { name: string; issue: FoundMappingIssue }[] = []
   const types: (FieldType | null)[] = []
-  const absent: string[][] = []
+  const absent: PropertyPath[][] = []
   const seen = new Set<string>()
   for (const [i, { name, source }] of mapping.properties.entries()) {
     const path = [name || i]
-    if (!name) issues.push({ problem: 'empty_name', path })
-    else if (seen.has(name)) issues.push({ problem: 'duplicate_name', path })
+    const add = (issue: FoundMappingIssue) => found.push({ name, issue })
+    if (!name) add({ problem: 'empty_name', path })
+    else if (seen.has(name)) add({ problem: 'duplicate_name', path })
     seen.add(name)
-    const checked = checkSource(source, input, path)
-    issues.push(...checked.issues)
+    const checked = checkSource(source, input, path, accepts)
+    checked.issues.forEach(add)
     types.push(checked.type)
     absent.push(checked.reads)
     const target = output?.fields.find((f) => f.name === name)
-    if (checked.reads.length && absence === 'unsupported') issues.push({ problem: 'absence_unsupported', path, optional: checked.reads })
-    else if (checked.reads.length && target && target.optional !== true) issues.push({ problem: 'may_be_absent', path, optional: checked.reads })
+    if (checked.reads.length && absence === 'unsupported') add({ problem: 'absence_unsupported', path, optional: checked.reads })
+    else if (checked.reads.length && target && target.optional !== true) add({ problem: 'may_be_absent', path, optional: checked.reads })
   }
-  return { issues, types, absent }
+  return { found, types, absent }
 }
 
 function evaluateArgument(arg: Argument, input: Data): Scalar | Scalar[] {
@@ -235,6 +385,11 @@ function evaluateArgument(arg: Argument, input: Data): Scalar | Scalar[] {
       if (!Object.hasOwn(input, arg.name)) throw new Error('A source refers to a property the value does not have')
       // checkMapping lets a source read only value properties (never a local object: object_property).
       return input[arg.name] as Scalar
+    case 'path': {
+      const found = valueAt(input, arg.path)
+      if (!found.present) throw new Error('A source refers to a property the value does not have')
+      return found.value as Scalar
+    }
     case 'list':
       return arg.items.map((item) => evaluateArgument(item, input) as Scalar)
     case 'call': {
@@ -248,14 +403,30 @@ function evaluateArgument(arg: Argument, input: Data): Scalar | Scalar[] {
 /** A property's value for `input`. Only for Mappings checkMapping found sound, and complete input. */
 export const evaluate = (source: Expression, input: Data): Scalar => evaluateArgument(source, input) as Scalar
 
-/** Every input property a source reads, wherever it is in the tree. */
-function propertiesRead(arg: Argument): string[] {
+/** Every input property a source reads, by full path, wherever it is in the tree. */
+function propertiesRead(arg: Argument): PropertyPath[] {
   switch (arg.kind) {
     case 'literal': return []
-    case 'property': return [arg.name]
+    case 'property': return [[arg.name]]
+    case 'path': return [arg.path]
     case 'list': return arg.items.flatMap(propertiesRead)
     case 'call': return arg.args.flatMap(propertiesRead)
   }
+}
+
+/**
+ * The value at a path in some (validated) data, or that it isn't there: a property absent at any
+ * step means absent. Only a missing property is absence: anything else where an object should be
+ * (null included) means the data doesn't fit its contract, so it is refused, never read as absent.
+ */
+function valueAt(data: Data, path: PropertyPath): { readonly present: true; readonly value: unknown } | { readonly present: false } {
+  let here: unknown = data
+  for (const name of path) {
+    if (kindOf(here) !== 'object') throw new Error('A source reads through something that isn’t an object')
+    if (!Object.hasOwn(here as object, name)) return { present: false }
+    here = (here as Record<string, unknown>)[name]
+  }
+  return { present: true, value: here }
 }
 
 /**
@@ -263,7 +434,7 @@ function propertiesRead(arg: Argument): string[] {
  * (an optional one, left out). Nothing is substituted: no empty text, zero, false or null.
  */
 export function evaluatePresent(source: Expression, input: Data): { readonly present: true; readonly value: Scalar } | { readonly present: false } {
-  if (propertiesRead(source).some((name) => !Object.hasOwn(input, name))) return { present: false }
+  if (propertiesRead(source).some((path) => !valueAt(input, path).present)) return { present: false }
   return { present: true, value: evaluate(source, input) }
 }
 
@@ -296,6 +467,8 @@ export function formatSource(arg: Argument): string {
       return `[${arg.items.map(formatSource).join(', ')}]`
     case 'call':
       return `${arg.fn}(${arg.args.map(formatSource).join(', ')})`
+    case 'path':
+      return arg.path.join(' › ')
     default:
       return '?'
   }

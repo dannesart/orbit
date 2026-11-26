@@ -22,7 +22,7 @@ const choice = computed<Choice | null>(() => {
   const e = props.modelValue
   if (e.kind === 'property') return 'property'
   if (e.kind === 'literal') return typeof e.value as 'string' | 'number' | 'boolean'
-  return e.fn === 'trim' || e.fn === 'join' ? e.fn : null
+  return e.kind === 'call' && (e.fn === 'trim' || e.fn === 'join') ? e.fn : null
 })
 
 /** Choosing a function wraps what was there; choosing anything else starts fresh. */

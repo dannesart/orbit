@@ -23,6 +23,7 @@ const part = (item: Expression) => (isAtom(item) || (item.kind === 'call' && ite
 export function describeSource(source: Expression | Argument): string {
   switch (source.kind) {
     case 'property': return source.name || 'an unnamed property'
+    case 'path': return source.path.join(' › ')
     case 'literal': return literalWords(source.value)
     case 'list': return source.items.map(part).join(' + ')
     case 'call': {
