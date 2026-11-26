@@ -8,6 +8,7 @@ import {
   findField, isWithin, locate, moveField, placesFor, removeField, updateField, versionLike,
 } from '../app/dev/definitions/model'
 import { studioCatalogue } from '../app/dev/definitions/catalogue'
+import { allNodes, exampleTree, previewResult, reconcile, resetEntries } from '../app/dev/definitions/example'
 
 const W = 'ws-a'
 const empty: Draft = { basedOn: null, fields: [], nextKey: 0 }
@@ -198,7 +199,7 @@ describe('References in the Studio: exact versions, chosen on purpose', () => {
   function setup() {
     let d = empty
     ;[d] = add(d, 'firstName')
-    let cand = createDefinition({ id: 'cand', workspaceId: W, name: 'Candidate', description: '', draft: d })
+    const cand = createDefinition({ id: 'cand', workspaceId: W, name: 'Candidate', description: '', draft: d })
     let d2 = draftFrom(cand.versions[0]!)
     ;[d2] = add(d2, 'email')
     cand = addVersion(cand, d2)
@@ -247,5 +248,90 @@ describe('References in the Studio: exact versions, chosen on purpose', () => {
     expect(changes).toEqual([{ kind: 'repointed', path: ['candidate'], from: { id: 'cand', version: 1 }, to: { id: 'cand', version: 2 } }])
     expect(changeWords(changes[0]!, catalogue.label)).toBe('Changes candidate from Candidate · v1 to Candidate · v2')
     expect(versionLike(made, fieldsOf(next))).toBeNull()
+  })
+})
+
+describe('The nested Preview: examples from the actual contract, judged by Orbit', () => {
+  // Process: name, candidate → Candidate v1 (firstName, contact { email }), address? { street, city }
+  let cand = createDefinition({ id: 'cand', workspaceId: W, name: 'Candidate', description: '', draft: (() => {
+    let d = empty, contact
+    ;[d] = add(d, 'firstName')
+    ;[d, contact] = add(d, 'contact', 'object')
+    ;[d] = add(d, 'email', 'string', contact)
+    return d
+  })() })
+  const catalogue = studioCatalogue(W, [cand])
+  const context = { owner: W, resolve: catalogue.resolve, label: catalogue.label }
+  let draft = empty, address
+  ;[draft] = add(draft, 'name')
+  draft = addField(draft, 'reference', { definition: { id: 'cand', version: 1 }, name: 'candidate' })
+  ;[draft, address] = add(draft, 'address', 'object')
+  draft = updateField(draft, address, { optional: true })
+  ;[draft] = add(draft, 'street', 'string', address)
+  ;[draft] = add(draft, 'city', 'string', address)
+  const nodeId = (path: string) => allNodes(exampleTree(draft.fields, catalogue.resolve)).find((n) => n.path.join('.') === path)!.id
+
+  it('generates example information all the way down, through references, and it fits', () => {
+    const entries = resetEntries(draft.fields, catalogue.resolve)
+    const result = previewResult(draft.fields, entries, null, context)
+    expect(result.data).toEqual({
+      name: 'Example text',
+      candidate: { firstName: 'Example text', contact: { email: 'Example text' } },
+      address: { street: 'Example text', city: 'Example text' },
+    })
+    expect(result.issues).toEqual([])
+    expect(result.unavailable).toEqual([])
+  })
+
+  it('leaves an optional object out entirely, keeps what was typed inside it, and brings it back', () => {
+    let entries = resetEntries(draft.fields, catalogue.resolve)
+    entries = { ...entries, [nodeId('address.city')]: { ...entries[nodeId('address.city')]!, value: 'London', edited: true } }
+    const out = { ...entries, [nodeId('address')]: { ...entries[nodeId('address')]!, given: false } }
+    const left = previewResult(draft.fields, out, null, context)
+    expect(Object.hasOwn(left.data, 'address')).toBe(false)
+    expect(left.left).toEqual(['address'])
+    expect(left.issues).toEqual([])
+    // Reconciling keeps the hidden value; given again, it's there.
+    const kept = reconcile(out, draft.fields, catalogue.resolve)
+    expect(kept[nodeId('address.city')]!.value).toBe('London')
+    const back = previewResult(draft.fields, { ...kept, [nodeId('address')]: { ...kept[nodeId('address')]!, given: true } }, null, context)
+    expect(back.data.address).toEqual({ street: 'Example text', city: 'London' })
+  })
+
+  it('locates Orbit’s problems at exact paths, across objects and references', () => {
+    const entries = resetEntries(draft.fields, catalogue.resolve)
+    const broken = {
+      ...entries,
+      [nodeId('address.city')]: { ...entries[nodeId('address.city')]!, given: false },
+      [nodeId('candidate.contact.email')]: { ...entries[nodeId('candidate.contact.email')]!, given: false },
+    }
+    const result = previewResult(draft.fields, broken, null, context)
+    expect(result.byPath['candidate\u001fcontact\u001femail']).toBe('candidate › contact › email is missing, and it’s required.')
+    expect(result.byPath['address\u001fcity']).toBe('address › city is missing, and it’s required.')
+    expect(result.left).toEqual(['candidate › contact › email', 'address › city'])
+  })
+
+  it('reconciles with a changing model at every level, by row', () => {
+    let entries = resetEntries(draft.fields, catalogue.resolve)
+    entries = { ...entries, [nodeId('address.street')]: { ...entries[nodeId('address.street')]!, value: 'Main St', edited: true } }
+    const renamed = updateField(draft, address, { name: 'home' })
+    const next = reconcile(entries, renamed.fields, catalogue.resolve)
+    expect(previewResult(renamed.fields, next, null, context).data.home).toEqual({ street: 'Main St', city: 'Example text' })
+  })
+
+  it('says a reference can’t be resolved here apart from information that doesn’t fit, and judges nothing it can’t', () => {
+    const missing = addField(draft, 'reference', { definition: { id: 'gone', version: 3 }, name: 'other' })
+    const result = previewResult(missing.fields, resetEntries(missing.fields, catalogue.resolve), null, context)
+    expect(result.unavailable).toEqual(['other refers to gone · v3, which can’t be found here.'])
+    expect(result.issues).toEqual([])
+    const node = exampleTree(missing.fields, catalogue.resolve).find((n) => n.name === 'other')!
+    expect(node).toMatchObject({ kind: 'reference', unresolved: true, children: [] })
+  })
+
+  it('never decides whether a version can be made: that’s the draft’s own check', () => {
+    const entries = resetEntries(draft.fields, catalogue.resolve)
+    const nothingGiven = Object.fromEntries(Object.entries(entries).map(([k, e]) => [k, { ...e, given: false }]))
+    expect(previewResult(draft.fields, nothingGiven, null, context).issues.length).toBeGreaterThan(0)
+    expect(draftProblems(draft, context)).toEqual([])
   })
 })

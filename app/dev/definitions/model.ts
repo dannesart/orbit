@@ -405,7 +405,7 @@ export const checkExample = (fields: readonly Field[], data: unknown): Issue[] =
 
 export const typeWords: Record<PropertyType, string> = { string: 'Text', number: 'Number', boolean: 'Yes or no', object: 'Object', reference: 'Definition' }
 const kindWords: Record<string, string> = {
-  string: 'text', number: 'a number', boolean: 'yes or no', undefined: 'missing', null: 'empty', array: 'a list', object: 'a group', other: 'something else',
+  string: 'text', number: 'a number', boolean: 'yes or no', undefined: 'missing', null: 'empty', array: 'a list', object: 'an object', other: 'something else',
 }
 
 export function issueWords(issue: Issue): string {

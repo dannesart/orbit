@@ -77,7 +77,6 @@ const fields = computed(() => (draft.value ? fieldsOf(draft.value) : []))
 const example = ref<ExampleEntries>({})
 const extra = ref<{ name: string; text: string } | null>(null)
 const advanced = ref(false)
-watch(() => draft.value?.fields, (now) => (example.value = reconcile(example.value, now ?? [])), { immediate: true, deep: true })
 const nextNumber = computed(() => versions.value.length + 1)
 const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
 const cardMeta = computed(() => {
@@ -99,6 +98,8 @@ const notes = computed(() => nameNotes(
 // What it may build on (its own Definitions and Orbit's), and how its references resolve: Orbit's rules, never the Studio's.
 const catalogue = computed(() => catalogueOf(props.workspace.id))
 const checking = computed(() => ({ owner: props.workspace.id, resolve: catalogue.value.resolve, label: catalogue.value.label }))
+// The example follows the contract all the way down, references included (resolved here, exactly).
+watch([() => draft.value?.fields, catalogue], ([now]) => (example.value = reconcile(example.value, now ?? [], catalogue.value.resolve)), { immediate: true, deep: true })
 const changes = computed(() => (evolving.value && base.value ? changesFrom(base.value, evolving.value) : []))
 const same = computed(() => (made.value && evolving.value && !draftProblems(evolving.value, checking.value).length ? versionLike(made.value, fields.value) : null))
 
@@ -306,7 +307,9 @@ onMounted(() => heading.value?.focus())
         :name="part === 'new' ? name : `${name}, version ${nextNumber}`"
         :appearance="appearance"
         :id-prefix="part"
-        @reset="example = resetEntries(draft.fields); extra = null"
+        :catalogue="catalogue"
+        :context="checking"
+        @reset="example = resetEntries(draft.fields, catalogue.resolve); extra = null"
       />
     </div>
 

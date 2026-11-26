@@ -49,7 +49,7 @@ describe('Reconciling with a changing model', () => {
     const retyped = FIELDS.map((f) => (f.key === 1 ? { ...f, type: 'boolean' as const } : f))
     const next = reconcile(typed, retyped)
     expect(next[1]).toEqual(typed[1])
-    expect(previewResult(retyped, next, null).byProperty.age).toBe('age should be yes or no, not text.')
+    expect(previewResult(retyped, next, null).byPath.age).toBe('age should be yes or no, not text.')
   })
 
   it('keeps a left-out property left out when its generated value follows a new type', () => {
@@ -72,7 +72,7 @@ describe('Absence, empty text, false and zero stay distinct', () => {
     const result = previewResult(FIELDS, with_(0, { given: false }), null)
     expect(Object.hasOwn(result.data, 'email')).toBe(false)
     expect(result.issues).toEqual(['email is missing, and it’s required.'])
-    expect(result.byProperty.email).toBe('email is missing, and it’s required.')
+    expect(result.byPath.email).toBe('email is missing, and it’s required.')
   })
 
   it('keeps empty text, zero and No as values, not absence', () => {
@@ -103,18 +103,20 @@ describe('Advanced testing', () => {
 describe('The Preview in the editor', () => {
   const root = join(import.meta.dirname, '..')
   const preview = readFileSync(join(root, 'app/dev/definitions/LivePreview.vue'), 'utf8')
+  const inputs = readFileSync(join(root, 'app/dev/definitions/ExampleInputs.vue'), 'utf8')
   const example = readFileSync(join(root, 'app/dev/definitions/example.ts'), 'utf8')
   const editor = readFileSync(join(root, 'app/dev/definitions/DefinitionEditor.vue'), 'utf8')
 
-  it('judges with Orbit’s own validation, not a second one', () => {
-    expect(example).toMatch(/const issues = checkExample\(shape, data\)/)
+  it('judges with Orbit’s own resolution and validation, not a second one', () => {
+    expect(example).toContain("const contract = checkFields(shape, { owner: context.owner, resolve: context.resolve, naming: false })")
+    expect(example).toContain("const issues = validate({ id: 'example', version: 0, name: 'example', workspaceId: context.owner, fields: shape }, data, context.resolve)")
     expect(example).not.toMatch(/typeof [^\n]*=== 'number'[^\n]*issues|missing:/)
-    expect(preview).toContain('previewResult(props.fields, props.entries, props.extra)')
+    expect(preview).toContain('previewResult(props.fields, props.entries, props.extra, props.context)')
   })
 
   it('keeps the example in the editor, so switching segments keeps what was typed', () => {
     expect(editor).toContain('const example = ref<ExampleEntries>({})')
-    expect(editor).toMatch(/watch\(\(\) => draft\.value\?\.fields, \(now\) => \(example\.value = reconcile\(example\.value, now \?\? \[\]\)\)/)
+    expect(editor).toContain('watch([() => draft.value?.fields, catalogue], ([now]) => (example.value = reconcile(example.value, now ?? [], catalogue.value.resolve))')
     expect(editor).toMatch(/<LivePreview[\s\S]*v-model:entries="example"/)
   })
 
@@ -124,6 +126,11 @@ describe('The Preview in the editor', () => {
     expect(preview).toMatch(/aria-label="Reset the example"/)
     expect(preview).toMatch(/:aria-pressed="advanced"/)
     expect(preview).toMatch(/<div v-if="advanced"[^>]*data-advanced-panel/)
-    expect(preview).toMatch(/<label v-if="advanced && f\.type !== 'string'"/)
+    expect(inputs).toMatch(/<label v-if="advanced && n\.type !== 'string'"/)
+  })
+
+  it('says apart a contract that can’t be resolved here from information that doesn’t fit', () => {
+    expect(preview).toMatch(/v-if="result\.unavailable\.length"[^>]*data-unavailable/)
+    expect(preview).toContain('Can’t be checked here yet')
   })
 })
