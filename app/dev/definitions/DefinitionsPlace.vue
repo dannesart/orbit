@@ -83,7 +83,7 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
 </script>
 
 <template>
-  <main v-if="mode !== 'catalogue'" class="mx-auto max-w-5xl px-4 pt-8 pb-20 sm:px-6 sm:pt-10">
+  <main v-if="mode !== 'catalogue'" class="px-4 pt-8 pb-20 sm:px-6 sm:pt-10 lg:px-0">
     <ClientOnly>
       <DefinitionEditor :key="`${selected}-${mode}`" :workspace="context" :id="selected" :part="mode" :version="version" @created="created = $event" />
       <template #fallback>
@@ -92,7 +92,7 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
     </ClientOnly>
   </main>
 
-  <main v-else class="definitions-catalogue px-4 pt-8 pb-20 transition-[padding] sm:px-6 sm:pt-10 lg:pb-12" :class="{ 'definitions-catalogue--inspecting': inspecting }">
+  <main v-else class="definitions-catalogue px-4 pt-8 pb-20 transition-[padding] sm:px-6 sm:pt-10 lg:px-0 lg:pb-12" :class="{ 'definitions-catalogue--inspecting': inspecting }">
     <div class="flex flex-wrap items-center justify-between gap-4">
       <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Definitions</h1>
       <NuxtLink :to="{ query: { new: null } }" class="btn-primary inline-flex w-auto items-center gap-1.5 rounded-full px-4 py-2 text-sm">
@@ -163,10 +163,10 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
 
 <style>
 /* With the inspector open on wide screens, the catalogue makes room for it rather than hiding
-   under it: the stage already keeps --nav-reserve (and any centring gutter) on the right. */
+   under it: the stage already keeps the frame's padding (and any centring gutter) on the right. */
 @media (width >= 64rem) {
   .definitions-catalogue--inspecting {
-    padding-right: max(1.5rem, calc(27rem - max(0px, (100vw - 80rem) / 2) - var(--nav-reserve, 0px)));
+    padding-right: max(1.5rem, calc(27rem - max(0px, (100vw - 80rem) / 2) - var(--frame-reserve, 0px)));
   }
 }
 </style>
