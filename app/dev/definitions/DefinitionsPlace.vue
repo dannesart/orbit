@@ -16,6 +16,7 @@
     /w/:id/definitions?d=…&about     its name and description
 -->
 <script setup lang="ts">
+import { referencePaths } from '#shared/features/definitions'
 import { ORBIT_PROVIDED } from './model'
 import { enterWorkspace, shelfHasWork, shelfOf } from './store'
 import DefinitionEditor from './DefinitionEditor.vue'
@@ -58,6 +59,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload)
 
 const open = (id: string) => ({ query: { d: id } })
 const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
+/** "· uses 2 Definitions", when its latest version builds on others. */
+const uses = (fields: Parameters<typeof referencePaths>[0]) => {
+  const n = referencePaths(fields).length
+  return n ? ` · uses ${n === 1 ? '1 Definition' : `${n} Definitions`}` : ''
+}
 
 // The version just made, for the inspector to say so once: forgotten as soon as you go elsewhere.
 const created = ref<number | null>(null)
@@ -114,7 +120,7 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
               <DefinitionTile :appearance="d.appearance" />
               <span class="min-w-0 flex-1">
                 <span class="block truncate font-medium text-slate-900">{{ d.name }}</span>
-                <span class="block text-xs text-slate-500">Version {{ d.versions.length }} · {{ count(d.versions.at(-1)!.fields.length) }}</span>
+                <span class="block text-xs text-slate-500">Version {{ d.versions.length }} · {{ count(d.versions.at(-1)!.fields.length) }}{{ uses(d.versions.at(-1)!.fields) }}</span>
               </span>
             </NuxtLink>
           </li>

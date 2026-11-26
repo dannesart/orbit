@@ -3,9 +3,15 @@
 // version shown and whose it is, its description, the properties of that version, its other
 // versions on demand, and what can be done with it, under the icon and colour chosen for it. Nothing is edited here: a new version, or a
 // new name or description, is made in its own view (DefinitionEditor), on purpose.
-import type { DefinitionVersion } from '#shared/features/definitions'
-import { ORBIT_DESCRIPTIONS, ORBIT_PROVIDED, draftFrom, typeWords } from './model'
-import { findMade, setEvolving, shelfOf } from './store'
+//
+// The properties are the version's whole contract, read-only (ContractTree): local objects open,
+// each reference naming exactly the version it pins and unfolding to what that version contains.
+// Earlier versions show theirs, exactly as they were. A reference that can't be resolved here says
+// so; it's never left out.
+import { type DefinitionVersion, referencePaths } from '#shared/features/definitions'
+import { ORBIT_DESCRIPTIONS, ORBIT_PROVIDED, draftFrom } from './model'
+import { catalogueOf, findMade, setEvolving, shelfOf } from './store'
+import ContractTree from './ContractTree.vue'
 import { definitionsPath } from './designer'
 import DefinitionTile from './DefinitionTile.vue'
 import DefinitionsIcon from './DefinitionsIcon.vue'
@@ -21,6 +27,8 @@ const description = computed(() => made.value?.description ?? ORBIT_DESCRIPTIONS
 const latest = computed(() => versions.value.at(-1))
 const shown = computed(() => versions.value.find((v) => v.version === props.version) ?? latest.value)
 const versionTo = (v: number) => ({ query: { d: props.id, v: String(v) } })
+const catalogue = computed(() => catalogueOf(props.workspace.id))
+const uses = computed(() => (shown.value ? referencePaths(shown.value.fields).length : 0))
 
 // Earlier versions, on demand: open from the start only when an earlier one is shown.
 const history = ref(!!shown.value && shown.value.version !== latest.value?.version)
@@ -89,13 +97,9 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-full text-sl
           <div class="mb-1 flex items-center gap-2">
             <h3 id="properties-heading" class="text-sm font-semibold text-slate-900">Properties</h3>
             <span class="text-xs text-slate-500">{{ shown.fields.length }}</span>
+            <span v-if="uses" class="ml-auto text-xs text-slate-500">Uses {{ uses === 1 ? '1 Definition' : `${uses} Definitions` }}</span>
           </div>
-          <ul class="divide-y divide-slate-100">
-            <li v-for="f in shown.fields" :key="f.name" class="flex items-center justify-between gap-3 py-2 text-sm">
-              <span class="min-w-0 truncate font-medium text-slate-900">{{ f.name }}</span>
-              <span class="shrink-0 text-xs text-slate-500">{{ typeWords[f.type] }}<template v-if="f.optional"> · optional</template></span>
-            </li>
-          </ul>
+          <ContractTree :key="shown.version" class="-ml-1" :fields="shown.fields" :catalogue="catalogue" data-inspector-contract />
           <p v-if="made && shown.name !== name" class="mt-2 text-xs text-slate-500">Made when it was called {{ shown.name }}.</p>
         </section>
 

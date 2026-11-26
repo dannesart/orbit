@@ -1,6 +1,7 @@
 // Experiment #9, Phase 3: the Composable Definition Studio. Its drafts are trees (local objects with
 // their own rows, references to exact versions), and everything Orbit accepts is still decided by
 // Orbit's own check and validation (shared/features), never a second model or validator.
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { type Field, defineVersion, sameFields, validate } from '../shared/features/definitions'
 import {
@@ -333,5 +334,29 @@ describe('The nested Preview: examples from the actual contract, judged by Orbit
     const nothingGiven = Object.fromEntries(Object.entries(entries).map(([k, e]) => [k, { ...e, given: false }]))
     expect(previewResult(draft.fields, nothingGiven, null, context).issues.length).toBeGreaterThan(0)
     expect(draftProblems(draft, context)).toEqual([])
+  })
+})
+
+describe('Catalogue and inspector: composed Definitions inspected, never flattened or hidden', () => {
+  const root = new URL('..', import.meta.url)
+  const read = (f: string) => readFileSync(new URL(f, root), 'utf8')
+  const inspector = read('app/dev/definitions/DefinitionInspector.vue')
+  const tree = read('app/dev/definitions/ContractTree.vue')
+  const place = read('app/dev/definitions/DefinitionsPlace.vue')
+
+  it('inspects the version shown as its whole contract, read-only, through the workspace’s own catalogue', () => {
+    expect(inspector).toContain('<ContractTree :key="shown.version" class="-ml-1" :fields="shown.fields" :catalogue="catalogue" data-inspector-contract />')
+    expect(inspector).toContain('const catalogue = computed(() => catalogueOf(props.workspace.id))')
+    expect(tree).not.toMatch(/updateField|emit\(/)
+  })
+
+  it('names exactly the version a reference pins, and says so when one can’t be resolved', () => {
+    expect(tree).toContain('{{ catalogue.label(f.definition) }}')
+    expect(tree).toContain('can’t be found here')
+    expect(tree).toMatch(/const deeper = computed\(\(\) => props\.level < MAX_OBJECT_LEVELS\)/)
+  })
+
+  it('tells on a catalogue card when a Definition builds on others', () => {
+    expect(place).toContain('{{ uses(d.versions.at(-1)!.fields) }}')
   })
 })
