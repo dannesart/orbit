@@ -32,6 +32,9 @@ const props = defineProps<{
   stale: boolean
   runNumber: number
   runs: readonly RunRecord[]
+  /** The exact Transform version this step invokes (featureKey), and those it may invoke. */
+  featureKey: string
+  versions: readonly { readonly key: string; readonly label: string }[]
 }>()
 const emit = defineEmits<{
   apply: []
@@ -39,6 +42,7 @@ const emit = defineEmits<{
   undo: []
   focus: [mode: 'mapping' | 'structure', property: string | null]
   close: []
+  feature: [key: string]
 }>()
 
 const details = ref(false)
@@ -84,6 +88,13 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
           <span class="sr-only">makes</span>
           <span class="font-medium text-slate-900">{{ target.label }}</span>
         </p>
+        <!-- The exact Transform version this step invokes: changed only by choosing another here. -->
+        <label class="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+          Feature version
+          <select :value="featureKey" class="rounded-lg border border-slate-200 bg-white py-1 pr-7 pl-2 text-xs font-medium text-slate-800 outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-100" data-transform-version @change="emit('feature', ($event.target as HTMLSelectElement).value)">
+            <option v-for="v in versions" :key="v.key" :value="v.key">{{ v.label }}</option>
+          </select>
+        </label>
 
         <UnsupportedNotice v-if="review.unsupported" class="mt-4" :text="review.unsupported" />
 

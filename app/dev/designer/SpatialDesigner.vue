@@ -39,9 +39,10 @@ import { summarize } from './summary'
 import { fromDraft } from './parts'
 import { exampleFrom, previewOutput, reviewDraft } from './preview'
 import { transformSupport } from './support'
+import { READING } from './reading'
 import { reconcile } from './switching'
 import {
-  type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findDefinition, findMapping,
+  type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findDefinition, findMapping, inputOf,
   initialConfiguration, labelOf, outputOf, planApply, structureProblems,
 } from './config'
 
@@ -105,7 +106,8 @@ const draft = shallowRef<TransformDraft>(requested ? requestedDraft(requested) :
 /** The requested version as the draft's output, with only the mappings that fit it (switching.ts). */
 function requestedDraft(output: DefinitionRef): TransformDraft {
   const next: TransformDraft = { ...draftFrom(config.value), use: 'catalogue', catalogue: output }
-  return reconcile(next, A1, outputOf(config.value, next).definition)
+  // At setup, before the review exists: read as the step's Transform version reads.
+  return reconcile(next, findDefinition(config.value, inputOf(next)) ?? A1, outputOf(config.value, next).definition, { nested: features.value.transform.sources === 'nested', resolve })
 }
 const history = shallowRef<TransformDraft[]>([])
 let lastEdit = 0
@@ -126,9 +128,14 @@ function undo() {
 const target = computed(() => outputOf(config.value, draft.value))
 const draftProperties = computed(() => fromDraft(draft.value.properties))
 const structure = computed(() => structureProblems(draft.value))
-const example = computed(() => exampleFrom(recordText.value, A1))
-const review = computed(() => reviewDraft(draftProperties.value, A1, target.value.definition, target.value.label, transformSupport(A1, target.value.definition, features.value.transform)))
-const output = computed(() => previewOutput(draftProperties.value, A1, target.value.definition, example.value))
+/** What the draft reads: Definition A · v1 unless another was chosen in Structure. */
+const input = computed(() => findDefinition(config.value, inputOf(draft.value)) ?? A1)
+// Review, preview and the source picker follow the Transform version this step invokes.
+const support = computed(() => transformSupport(input.value, target.value.definition, features.value.transform, resolve))
+provide(READING, computed(() => support.value.reading!))
+const example = computed(() => exampleFrom(recordText.value, input.value, resolve))
+const review = computed(() => reviewDraft(draftProperties.value, input.value, target.value.definition, target.value.label, support.value))
+const output = computed(() => previewOutput(draftProperties.value, input.value, target.value.definition, example.value, support.value.reading))
 const plan = computed(() => planApply(config.value, draft.value))
 /**
  * The only place versions are made, and only from a sound draft: complete, with no errors. (What
@@ -638,12 +645,15 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :review="review"
         :output="output"
         :example="example"
-        :input="A1"
+        :input="input"
         :can-undo="history.length > 0"
         :step="stepOf('transform')"
         :stale="stale"
         :run-number="runNumber"
         :runs="runs"
+        :feature-key="stepFeatures.transform"
+        :versions="TRANSFORMS.map((t) => ({ key: featureKey(t.feature), label: t.label }))"
+        @feature="stepFeatures.transform = $event"
         @apply="apply"
         @discard="discard"
         @undo="undo"
@@ -719,7 +729,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :review="review"
         :output="output"
         :example="example"
-        :input="A1"
+        :input="input"
         :can-undo="history.length > 0"
         :mode="focus.mode"
         :property="focus.property"

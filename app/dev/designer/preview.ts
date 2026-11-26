@@ -3,8 +3,9 @@
 // never invokes a Feature, so there is no outcome and no evidence. Nothing here mutates its input.
 // Absence follows the domain's rule: a source reading an absent optional property has no value,
 // and that property is left out of the object, never filled in.
-import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type PropertyType, type Scalar, frozenCopy, propertyPathWords, validate } from '#shared/features/definitions'
-import { type Expression, type MappingIssue, type MappingProperty, checkMapping, evaluatePresent } from '#shared/features/mappings'
+import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type PropertyType, type Resolve, type Scalar, checkContract, frozenCopy, propertyPathWords, validate } from '#shared/features/definitions'
+import { type Expression, type MappingProperty, evaluatePresent } from '#shared/features/mappings'
+import { FLAT, type Reading, type ReviewIssue, checkWith, presentIn } from './reading'
 import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData } from '../features/experiment'
 
 // --- The example input ---
@@ -12,10 +13,12 @@ import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData }
 export type Example = { readonly data: Data } | { readonly problem: string; readonly details: readonly string[] }
 
 /** Record A's data as typed, if it fits the Definition the Mapping reads. A frozen copy. */
-export function exampleFrom(recordText: string, input: DefinitionVersion): Example {
+export function exampleFrom(recordText: string, input: DefinitionVersion, resolve?: Resolve): Example {
   const parsed = parseRecordData(recordText)
   if ('error' in parsed) return { problem: 'Record A’s data isn’t valid JSON, so there’s no example to preview with.', details: [] }
-  const issues = validate(input, parsed.data)
+  // The input's whole contract must resolve before its data can be judged (as at the boundary).
+  if (checkContract(input, resolve).length) return { problem: `${definitionLabel(input)} can’t be resolved here, so there’s no example to preview with.`, details: [] }
+  const issues = validate(input, parsed.data, resolve)
   if (issues.length) return { problem: `Record A’s data doesn’t fit ${definitionLabel(input)}, which this Mapping reads.`, details: issues.map(describeIssue) }
   return { data: frozenCopy(parsed.data as Data) }
 }
@@ -25,7 +28,7 @@ export function exampleFrom(recordText: string, input: DefinitionVersion): Examp
 const typeWords: Record<string, string> = { string: 'text', number: 'a number', boolean: 'yes or no', object: 'an object', 'string[]': 'a list', invalid: 'something invalid' }
 
 /** A Mapping problem in plain words. Where it is comes from where it's shown, not from a path. */
-export function friendlyIssue(issue: MappingIssue): string {
+export function friendlyIssue(issue: ReviewIssue): string {
   switch (issue.problem) {
     case 'unknown_property': return `The input has no field “${issue.name}”.`
     case 'list_item_type': return `Only text can be combined. This is ${typeWords[issue.actual]}.`
@@ -38,18 +41,19 @@ export function friendlyIssue(issue: MappingIssue): string {
 
 export type ValuePreview =
   | { readonly value: Scalar }
-  /** No value: it reads optional properties the example doesn't have, so it's left out. */
+  /** No value: it reads optional properties the example doesn't have (in words, by path), so it's left out. */
   | { readonly absent: readonly string[] }
   | { readonly problems: readonly string[] }
   | { readonly noExample: true }
 
 /** What one source makes from the example, or why that can't be shown. */
-export function previewSource(source: Expression, input: DefinitionVersion, example: Example): ValuePreview {
-  const { issues, absent } = checkMapping({ properties: [{ name: 'preview', source }] }, input)
+export function previewSource(source: Expression, input: DefinitionVersion, example: Example, reading: Reading = FLAT): ValuePreview {
+  const { issues, absent } = checkWith(reading, [{ name: 'preview', source }], input)
   if (issues.length) return { problems: issues.map(friendlyIssue) }
   if (!('data' in example)) return { noExample: true }
+  // The very evaluation the Transform runs with: the same result, the same absence.
   const result = evaluatePresent(source, example.data)
-  return result.present ? { value: result.value } : { absent: absent[0]!.filter((name) => !Object.hasOwn(example.data, name)) }
+  return result.present ? { value: result.value } : { absent: absent[0]!.filter((path) => !presentIn(example.data, path)).map(propertyPathWords) }
 }
 
 // --- The whole draft, against the target Definition ---
@@ -81,7 +85,7 @@ export interface DraftReview {
   readonly fields: readonly FieldReview[]
   readonly extras: readonly ExtraReview[]
   /** Issues per draft property, as checkMapping reports them (paths start at the property). */
-  readonly issues: readonly (readonly MappingIssue[])[]
+  readonly issues: readonly (readonly ReviewIssue[])[]
   /** Everything that keeps the draft from being a sound Mapping for the target, in words. */
   readonly problems: readonly string[]
   /** The target's required properties nothing makes yet: incomplete, not wrong. (Optional ones may stay unmapped.) */
@@ -105,6 +109,8 @@ export interface ContractSupport {
   readonly version: number
   readonly reads: readonly PropertyPath[]
   readonly makes: readonly PropertyPath[]
+  /** How that version reads sources (flat, or nested too); flat when not said. */
+  readonly reading?: Reading
 }
 
 /** The draft's properties checked against the input Definition and the target Definition. */
@@ -122,7 +128,7 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
 
   // Checked against the target too, as the boundary checks it: a required property fed by an
   // optional input is refused (may_be_absent).
-  const checked = properties.map((p) => checkMapping({ properties: [p] }, input, target))
+  const checked = properties.map((p) => checkWith(support?.reading ?? FLAT, [p], input, target))
   const issues = checked.map((c) => c.issues)
   const firstIndex = (name: string) => properties.findIndex((p) => p.name === name)
   const problems: string[] = []
@@ -177,8 +183,8 @@ export interface OutputPreview {
 }
 
 /** The object the draft would make from the example, property by property, absent ones left out. */
-export function previewOutput(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, example: Example): OutputPreview {
-  const values = properties.map((p) => previewSource(p.source, input, example))
+export function previewOutput(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, example: Example, reading: Reading = FLAT): OutputPreview {
+  const values = properties.map((p) => previewSource(p.source, input, example, reading))
   if (!values.every((v) => 'value' in v || 'absent' in v) || new Set(properties.map((p) => p.name)).size !== properties.length) return { values, fits: null }
   const output = Object.fromEntries(properties.flatMap((p, i) => ('value' in values[i]! ? [[p.name, (values[i] as { value: Scalar }).value]] : [])))
   return { values, fits: { issues: validate(target, output).map(describeIssue) } }

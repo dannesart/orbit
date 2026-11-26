@@ -10,6 +10,9 @@
 //   identity and contracts" (reviseMapping), and evidence names a Mapping only by id and version,
 //   so the output version is part of the Mapping's identity: one Mapping per output Definition
 //   version, with its own versions. A new output version therefore starts a new Mapping (v1).
+//   Likewise its input: the Transform reads Definition A · v1 unless another input is chosen
+//   (Phase 4.2, to read composed inputs with Transform v3). A Mapping from Definition A keeps the
+//   identity it always had; one from another input has its own.
 //   Nothing here changes the domain; it only decides which immutable versions to make.
 import {
   type DefinitionRef, type DefinitionVersion, type Field, checkPropertyNames, deepFreeze, defineVersion, frozenCopy, refOf, sameDefinition, sameFields, visibleIn,
@@ -48,6 +51,8 @@ export interface LocalDraft {
 
 /** Everything the person is editing. Only Apply turns it into versions. */
 export interface TransformDraft {
+  /** The Definition version the Transform reads: Definition A · v1 unless another was chosen. */
+  readonly input?: DefinitionRef
   readonly use: 'catalogue' | 'local'
   /** The catalogue choice, kept while the local one is in use (and the other way round). */
   readonly catalogue: DefinitionRef
@@ -120,7 +125,9 @@ export function labelOf(config: Configuration, ref: DefinitionRef): string {
 export function draftFrom(config: Configuration): TransformDraft {
   const latestLocal = config.locals.at(-1)
   const applied = findDefinition(config, config.output)!
+  const from = findMapping(config, config.mapping)!.from
   return {
+    ...(sameDefinition(from, A1) ? {} : { input: refOf(from) }),
     use: isLocal(config.output) ? 'local' : 'catalogue',
     catalogue: isLocal(config.output) ? refOf(B1) : refOf(config.output),
     // A local output starts as a copy of the current output's properties, to change freely.
@@ -157,8 +164,17 @@ export function structureProblems(draft: TransformDraft): string[] {
   return problems
 }
 
-/** The Mapping identity for an output version (the existing playground Mapping keeps its own). */
-export const mappingIdFor = (to: DefinitionRef) => (sameDefinition(to, B1) ? INITIAL_MAPPING.id : `transform:${to.id}@${to.version}`)
+/** What the draft reads: its chosen input, or Definition A · v1. */
+export const inputOf = (draft: TransformDraft): DefinitionRef => draft.input ?? refOf(A1)
+
+/**
+ * The Mapping identity for an input and an output version. From Definition A, exactly the identities
+ * Mappings always had (the playground's own Mapping keeps its own); from another input, one naming both.
+ */
+export const mappingIdFor = (to: DefinitionRef, from: DefinitionRef = refOf(A1)) => {
+  if (!sameDefinition(from, A1)) return `transform:${from.id}@${from.version}->${to.id}@${to.version}`
+  return sameDefinition(to, B1) ? INITIAL_MAPPING.id : `transform:${to.id}@${to.version}`
+}
 
 export interface Plan {
   readonly output: { readonly ref: DefinitionRef; readonly label: string; readonly isNew: boolean }
@@ -171,7 +187,7 @@ export interface Plan {
 export function planApply(config: Configuration, draft: TransformDraft): Plan {
   const output = outputOf(config, draft)
   const ref = refOf(output.definition)
-  const id = mappingIdFor(ref)
+  const id = mappingIdFor(ref, inputOf(draft))
   const latest = config.mappings.filter((m) => m.id === id).at(-1)
   const properties = fromDraft(draft.properties)
   // The same Mapping when each property has the same source, in any order (order is presentation).
@@ -201,7 +217,7 @@ export function applyConfiguration(config: Configuration, draft: TransformDraft)
     const latest = config.mappings.filter((m) => m.id === plan.mapping.id).at(-1)
     const next: Mapping = latest
       ? reviseMapping(latest, properties)
-      : deepFreeze({ id: plan.mapping.id, version: 1, workspaceId: WORKSPACE, from: refOf(A1), to: plan.output.ref, properties: frozenCopy(properties) })
+      : deepFreeze({ id: plan.mapping.id, version: 1, workspaceId: WORKSPACE, from: refOf(inputOf(draft)), to: plan.output.ref, properties: frozenCopy(properties) })
     mappings = [...config.mappings, next]
   }
   return {

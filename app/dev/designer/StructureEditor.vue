@@ -3,9 +3,10 @@
 // used as it is, or the Transform's own output, whose properties are added, renamed, retyped and
 // removed here. Changing it changes a contract (Apply freezes a new Definition version and gives
 // it a new Mapping), so it lives apart from mapping values and says so.
-import type { DefinitionRef, DefinitionVersion, FieldType, PropertyType } from '#shared/features/definitions'
+import { type DefinitionRef, type DefinitionVersion, type FieldType, type PropertyType, sameDefinition } from '#shared/features/definitions'
 import { A1, DEFINITIONS, WORKSPACE, definitionLabel, shapeOf } from '../features/experiment'
-import { type Configuration, type TransformDraft, catalogue, labelOf, outputOf } from './config'
+import { type Configuration, type TransformDraft, catalogue, findDefinition, inputOf, labelOf, outputOf } from './config'
+import { FLAT, READING } from './reading'
 import { asideReason, reconcile } from './switching'
 import { DESIGNER_WORKSPACE, definitionsPath } from '../definitions/designer'
 import { fromPiece, removeAt, replaceAt } from './parts'
@@ -18,22 +19,33 @@ const props = defineProps<{
   target: { definition: DefinitionVersion; label: string; isNew: boolean }
   structure: readonly string[]
   review: DraftReview
+  /** The Definition version the draft reads. */
+  input: DefinitionVersion
 }>()
 const emit = defineEmits<{ 'update:draft': [TransformDraft] }>()
 const update = (next: Partial<TransformDraft>) => emit('update:draft', { ...props.draft, ...next })
 
 const keyOf = (ref: DefinitionRef) => `${ref.id}@${ref.version}`
-/** Choosing another output: its properties at once, with mappings that fit it and nothing else. */
+// Mappings are judged as the Transform version the step invokes reads them.
+const reading = inject(READING, ref(FLAT))
+/** Choosing another output (or input): its properties at once, with mappings that fit it and nothing else. */
 function switchTo(next: Partial<TransformDraft>) {
   const draft = { ...props.draft, ...next }
-  emit('update:draft', reconcile(draft, A1, outputOf(props.config, draft).definition))
+  const input = findDefinition(props.config, inputOf(draft)) ?? A1
+  emit('update:draft', reconcile(draft, input, outputOf(props.config, draft).definition, reading.value))
+}
+/** What the Transform reads: Definition A unless another is chosen, on purpose. Never upgraded. */
+const inputs = computed(() => catalogue(props.config.offered))
+function setInput(key: string) {
+  const d = inputs.value.find((x) => keyOf(x) === key)
+  if (d) switchTo({ input: sameDefinition(d, A1) ? undefined : { id: d.id, version: d.version } })
 }
 function setCatalogue(key: string) {
   const d = catalogue(props.config.offered).find((x) => keyOf(x) === key)
   if (d) switchTo({ catalogue: { id: d.id, version: d.version } })
 }
 const aside = computed(() => (props.draft.aside ?? []).map((p) => ({
-  name: p.name || 'Unnamed', source: describeSource(fromPiece(p.piece)), reason: asideReason(p, A1, props.target.definition, props.target.label),
+  name: p.name || 'Unnamed', source: describeSource(fromPiece(p.piece)), reason: asideReason(p, props.input, props.target.definition, props.target.label, reading.value),
 })))
 // What can be chosen, by where it comes from (Experiment #7). Only what this workspace may use:
 // another workspace's Definitions aren't listed at all, not even disabled.
@@ -86,6 +98,14 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
 
 <template>
   <div ref="root">
+    <section aria-labelledby="reads-heading" class="mb-6">
+      <h3 id="reads-heading" class="text-sm font-semibold text-slate-900">What does it read?</h3>
+      <label for="input-definition" class="mt-1 block text-xs text-slate-500">The Definition version it reads. A different one is a different Mapping.</label>
+      <select id="input-definition" :value="keyOf(inputOf(draft))" :class="[control, 'mt-2 w-full sm:w-auto']" data-input-definition @change="setInput(($event.target as HTMLSelectElement).value)">
+        <option v-for="d in inputs" :key="keyOf(d)" :value="keyOf(d)">{{ labelOf(config, d) }}</option>
+      </select>
+    </section>
+
     <section aria-labelledby="create-heading">
       <h3 id="create-heading" class="text-sm font-semibold text-slate-900">What should this Transform create?</h3>
       <div class="mt-2 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-labelledby="create-heading">

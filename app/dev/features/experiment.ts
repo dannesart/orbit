@@ -10,7 +10,7 @@ import {
   type AnyMappingIssue, type ArgumentType, type Expression, type Mapping, type MappingIssue, type MappingProblemLocation, type MappingProperty, type Path, checkMapping,
 } from '#shared/features/mappings'
 import {
-  type Catalog, type FeatureRef, type InvocationResult, type MappingFeature, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitConsoleV2, orbitTransformV2,
+  type Catalog, type FeatureRef, type InvocationResult, type MappingFeature, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitConsoleV2, orbitTransformV2, orbitTransformV3,
 } from '#shared/features/features'
 
 export const WORKSPACE = 'ws-playground'
@@ -103,10 +103,12 @@ export const CONSOLES: readonly { feature: PassThroughFeature; label: string }[]
 
 /**
  * The Transform versions a step may invoke here: those the Designer can review a draft for (its
- * preview and review follow v2's rules for absence), so only v2 for now. Each by its exact version.
+ * review and preview follow the chosen version's reading, with v2's rules for absence), each by
+ * its exact version. v3 is provisional: still being built on this branch.
  */
 export const TRANSFORMS: readonly { feature: MappingFeature; label: string }[] = [
   { feature: orbitTransformV2, label: 'Orbit.Transform v2' },
+  { feature: orbitTransformV3, label: 'Orbit.Transform v3 (provisional)' },
 ]
 
 /** A Feature version as one key ("orbit.console@1"): identity and version, never a "current" alias. */

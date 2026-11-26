@@ -4,13 +4,14 @@
 // page turns Pieces back into the exact expression tree (parts.ts). Example values come from the
 // preview (preview.ts), which never runs anything.
 import type { DefinitionVersion, FieldType } from '#shared/features/definitions'
-import { type MappingIssue, type Path, formatSource } from '#shared/features/mappings'
+import { type Path, formatSource } from '#shared/features/mappings'
 import { definitionLabel } from '../features/experiment'
 import SourceEditor from '../features/SourceEditor.vue'
 import ShownText from './ShownText.vue'
 import ValuePicker from './ValuePicker.vue'
 import { type Piece, fromPiece, insertAt, move, ownIssues, partPaths, removeAt, replaceAt, replaceValue, representable, toPiece } from './parts'
 import { type Example, friendlyIssue, previewSource, visibleSegments, whitespaceNote } from './preview'
+import { FLAT, READING, type ReviewIssue } from './reading'
 import { describeSource } from './summary'
 
 const props = defineProps<{
@@ -18,7 +19,7 @@ const props = defineProps<{
   /** Where this value is, as checkMapping reports paths, so its problems can be shown here. */
   path: Path
   /** All of the property's problems; this value shows only its own. */
-  issues: readonly MappingIssue[]
+  issues: readonly ReviewIssue[]
   input: DefinitionVersion
   example: Example
   /** For screen readers: "fullName, part 2". */
@@ -34,8 +35,10 @@ const root = ref<HTMLElement>()
 const focus = (selector: string) => nextTick(() => root.value?.querySelector<HTMLElement>(selector)?.focus())
 
 // What this value makes from the example, and, when spaces are removed, what it was before.
-const result = computed(() => previewSource(fromPiece(props.piece), props.input, props.example))
-const before = computed(() => ('trim' in props.piece && props.piece.trim ? previewSource(fromPiece({ ...props.piece, trim: false }), props.input, props.example) : null))
+// Read as the Transform version the step invokes reads (flat, or nested too).
+const reading = inject(READING, ref(FLAT))
+const result = computed(() => previewSource(fromPiece(props.piece), props.input, props.example, reading.value))
+const before = computed(() => ('trim' in props.piece && props.piece.trim ? previewSource(fromPiece({ ...props.piece, trim: false }), props.input, props.example, reading.value) : null))
 const own = computed(() => ownIssues(props.piece, props.path, props.issues).map(friendlyIssue))
 const inputLabel = computed(() => definitionLabel(props.input))
 
@@ -86,8 +89,26 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
 
 <template>
   <div ref="root" class="min-w-0">
+    <!-- A value inside the input, by its path (Transform v3): breadcrumbs, exact names -->
+    <template v-if="piece.kind === 'nested'">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <button
+          type="button"
+          data-main
+          data-nested-source
+          class="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 font-mono text-sm font-semibold text-slate-900 ring-1 ring-transparent transition hover:bg-slate-100 hover:ring-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+          :aria-label="`${label}: ${piece.path.join(' › ')} from the input. Change`"
+          :aria-expanded="changing"
+          @click="changing = !changing"
+        >
+          <template v-for="(name, i) in piece.path" :key="i"><span v-if="i" aria-hidden="true" class="font-normal text-slate-400">›</span>{{ name }}</template><span aria-hidden="true" class="text-xs text-slate-400">▾</span>
+        </button>
+        <span class="text-xs text-slate-500">from the input</span>
+      </div>
+    </template>
+
     <!-- A field of the input -->
-    <template v-if="piece.kind === 'field'">
+    <template v-else-if="piece.kind === 'field'">
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
         <button
           type="button"
@@ -152,7 +173,7 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
       <ol class="mt-2 flex flex-col gap-3" :aria-label="`${label}: parts, in order`">
         <template v-for="(part, i) in parts" :key="i">
           <li v-if="picking === i">
-            <ValuePicker :fields="input.fields" :example="example" :input-label="inputLabel" need="string" :heading="`Insert a part before part ${i + 1}`" @pick="insert(i, $event)" @cancel="picking = null; focus(`:scope > ol > [data-part='${i}'] [data-action='insert']`)" />
+            <ValuePicker :fields="input.fields" :input="input" :example="example" :input-label="inputLabel" need="string" :heading="`Insert a part before part ${i + 1}`" @pick="insert(i, $event)" @cancel="picking = null; focus(`:scope > ol > [data-part='${i}'] [data-action='insert']`)" />
           </li>
           <li :data-part="i" class="relative rounded-xl border border-slate-200 bg-white p-2.5">
             <button
@@ -195,7 +216,7 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
           </li>
         </template>
         <li v-if="picking === parts.length">
-          <ValuePicker :fields="input.fields" :example="example" :input-label="inputLabel" need="string" heading="Add a part at the end" @pick="insert(parts.length, $event)" @cancel="picking = null; focus(':scope > div > [data-action=add]')" />
+          <ValuePicker :fields="input.fields" :input="input" :example="example" :input-label="inputLabel" need="string" heading="Add a part at the end" @pick="insert(parts.length, $event)" @cancel="picking = null; focus(':scope > div > [data-action=add]')" />
         </li>
       </ol>
       <p v-if="!parts.length && picking === null" class="mt-1 text-xs text-amber-700">No parts yet, so it makes empty text.</p>
@@ -261,6 +282,7 @@ const control = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-
       v-if="changing"
       class="mt-2"
       :fields="input.fields"
+      :input="input"
       :example="example"
       :input-label="inputLabel"
       :need="need"

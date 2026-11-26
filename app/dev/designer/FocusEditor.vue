@@ -129,7 +129,7 @@ const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visib
       <!-- Structure: the contract -->
       <div v-else class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div class="min-w-0">
-          <StructureEditor :draft="draft" :config="config" :target="target" :structure="structure" :review="review" @update:draft="emit('update:draft', $event)" />
+          <StructureEditor :draft="draft" :config="config" :target="target" :structure="structure" :review="review" :input="input" @update:draft="emit('update:draft', $event)" />
           <div v-if="work.length" class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <button type="button" data-continue-mapping class="rounded-full bg-white px-4 py-1.5 text-sm font-medium text-accent-700 ring-1 ring-accent-200 transition hover:bg-accent-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" @click="continueToMapping">Continue to Mapping <span aria-hidden="true">→</span></button>
             <span class="text-xs text-slate-500">{{ work.length === 1 ? `${work[0]} needs a value` : `${work.length} properties need a value` }}</span>

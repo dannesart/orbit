@@ -4,11 +4,14 @@
 // exact inverses. A tree the parts view can't show exactly becomes an 'advanced' Piece that holds
 // the original Expression untouched, for the recursive SourceEditor. Nothing here simplifies,
 // normalizes or rewrites a tree: only an explicit edit by the person changes it.
-import type { Expression, MappingIssue, MappingProperty, Path } from '#shared/features/mappings'
+import type { PropertyPath } from '#shared/features/definitions'
+import type { Expression, MappingProperty, Path } from '#shared/features/mappings'
+import type { ReviewIssue } from './reading'
 
 /**
  * One value, as the parts editor shows it.
  *   field     a property of the incoming value
+ *   nested    a value inside one of its local objects or referenced Definitions, by exact path (Transform v3)
  *   text      literal text (a space is text too)
  *   literal   a fixed number, or true or false
  *   combine   values joined in order, with an optional separator between them (join)
@@ -17,6 +20,7 @@ import type { Expression, MappingIssue, MappingProperty, Path } from '#shared/fe
  */
 export type Piece =
   | { readonly kind: 'field'; readonly name: string; readonly trim: boolean }
+  | { readonly kind: 'nested'; readonly path: PropertyPath; readonly trim: boolean }
   | { readonly kind: 'text'; readonly value: string; readonly trim: boolean }
   | { readonly kind: 'literal'; readonly value: number | boolean }
   | { readonly kind: 'combine'; readonly parts: readonly Piece[]; readonly separator: string; readonly trim: boolean }
@@ -40,6 +44,9 @@ export function toPiece(e: Expression): Piece {
   if (e?.kind === 'property' && hasKeys(e, ['kind', 'name']) && typeof e.name === 'string') {
     return { kind: 'field', name: e.name, trim: false }
   }
+  if (e?.kind === 'path' && hasKeys(e, ['kind', 'path']) && Array.isArray(e.path) && e.path.length >= 2 && e.path.every((n) => typeof n === 'string')) {
+    return { kind: 'nested', path: e.path, trim: false }
+  }
   if (e?.kind === 'literal' && hasKeys(e, ['kind', 'value']) && typeof e.value === 'string') {
     return { kind: 'text', value: e.value, trim: false }
   }
@@ -50,7 +57,7 @@ export function toPiece(e: Expression): Piece {
     if (e.fn === 'trim' && e.args.length === 1 && e.args[0]!.kind !== 'list') {
       const inner = toPiece(e.args[0] as Expression)
       // trim(trim(x)) has no single checkbox to show it, so it is left to the advanced editor.
-      if ((inner.kind === 'field' || inner.kind === 'text' || inner.kind === 'combine') && !inner.trim) return { ...inner, trim: true }
+      if ((inner.kind === 'field' || inner.kind === 'nested' || inner.kind === 'text' || inner.kind === 'combine') && !inner.trim) return { ...inner, trim: true }
       return advanced(e)
     }
     if (e.fn === 'join' && e.args.length === 2) {
@@ -73,6 +80,7 @@ export function fromPiece(piece: Piece): Expression {
     case 'advanced': return piece.expression
     case 'literal': return { kind: 'literal', value: piece.value }
     case 'field': e = { kind: 'property', name: piece.name }; break
+    case 'nested': e = { kind: 'path', path: [...piece.path] }; break
     case 'text': e = { kind: 'literal', value: piece.value }; break
     case 'combine':
       e = { kind: 'call', fn: 'join', args: [{ kind: 'list', items: piece.parts.map(fromPiece) }, { kind: 'literal', value: piece.separator }] }
@@ -124,7 +132,7 @@ export function partPaths(piece: Piece, path: Path): Path[] {
 }
 
 /** The issues that are about this Piece itself, not about one of its parts. */
-export function ownIssues(piece: Piece, path: Path, issues: readonly MappingIssue[]): MappingIssue[] {
+export function ownIssues(piece: Piece, path: Path, issues: readonly ReviewIssue[]): ReviewIssue[] {
   const parts = partPaths(piece, path)
   return issues.filter((i) => startsWith(i.path, path) && !parts.some((p) => startsWith(i.path, p)))
 }

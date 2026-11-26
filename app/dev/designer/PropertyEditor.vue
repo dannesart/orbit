@@ -29,7 +29,7 @@ function addPart(next: Piece) {
   adding.value = false
   map(combineWith(piece.value!, next))
 }
-const single = computed(() => piece.value?.kind === 'field' || piece.value?.kind === 'text')
+const single = computed(() => piece.value?.kind === 'field' || piece.value?.kind === 'nested' || piece.value?.kind === 'text')
 </script>
 
 <template>
@@ -56,13 +56,13 @@ const single = computed(() => piece.value?.kind === 'field' || piece.value?.kind
       @update:piece="map"
     />
     <template v-else-if="!piece">
-      <ValuePicker v-if="choosing" :fields="input.fields" :example="example" :input-label="definitionLabel(input)" need="string" :heading="`Choose a value for ${field.name}`" @pick="map" @cancel="choosing = false" />
+      <ValuePicker v-if="choosing" :fields="input.fields" :input="input" :example="example" :input-label="definitionLabel(input)" need="string" :heading="`Choose a value for ${field.name}`" @pick="map" @cancel="choosing = false" />
       <button v-else type="button" class="btn-primary w-auto rounded-full px-4 py-1.5 text-sm" @click="choosing = true">Choose a value</button>
     </template>
     <template v-else>
       <PieceEditor top :piece="piece" :path="[field.name]" :issues="review.issues[field.index]!" :input="input" :example="example" :label="field.name" need="string" @update:piece="map" />
       <template v-if="single">
-        <ValuePicker v-if="adding" class="mt-3" :fields="input.fields" :example="example" :input-label="definitionLabel(input)" need="string" heading="Add another part" @pick="addPart" @cancel="adding = false" />
+        <ValuePicker v-if="adding" class="mt-3" :fields="input.fields" :input="input" :example="example" :input-label="definitionLabel(input)" need="string" heading="Add another part" @pick="addPart" @cancel="adding = false" />
         <button v-else type="button" class="link mt-2 text-sm" @click="adding = true">Add another part</button>
       </template>
     </template>
