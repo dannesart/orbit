@@ -36,11 +36,11 @@
  * name, a description, an appearance) is metadata for people, mutable, and never part of a version.
  * Words about a historical version should use its own publication-time name. What is guaranteed
  * today: each version's name is frozen with it (renaming in the Studio changes only its catalogue
- * metadata), and the playground's and Designer's words for their own sample and applied versions
- * use those versions' own names. Not yet: the Studio labels a reference with the Definition's
- * current catalogue name, and the Designer labels a Definition handed over from the Studio with the
- * name it had when handed over. Evidence records identities and versions only, never names, so no
- * history needs rewriting: only the words made from it. The order of fields is
+ * metadata), and every word for a specific version (a reference, a version's contract, a run's
+ * evidence) is made from that exact version's own name, resolved by exact identity and never from
+ * another version; one that can't be resolved is named by its identity. The catalogue itself shows
+ * current metadata. Evidence records identities and versions only, never names, so no history needs
+ * rewriting: only the words made from it. The order of fields is
  * presentation, never part of a contract: two versions are the same contract when sameFields says
  * so, and reordering alone never makes a version.
  *

@@ -109,7 +109,8 @@ export const findMapping = (config: Configuration, ref: FeatureRef) => config.ma
 /** A Definition version in words: a catalogue one by its name, a local one as this Transform's own. */
 export function labelOf(config: Configuration, ref: DefinitionRef): string {
   const offered = config.offered?.find((o) => sameDefinition(o.definition, ref))
-  if (offered) return `${offered.name} · v${ref.version}`
+  // The exact version's own, publication-time name: what it's called now (offered.name) is catalogue metadata.
+  if (offered) return `${offered.definition.name} · v${ref.version}`
   if (!isLocal(ref)) return definitionLabel(ref)
   const local = config.locals.find((d) => sameDefinition(d, ref))
   return `${local?.name ?? 'This Transform’s output'} · v${ref.version}`

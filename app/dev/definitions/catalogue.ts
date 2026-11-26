@@ -27,7 +27,11 @@ export interface StudioCatalogue {
   readonly resolve: Resolve
   /** The block a version belongs to, if this workspace may see it. */
   readonly find: (id: string) => BuildingBlock | null
-  /** "Candidate · v1": how a referenced version is named for people. */
+  /**
+   * "Candidate · v1": how a referenced version is named for people, by the name that exact version
+   * was published with (a later rename is catalogue metadata, never the contract's). One that can't
+   * be resolved here is named by its identity only: never by another version's name.
+   */
   readonly label: (ref: DefinitionRef) => string
 }
 
@@ -41,10 +45,11 @@ export function studioCatalogue(workspaceId: string, made: readonly MadeDefiniti
   })
   const blocks = [...own, ...orbit]
   const find = (id: string) => blocks.find((b) => b.id === id) ?? null
+  const resolve: Resolve = (ref) => find(ref.id)?.versions.find((v) => sameDefinition(v, ref)) ?? null
   return {
     blocks,
     find,
-    resolve: (ref) => find(ref.id)?.versions.find((v) => sameDefinition(v, ref)) ?? null,
-    label: (ref) => `${find(ref.id)?.name ?? ref.id} · v${ref.version}`,
+    resolve,
+    label: (ref) => `${resolve(ref)?.name ?? ref.id} · v${ref.version}`,
   }
 }
