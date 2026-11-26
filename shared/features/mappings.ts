@@ -67,7 +67,8 @@ import {
  * Presence. A required output object is always built. An optional one is left out (not in the
  * Mapping), always built, or built when a source object is present ({ when: 'present', source }).
  * Never left out because its properties ended up absent, and never filled in: an object always built
- * may be empty ({}) when its contract allows that.
+ * may be empty ({}) when its contract allows that. A condition names its source object explicitly:
+ * one not chosen yet is refused (condition_not_chosen), never filled in from the contract's order.
  *
  * Completeness, at every level. For Transform v3, every object (the output itself, and each built
  * object) is checked against its own contract before running: every required property made
@@ -221,6 +222,8 @@ export type FoundMappingIssue =
   | { readonly problem: 'wrong_output_type'; readonly path: Path; readonly expected: FieldType; readonly actual: FieldType }
   /** A presence condition that names a value, not a source object. */
   | { readonly problem: 'condition_not_object'; readonly path: Path }
+  /** A presence condition whose source object hasn't been chosen yet (an empty path). */
+  | { readonly problem: 'condition_not_chosen'; readonly path: Path }
   /** An output reference that doesn't resolve here (missing, or not allowed). */
   | { readonly problem: 'unresolved_output'; readonly path: Path }
 
@@ -561,7 +564,8 @@ function checkProperties(mapping: Pick<Mapping, 'properties'>, input: Definition
     if (node.presence.when === 'present') {
       const where = [...path, 'presence']
       const condition = resolveObjectPath(input, node.presence.source, accepts.resolve)
-      if (!('object' in condition)) {
+      if (Array.isArray(node.presence.source) && node.presence.source.length === 0) add({ problem: 'condition_not_chosen', path: where })
+      else if (!('object' in condition)) {
         if (condition.problem === 'unknown_path_property') add({ problem: 'unknown_path_property', path: where, step: condition.step, name: String(node.presence.source[condition.step]) })
         else if ('step' in condition) add({ problem: condition.problem, path: where, step: condition.step })
         else add({ problem: condition.problem, path: where })

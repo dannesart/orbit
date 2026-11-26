@@ -225,6 +225,7 @@ export function describeMappingIssue(issue: AnyMappingIssue): string {
     case 'missing_output_property': return `${issue.name} is required here, and nothing makes it. Orbit won’t invent a value.`
     case 'wrong_output_type': return `This needs ${kindWords[issue.expected]}, not ${kindWords[issue.actual]}.`
     case 'condition_not_object': return 'An object is built when a source object is present: this names a value.'
+    case 'condition_not_chosen': return 'Choose the source object it’s built when present.'
     case 'unresolved_output': return 'The Definition this object should be can’t be found here.'
   }
 }

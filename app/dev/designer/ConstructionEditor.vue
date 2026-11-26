@@ -51,8 +51,8 @@ function build(presence: Presence) {
 function choose(next: 'out' | 'always' | 'present') {
   if (next === 'out') return emit('set', null)
   if (next === 'always') return build({ when: 'always' })
-  const first = sources.value[0]
-  if (first) build({ when: 'present', source: first.path })
+  // Which source object is chosen on purpose: none until then (draft work, refused by the check).
+  if (props.piece?.presence.when !== 'present') build({ when: 'present', source: [] })
 }
 // Inside, the condition's source object is known to be present (and so is everything on its way).
 provide(GUARANTEED, computed(() => (props.piece?.presence.when === 'present' ? [...inherited.value, props.piece.presence.source] : inherited.value)))
@@ -98,7 +98,8 @@ const segment = 'rounded-full px-3 py-1 text-xs font-medium transition focus-vis
         </div>
         <label v-if="piece?.presence.when === 'present'" class="flex items-center gap-1.5 text-xs text-slate-600">
           built when
-          <select :value="keyOf(piece.presence.source)" class="rounded-lg border border-slate-200 bg-white py-1 pr-7 pl-2 font-mono text-xs text-slate-800 outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-100" data-presence-source @change="build({ when: 'present', source: JSON.parse(($event.target as HTMLSelectElement).value) })">
+          <select :value="piece.presence.source.length ? keyOf(piece.presence.source) : ''" class="rounded-lg border border-slate-200 bg-white py-1 pr-7 pl-2 font-mono text-xs text-slate-800 outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-100" data-presence-source @change="build({ when: 'present', source: JSON.parse(($event.target as HTMLSelectElement).value) })">
+            <option value="" disabled>Choose a source object…</option>
             <option v-for="s in sources" :key="keyOf(s.path)" :value="keyOf(s.path)">{{ propertyPathWords(s.path) }}{{ s.optional.length ? '' : ' (always there)' }}</option>
           </select>
           is present
