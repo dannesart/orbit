@@ -463,7 +463,7 @@ describe('The model builder: a toolbox, a tree of compact rows, and editing in p
     expect(builder).toMatch(/<PropertyToolbox[\s\S]*@add="add\(\$event\)"\s*@drag="startBlock"/)
     expect(builder).toContain('if (block) add(JSON.parse(block) as Block, { parent, index })')
     const add = builder.slice(builder.indexOf('function add('), builder.indexOf('function remove('))
-    expect(add).toContain('addField(draft.value, block.type, { parent, index: place?.index, definition: block.definition, name: block.name })')
+    expect(add).toContain('addField(draft.value, block.type, { parent, index: place?.index, definition: block.definition, name })')
     expect(add).toContain('nextTick(() => nameInput(key)?.select())')
     expect(addField(blankDraft(), 'number').fields.at(-1)).toMatchObject({ type: 'number', optional: false })
   })
@@ -497,6 +497,6 @@ describe('The model builder: a toolbox, a tree of compact rows, and editing in p
   it('nests: each local object is its own level, with the same rows, folding and its own drop target', () => {
     expect(tree).toMatch(/<PropertyTree :fields="f\.fields \?\? \[\]" :parent="f\.key" :path="\[\.\.\.path, f\.name\]" \/>/)
     expect(tree).toMatch(/@dragover="b\.over\(\$event, parent\)"[\s\S]*@drop="b\.drop\(\$event, parent\)"/)
-    expect(tree).toMatch(/data-fold[\s\S]*@click="b\.fold\(f\.key\)"/)
+    expect(tree).toMatch(/data-fold[\s\S]*@click="flipOpen\(f\)"/)
   })
 })

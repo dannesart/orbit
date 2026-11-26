@@ -61,7 +61,9 @@ const where = (path: PropertyPath) => (path.length ? propertyPathWords(path.map(
 /** Adds a block at a place (the chosen one by default), opens it and focuses its name. */
 function add(block: Block, place?: DropPlace) {
   const parent = place ? place.parent : target.value
-  const added = addField(draft.value, block.type, { parent, index: place?.index, definition: block.definition, name: block.name })
+  // A suggested name (a reference's) is only a start: never one a sibling already has.
+  const name = block.name && !childrenOf(draft.value, parent).some((f) => f.name === block.name) ? block.name : ''
+  const added = addField(draft.value, block.type, { parent, index: place?.index, definition: block.definition, name })
   const key = added.nextKey - 1
   update(added)
   show(parent)

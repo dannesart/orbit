@@ -192,3 +192,60 @@ describe('The Studio catalogue: this workspace’s Definitions and Orbit’s, ne
     expect(sameFields(v.fields, defineVersion(v).fields)).toBe(true)
   })
 })
+
+describe('References in the Studio: exact versions, chosen on purpose', () => {
+  /** Candidate v1 (firstName), then v2 (firstName, email). */
+  function setup() {
+    let d = empty
+    ;[d] = add(d, 'firstName')
+    let cand = createDefinition({ id: 'cand', workspaceId: W, name: 'Candidate', description: '', draft: d })
+    let d2 = draftFrom(cand.versions[0]!)
+    ;[d2] = add(d2, 'email')
+    cand = addVersion(cand, d2)
+    const catalogue = studioCatalogue(W, [cand])
+    return { cand, catalogue, check: { owner: W, resolve: catalogue.resolve, label: catalogue.label } }
+  }
+
+  it('pins exactly the version chosen, at any level, never copying what it contains', () => {
+    const { catalogue, check } = setup()
+    let d = empty, process
+    ;[d] = add(d, 'name')
+    d = addField(d, 'reference', { definition: { id: 'cand', version: 1 }, name: 'candidate' })
+    ;[d, process] = add(d, 'meta', 'object')
+    d = addField(d, 'reference', { parent: process, definition: { id: 'orbit.postal-address', version: 1 }, name: 'office' })
+    expect(draftProblems(d, check)).toEqual([])
+    const made = createDefinition({ id: 'proc', workspaceId: W, name: 'Process', description: '', draft: d, resolve: catalogue.resolve })
+    expect(made.versions[0]!.fields).toEqual([
+      { name: 'name', type: 'string' },
+      { name: 'candidate', type: 'reference', definition: { id: 'cand', version: 1 } },
+      { name: 'meta', type: 'object', fields: [{ name: 'office', type: 'reference', definition: { id: 'orbit.postal-address', version: 1 } }] },
+    ])
+    // v2 exists, and nothing moved to it: the data must still fit v1 exactly.
+    expect(validate(made.versions[0]!, { name: 'Hire', candidate: { firstName: 'Ada', email: 'a' }, meta: { office: { street: 's', postcode: 'p', city: 'c' } } }, catalogue.resolve))
+      .toEqual([{ problem: 'unexpected', path: ['candidate', 'email'] }])
+  })
+
+  it('refuses, in words, a reference this workspace can’t resolve, and never creates it', () => {
+    const { catalogue, check } = setup()
+    const d = addField(empty, 'reference', { definition: { id: 'their-secret', version: 1 }, name: 'x' })
+    expect(draftProblems(d, check)).toEqual(['x refers to their-secret · v1, which can’t be found here.'])
+    expect(() => createDefinition({ id: 'p', workspaceId: W, name: 'P', description: '', draft: d, resolve: catalogue.resolve })).toThrow()
+  })
+
+  it('lets a next version reference an earlier version of its own Definition', () => {
+    const { cand, catalogue } = setup()
+    const d = addField(draftFrom(cand.versions[1]!), 'reference', { definition: { id: 'cand', version: 1 }, name: 'previous' })
+    expect(addVersion(cand, d, catalogue.resolve).versions[2]!.fields.at(-1)).toEqual({ name: 'previous', type: 'reference', definition: { id: 'cand', version: 1 } })
+  })
+
+  it('records switching versions as a change, named for people', () => {
+    const { catalogue } = setup()
+    const d = addField(empty, 'reference', { definition: { id: 'cand', version: 1 }, name: 'candidate' })
+    const made = createDefinition({ id: 'proc', workspaceId: W, name: 'Process', description: '', draft: d, resolve: catalogue.resolve })
+    const next = updateField(draftFrom(made.versions[0]!), 0, { definition: { id: 'cand', version: 2 } })
+    const changes = changesFrom(made.versions[0]!, next)
+    expect(changes).toEqual([{ kind: 'repointed', path: ['candidate'], from: { id: 'cand', version: 1 }, to: { id: 'cand', version: 2 } }])
+    expect(changeWords(changes[0]!, catalogue.label)).toBe('Changes candidate from Candidate · v1 to Candidate · v2')
+    expect(versionLike(made, fieldsOf(next))).toBeNull()
+  })
+})
