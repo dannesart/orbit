@@ -11,7 +11,7 @@ import { orbitConsole } from '../shared/features/features'
 import { A1, B1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
 import {
   type Configuration, type TransformDraft, LOCAL_ID, allDefinitions, applyConfiguration, catalogue, draftFrom, findMapping,
-  initialConfiguration, labelOf, mappingIdFor, outputOf, planApply, structureProblems,
+  initialConfiguration, labelOf, mappingIdFor, outputOf, planApply, structureProblems, scopeOf,
 } from '../app/dev/designer/config'
 import { type Piece, fromDraft, toPiece } from '../app/dev/designer/parts'
 import { previewOutput, reviewDraft } from '../app/dev/designer/preview'
@@ -53,7 +53,7 @@ const example = { data: deepFreeze({ ...INITIAL_DATA }) as Data }
 describe('Applying: exactly the versions that changed, and nothing when nothing did', () => {
   it('starts applied, with nothing to apply', () => {
     const config = initialConfiguration()
-    const plan = planApply(config, draftFrom(config))
+    const plan = planApply(config, draftFrom(config), WORKSPACE)
     expect(plan.changes).toBe(false)
     expect(applyFor(config, draftFrom(config))).toBe(config)
   })
@@ -70,10 +70,10 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
         { name: 'email', piece: { kind: 'text', value: 'ada@example.com', trim: false } },
       ],
     }
-    const target = outputOf(config, draft)
+    const target = outputOf(config, draft, scopeOf(config, WORKSPACE))
     expect(target).toMatchObject({ isNew: false, label: 'Definition A · v2' })
     expect(reviewDraft(fromDraft(draft.properties), A1, target.definition).problems).toEqual([])
-    expect(planApply(config, draft)).toMatchObject({ output: { isNew: false }, mapping: { id: 'transform:person-name@2', version: 1, isNew: true }, changes: true })
+    expect(planApply(config, draft, WORKSPACE)).toMatchObject({ output: { isNew: false }, mapping: { id: 'transform:person-name@2', version: 1, isNew: true }, changes: true })
     const next = applyFor(config, draft)
     expect(next.locals).toEqual([])
     expect(next.output).toEqual({ id: 'person-name', version: 2 })
@@ -111,7 +111,7 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
   it('makes nothing when applied again, and nothing when run again and again', () => {
     const config = applyFor(initialConfiguration(), personSummary(initialConfiguration()))
     const draft = { ...personSummary(initialConfiguration()), properties: draftFrom(config).properties }
-    expect(planApply(config, draft).changes).toBe(false)
+    expect(planApply(config, draft, WORKSPACE).changes).toBe(false)
     expect(applyFor(config, draft)).toBe(config)
     const before = JSON.stringify(config)
     for (let i = 0; i < 3; i++) expect(run(config)[1]!.evidence.mapping).toEqual(config.mapping)
@@ -122,7 +122,7 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
     const v1 = applyFor(initialConfiguration(), personSummary(initialConfiguration()))
     const draft = personSummary(v1)
     const edited = { ...draft, properties: draft.properties.map((p) => (p.name === 'active' ? { ...p, piece: { kind: 'literal', value: false } as Piece } : p)) }
-    expect(planApply(v1, edited)).toMatchObject({ output: { isNew: false }, mapping: { id: 'transform:transform.output@1', version: 2, isNew: true } })
+    expect(planApply(v1, edited, WORKSPACE)).toMatchObject({ output: { isNew: false }, mapping: { id: 'transform:transform.output@1', version: 2, isNew: true } })
     const v2 = applyFor(v1, edited)
     expect(v2.locals).toBe(v1.locals)
     expect(v2.mapping).toEqual({ id: 'transform:transform.output@1', version: 2 })
@@ -139,8 +139,8 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
       local: { ...draft.local, fields: [...draft.local.fields, { name: 'age', type: 'number' }] },
       properties: [...draft.properties, { name: 'age', piece: { kind: 'literal', value: 36 } }],
     }
-    expect(outputOf(v1, grown)).toMatchObject({ isNew: true, label: 'Person summary · v2 (draft)' })
-    expect(planApply(v1, grown)).toMatchObject({ output: { isNew: true, ref: { id: LOCAL_ID, version: 2 } }, mapping: { id: 'transform:transform.output@2', version: 1, isNew: true } })
+    expect(outputOf(v1, grown, scopeOf(v1, WORKSPACE))).toMatchObject({ isNew: true, label: 'Person summary · v2 (draft)' })
+    expect(planApply(v1, grown, WORKSPACE)).toMatchObject({ output: { isNew: true, ref: { id: LOCAL_ID, version: 2 } }, mapping: { id: 'transform:transform.output@2', version: 1, isNew: true } })
     const v2 = applyFor(v1, grown)
     expect(v2.locals.map((d) => d.version)).toEqual([1, 2])
     expect(JSON.stringify([v2.locals.slice(0, 1), v2.mappings.slice(0, v1.mappings.length)])).toBe(snapshot)
@@ -154,7 +154,7 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
   it('renaming the output is a change of structure too', () => {
     const v1 = applyFor(initialConfiguration(), personSummary(initialConfiguration()))
     const renamed = { ...personSummary(v1), local: { ...personSummary(v1).local, name: 'Profile card' } }
-    expect(planApply(v1, renamed).output).toMatchObject({ isNew: true, ref: { version: 2 } })
+    expect(planApply(v1, renamed, WORKSPACE).output).toMatchObject({ isNew: true, ref: { version: 2 } })
   })
 
   it('gives every Mapping identity exactly one pair of contracts', () => {
@@ -182,19 +182,19 @@ describe('Switching outputs never discards work', () => {
     const config = initialConfiguration()
     const local = personSummary(config)
     const toB: TransformDraft = { ...local, use: 'catalogue', catalogue: refOf(B1) }
-    const review = reviewDraft(fromDraft(toB.properties), A1, outputOf(config, toB).definition)
+    const review = reviewDraft(fromDraft(toB.properties), A1, outputOf(config, toB, scopeOf(config, WORKSPACE)).definition)
     expect(review.fields).toMatchObject([{ name: 'fullName', state: 'set' }])
     expect(review.extras.map((x) => toB.properties[x.index]!.name)).toEqual(['displayName', 'initials', 'active'])
     expect(toB.properties).toBe(local.properties)
     // The local structure is still there to switch back to.
     const back: TransformDraft = { ...toB, use: 'local' }
-    expect(reviewDraft(fromDraft(back.properties), A1, outputOf(config, back).definition).fields.map((f) => f.state)).toEqual(['set', 'set', 'set', 'set'])
+    expect(reviewDraft(fromDraft(back.properties), A1, outputOf(config, back, scopeOf(config, WORKSPACE)).definition).fields.map((f) => f.state)).toEqual(['set', 'set', 'set', 'set'])
   })
 
   it('a local output starts as a copy of the current output’s properties', () => {
     const draft = draftFrom(initialConfiguration())
     expect(draft.local.fields).toEqual(B1.fields)
-    expect(outputOf(initialConfiguration(), { ...draft, use: 'local' })).toMatchObject({ isNew: true, definition: { id: LOCAL_ID, version: 1, fields: B1.fields } })
+    expect(outputOf(initialConfiguration(), { ...draft, use: 'local' }, scopeOf(initialConfiguration(), WORKSPACE))).toMatchObject({ isNew: true, definition: { id: LOCAL_ID, version: 1, fields: B1.fields } })
   })
 })
 
@@ -238,7 +238,7 @@ describe('Apply refuses what the boundary would refuse; the boundary still decid
   }
 
   it('refuses each of them, and makes nothing', () => {
-    expect(reviewDraft(fromDraft(broken.properties), A1, outputOf(start, broken).definition).problems).toEqual(['initials: The input has no field “middleName”.'])
+    expect(reviewDraft(fromDraft(broken.properties), A1, outputOf(start, broken, scopeOf(start, WORKSPACE)).definition).problems).toEqual(['initials: The input has no field “middleName”.'])
     for (const d of [broken, wrongType, extra]) {
       const result = applyConfiguration(start, d, stepOf(start))
       expect(result).toMatchObject({ applied: false, assessment: { state: 'invalid' } })

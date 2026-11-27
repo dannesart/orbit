@@ -13,7 +13,7 @@ import {
 import { createFromDraft, findMade, setCreating, setEvolving, shelfOf, versionFromDraft } from '../app/dev/definitions/store'
 import { designerWorkspace, definitionsPath, offeredIn, placeIn, requestedOutput } from '../app/dev/definitions/designer'
 import {
-  type Configuration, LOCAL_ID, allDefinitions, applyConfiguration, catalogue, draftFrom as transformDraftFrom, initialConfiguration, labelOf, outputOf,
+  type Configuration, LOCAL_ID, allDefinitions, applyConfiguration, catalogue, draftFrom as transformDraftFrom, initialConfiguration, labelOf, outputOf, scopeOf,
 } from '../app/dev/designer/config'
 import { toDraft } from '../app/dev/designer/parts'
 import { reviewDraft } from '../app/dev/designer/preview'
@@ -291,7 +291,7 @@ describe('Journey A: made in Definitions, used as an exact version in the Transf
     const offered = offeredIn(acme, [v2])
     const start = initialConfiguration(offered)
     const draft = { ...transformDraftFrom(start), use: 'catalogue' as const, catalogue: { id: v1.id, version: 2 }, properties: toDraft([fullName, subscribed]) }
-    expect(reviewDraft([fullName, subscribed], A1, outputOf(start, draft).definition).problems.length).toBeGreaterThan(0)
+    expect(reviewDraft([fullName, subscribed], A1, outputOf(start, draft, scopeOf(start, WORKSPACE)).definition).problems.length).toBeGreaterThan(0)
     // Apply itself refuses (it used to leave that to its caller): the configuration and its versions stay exactly as they were.
     const result = applyConfiguration(start, draft, stepOf(start, orbitTransformV2, 'ws-acme'))
     expect(result.applied).toBe(false)

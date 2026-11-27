@@ -14,6 +14,7 @@ import { toDraft } from '../app/dev/designer/parts'
 import { previewOutput, exampleFrom } from '../app/dev/designer/preview'
 import { readingOf } from '../app/dev/designer/reading'
 import { A1, APPLICANT, B1, ELSEWHERE, PINS, WORKSPACE } from '../app/dev/features/experiment'
+import { transformView } from '../app/dev/designer/view'
 import { stepOf } from './apply'
 
 const prop = (name: string): Expression => ({ kind: 'property', name })
@@ -91,6 +92,17 @@ describe('The whole pinned contract, read or not (gap 2: unresolved contracts we
     // The boundary, given the same configuration as a hand-made Mapping, refuses it for the same reason.
     const forced: Configuration = { ...start, mappings: [...start.mappings, deepFreeze<Mapping>({ id: 'forced', version: 1, workspaceId: WORKSPACE, from: refOf(A1), to: refOf(dangling), properties: [{ name: 'fullName', source: prop('firstName') }] })], mapping: { id: 'forced', version: 1 } }
     expect(runApplied(forced, orbitTransformV3, A1, { firstName: 'Ada', lastName: 'Lovelace' }).evidence.outcome).toMatchObject({ kind: 'not_attempted', reason: 'invalid_contract' })
+  })
+
+  it('previewed: an illustration, never a result that fits, though the Definition itself resolves', () => {
+    for (const feature of [orbitTransformV2, orbitTransformV3]) {
+      const start = initialConfiguration(offer(dangling))
+      const view = transformView(start, draftOf(start, A1, dangling, [{ name: 'fullName', source: prop('firstName') }]), stepOf(start, feature), JSON.stringify({ firstName: 'Ada', lastName: 'Lovelace' }))
+      expect(view.assessment.target.kind).toBe('existing')
+      expect([view.output.kind, view.output.fits], `v${feature.version}`).toEqual(['illustration', null])
+      // What the source reads is still shown: the input resolves.
+      expect(view.output.values).toEqual([{ value: 'Ada' }])
+    }
   })
 
   it('as the input: unresolved too', () => {
@@ -239,5 +251,53 @@ describe('Malformed sources are invalid; capabilities a version lacks are incomp
         expect(runApplied(forced, feature, A1, data).evidence.outcome).toEqual({ kind: 'not_attempted', reason: 'invalid_mapping', issues: [{ problem: 'unsupported_source', path: ['fullName'] }] })
       }
     }
+  })
+})
+
+describe('Nested reads inside an expression’s list', () => {
+  const start = initialConfiguration()
+  const joined = (item: unknown): Expression => ({ kind: 'call', fn: 'join', args: [{ kind: 'list', items: [prop('firstName'), item as Expression] }, lit(' ')] })
+  const assess = (item: unknown, feature: MappingFeature) => assessApply(start, draftOf(start, A1, B1, [{ name: 'fullName', source: joined(item) }]), stepOf(start, feature))
+
+  it('a well-formed nested read in a list is a capability flat versions lack: incompatible', () => {
+    for (const feature of [orbitTransformV1, orbitTransformV2]) {
+      const a = assess(path('contact', 'email'), feature)
+      expect([a.state, a.problems.map((p) => p.category)], `v${feature.version}`).toEqual(['incompatible', ['incompatible']])
+    }
+  })
+
+  it('a malformed one in a list is invalid, for every version', () => {
+    for (const feature of [orbitTransformV1, orbitTransformV2, orbitTransformV3]) expect(assess({ kind: 'path', path: 'contact.email' }, feature).state, `v${feature.version}`).toBe('invalid')
+  })
+})
+
+describe('The Transform’s own output: one problem per naming fact', () => {
+  const start = initialConfiguration()
+  const structure = (names: string[]) => assessApply(start, draftOf(start, A1, { local: names.map((name) => ({ name, type: 'string' as const })) }, []), stepOf(start, orbitTransformV3)).problems.filter((p) => p.kind === 'structure')
+
+  it('keeps separate facts of the same kind separate', () => {
+    expect(structure(['a', 'a', 'b', 'b'])).toHaveLength(2)
+    expect(structure(['Email', 'email', 'Name', 'name'])).toHaveLength(2)
+  })
+
+  it('and one fact one problem, however many names it’s about', () => {
+    expect(structure([' a', 'b ', 'c'])).toHaveLength(1)
+    expect(structure(['a', 'a', 'a'])).toHaveLength(1)
+  })
+})
+
+describe('A Mapping identity already taken by other contracts', () => {
+  it('is refused, never revised into a Mapping between other contracts (identities spelled to collide)', () => {
+    // A hand-made Definition id spelling another pair: from Definition A to "x@1->full-name" · v1 is transform:x@1->full-name@1,
+    // the identity of the Mapping from x · v1 to Definition B · v1.
+    const x = version('x', [{ name: 'firstName', type: 'string' }])
+    const start = initialConfiguration(offer(x))
+    const first = applyConfiguration(start, draftOf(start, x, B1, [{ name: 'fullName', source: prop('firstName') }]), stepOf(start))
+    expect(first.applied).toBe(true)
+    const colliding = version('x@1->full-name', [{ name: 'label', type: 'string' }])
+    const withIt: Configuration = { ...first.config, offered: [...(first.config.offered ?? []), ...offer(colliding)] }
+    const second = applyConfiguration(withIt, { ...draftOf(withIt, A1, colliding, [{ name: 'label', source: prop('firstName') }]), input: undefined }, stepOf(withIt))
+    expect(second.assessment.plan.mapping.id).toBe(first.config.mapping.id)
+    expect([second.applied, second.config === withIt, second.assessment.state]).toEqual([false, true, 'invalid'])
   })
 })

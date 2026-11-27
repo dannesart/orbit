@@ -17,6 +17,9 @@ import type { WorkspaceContext } from './store'
 /** The workspace the Designer works in, for the parts of it that need to say so. */
 export const DESIGNER_WORKSPACE: InjectionKey<WorkspaceContext | null> = Symbol('designer-workspace')
 
+/** The workspace the Designer runs (and applies) in: its workspace's, or the playground's own without one. */
+export const runsIn = (workspace: { readonly id: string } | null): string => workspace?.id ?? WORKSPACE
+
 /** Where a workspace's Definitions live. */
 export function definitionsPath(workspaceId: string, definition?: string, version?: number): string {
   const base = `/w/${workspaceId}/definitions`

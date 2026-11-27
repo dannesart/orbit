@@ -111,7 +111,7 @@ describe('Reordering alone never makes a contract version', () => {
     const once = applyFor(start, local)
     expect(once.locals.map((d) => d.version)).toEqual([1])
     const reordered = { ...local, local: { name: 'Out', fields: [f('note', 'string', true), f('fullName')] } }
-    expect(planApply(once, reordered).output.isNew).toBe(false)
+    expect(planApply(once, reordered, WORKSPACE).output.isNew).toBe(false)
     expect(applyFor(once, reordered)).toBe(once)
   })
 })
@@ -147,11 +147,11 @@ describe('Mapping property order is presentation, not meaning', () => {
     const draft = { ...designerDraft(start), use: 'local' as const, local: { name: 'Out', fields: [f('fullName'), f('last')] }, properties: toDraft([full, last]) }
     const once = applyFor(start, draft)
     const reordered = { ...draft, properties: [...draft.properties].reverse() }
-    expect(planApply(once, reordered)).toMatchObject({ mapping: { isNew: false }, changes: false })
+    expect(planApply(once, reordered, WORKSPACE)).toMatchObject({ mapping: { isNew: false }, changes: false })
     expect(applyFor(once, reordered)).toBe(once)
     // A change inside a source still does.
     const changed = { ...draft, properties: toDraft([full, { ...last, source: prop('firstName') }]) }
-    expect(planApply(once, changed).mapping).toMatchObject({ isNew: true, version: 2 })
+    expect(planApply(once, changed, WORKSPACE).mapping).toMatchObject({ isNew: true, version: 2 })
   })
 })
 

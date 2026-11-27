@@ -5,7 +5,7 @@
 // appears on demand: the run's details and evidence from the status button, the full editor at
 // Structure from the Output pencil.
 import type { DefinitionRef, DefinitionVersion } from '#shared/features/definitions'
-import { type Step, definitionLabel } from '../features/experiment'
+import type { Step } from '../features/experiment'
 import ApplyBar from './ApplyBar.vue'
 import DesignerIcon from './DesignerIcon.vue'
 import PreviewObject from './PreviewObject.vue'
@@ -86,7 +86,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
       </template>
       <template v-else>
         <p class="flex flex-wrap items-center gap-x-2 text-sm text-slate-700">
-          <span>{{ definitionLabel(input) }}</span>
+          <span>{{ assessment.from.label }}</span>
           <span aria-hidden="true" class="text-slate-400">→</span>
           <span class="sr-only">makes</span>
           <span class="font-medium text-slate-900">{{ target.label }}</span>
@@ -102,7 +102,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
         <!-- Mapping Studio: the Mapping in a view of its own. Opening it changes nothing. -->
         <button type="button" data-edit-mapping class="mt-4 flex w-full items-center gap-2 rounded-2xl px-4 py-2.5 text-left text-sm font-medium text-accent-700 ring-1 ring-accent-200 transition hover:bg-accent-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" @click="emit('studio')">
           Edit Mapping
-          <span class="text-xs font-normal text-slate-500">· {{ definitionLabel(input) }} → {{ target.label }}</span>
+          <span class="text-xs font-normal text-slate-500">· {{ assessment.from.label }} → {{ target.label }}</span>
           <DesignerIcon name="chevron" class="ml-auto size-4 shrink-0" />
         </button>
 

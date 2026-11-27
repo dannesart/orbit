@@ -133,13 +133,13 @@ describe('The Transform’s input, chosen on purpose', () => {
   it('applies a Mapping that reads the chosen input, and comes back to it', () => {
     const initial = initialConfiguration()
     const draft = { ...draftFrom(initial), input: refOf(APPLICANT), properties: [{ name: 'fullName', piece: { kind: 'nested', path: ['home', 'city'], trim: false } as const }] }
-    expect(planApply(initial, draft)).toMatchObject({ mapping: { id: 'transform:applicant@1->full-name@1', version: 1, isNew: true }, changes: true })
+    expect(planApply(initial, draft, WORKSPACE)).toMatchObject({ mapping: { id: 'transform:applicant@1->full-name@1', version: 1, isNew: true }, changes: true })
     const applied = applyFor(initial, draft, orbitTransformV3)
     const mapping = applied.mappings.at(-1)!
     expect(mapping).toMatchObject({ from: { id: 'applicant', version: 1 }, to: { id: 'full-name', version: 1 }, properties: [{ name: 'fullName', source: path('home', 'city') }] })
     expect(inputOf(draftFrom(applied))).toEqual({ id: 'applicant', version: 1 })
     // Nothing changed since: Apply makes nothing (presentation never makes a version).
-    expect(planApply(applied, draftFrom(applied)).changes).toBe(false)
+    expect(planApply(applied, draftFrom(applied), WORKSPACE).changes).toBe(false)
   })
 
   it('offers the input choice in Structure, never changing it by itself', () => {

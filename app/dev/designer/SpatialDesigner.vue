@@ -27,7 +27,7 @@ import LeaveDialog from './LeaveDialog.vue'
 import { draftLoses, workAtRisk } from './session'
 import { appliedPreview, applyDraft, transformView } from './view'
 import { lastWorkspace, shelfOf } from '../definitions/store'
-import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput } from '../definitions/designer'
+import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput, runsIn as workspaceIn } from '../definitions/designer'
 import FocusEditor from './FocusEditor.vue'
 import MappingStudio from './MappingStudio.vue'
 import type { AppliedPreview } from './studio'
@@ -42,7 +42,7 @@ import { summarize } from './summary'
 import { READING, readingOf } from './reading'
 import { reconcile } from './switching'
 import {
-  type ApplyContext, type Configuration, type RunRecord, type TransformDraft, allDefinitions, draftFrom, findMapping, inputOf, scopeOf,
+  type ApplyContext, type Configuration, type RunRecord, type TransformDraft, allDefinitions, draftFrom, findMapping, inputIn, scopeOf,
   initialConfiguration, labelOf, outputOf,
 } from './config'
 
@@ -69,7 +69,7 @@ const featureWords = (step: FeatureStep) => (step === 'transform' ? transformOf(
 const workspace = designerWorkspace(safeDestination(useRoute().query.back), lastWorkspace())
 provide(DESIGNER_WORKSPACE, workspace)
 const offered = offeredIn(workspace, workspace ? shelfOf(workspace.id).made : [])
-const runsIn = workspace?.id ?? WORKSPACE
+const runsIn = workspaceIn(workspace)
 const requested = requestedOutput(useRoute().query.output, offered)
 const config = shallowRef<Configuration>(initialConfiguration(offered))
 /** The design's connections: which step hands on to which. Only Record A's path runs. */
@@ -111,7 +111,7 @@ const draft = shallowRef<TransformDraft>(requested ? requestedDraft(requested) :
 function requestedDraft(output: DefinitionRef): TransformDraft {
   const next: TransformDraft = { ...draftFrom(config.value), use: 'catalogue', catalogue: output }
   // At setup, before the review exists: read as the step's Transform version reads.
-  return reconcile(next, resolve(inputOf(next)) ?? A1, outputOf(config.value, next).definition, readingOf(features.value.transform, resolve))
+  return reconcile(next, inputIn(next, scope.value).definition, outputOf(config.value, next, scope.value).definition, readingOf(features.value.transform, resolve))
 }
 const history = shallowRef<TransformDraft[]>([])
 let lastEdit = 0

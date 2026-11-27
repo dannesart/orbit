@@ -6,7 +6,7 @@
 import { type Data, type DefinitionVersion, type Field, deepFreeze, refOf } from '../shared/features/definitions'
 import { type MappingFeature, orbitTransformV1, orbitTransformV2, orbitTransformV3 } from '../shared/features/features'
 import type { Expression, MappingProperty } from '../shared/features/mappings'
-import { type Configuration, type TransformDraft, draftFrom, initialConfiguration } from '../app/dev/designer/config'
+import { type Configuration, type TransformDraft, applyConfiguration, draftFrom, initialConfiguration } from '../app/dev/designer/config'
 import { toDraft } from '../app/dev/designer/parts'
 import { A1, APPLICANT, B1, PINS, WORKSPACE } from '../app/dev/features/experiment'
 
@@ -32,6 +32,9 @@ const SOURCES: Record<string, unknown> = {
   missing: prop('missing'), trimmedNick: { kind: 'call', fn: 'trim', args: [prop('nick')] }, trimmedNumber: { kind: 'call', fn: 'trim', args: [{ kind: 'literal', value: 7 }] },
   nested: { kind: 'path', path: ['contact', 'email'] }, nestedCity: { kind: 'path', path: ['home', 'city'] }, malformedPath: { kind: 'path', path: 'contact.email' },
   unknownKind: { kind: 'regex' }, malformedCall: { kind: 'call', fn: 'trim', args: [{ kind: 'nonsense' }] }, unchosenCopy: { kind: 'copy', from: null },
+  // Inside an expression's list: a nested read (a capability flat versions lack), and a malformed one.
+  listedNested: { kind: 'call', fn: 'join', args: [{ kind: 'list', items: [prop('firstName'), { kind: 'path', path: ['contact', 'email'] }] }, { kind: 'literal', value: ' ' }] },
+  listedMalformed: { kind: 'call', fn: 'join', args: [{ kind: 'list', items: [prop('firstName'), { kind: 'path', path: 'contact.email' }] }, { kind: 'literal', value: ' ' }] },
 }
 
 const INPUTS: { readonly input: DefinitionVersion; readonly data: readonly Data[] }[] = [
@@ -55,8 +58,13 @@ function propertySets(field: string): { readonly name: string; readonly properti
   ]
 }
 
+/** A Definition another workspace made: offered directly (as a caller could, bypassing any picker), it never resolves here. */
+export const SECRET = deepFreeze<DefinitionVersion>({ id: 'definition-secret', version: 1, name: 'Secret Payroll', workspaceId: 'ws-x', fields: [{ name: 'salary', type: 'string' }] })
+/** A Definition Acme made: it resolves when the step runs in Acme, and nowhere else. */
+export const ACME = deepFreeze<DefinitionVersion>({ id: 'definition-acme', version: 1, name: 'Acme label', workspaceId: 'ws-acme', fields: [{ name: 'label', type: 'string' }] })
+
 export function corpus(): Case[] {
-  const config = initialConfiguration([NICKED, NICK, MAYBE_NICK].map((definition) => ({ definition, name: definition.name, source: 'workspace' as const })))
+  const config = initialConfiguration([NICKED, NICK, MAYBE_NICK, SECRET, ACME].map((definition) => ({ definition, name: definition.name, source: 'workspace' as const })))
   const cases: Case[] = []
   for (const { input, data } of INPUTS) {
     for (const { name: outputName, output } of OUTPUTS) {
@@ -79,6 +87,20 @@ export function corpus(): Case[] {
   for (const feature of [orbitTransformV2, orbitTransformV3]) {
     cases.push({ name: `another workspace’s input (v${feature.version})`, config, draft: { ...draftFrom(config), input: theirs }, feature, workspaceId: WORKSPACE, input: A1, data: INPUTS[0]!.data })
     cases.push({ name: `another workspace’s output (v${feature.version})`, config, draft: { ...draftFrom(config), catalogue: theirs }, feature, workspaceId: WORKSPACE, input: A1, data: INPUTS[0]!.data })
+  }
+  // The Transform's own Definition chosen from the catalogue: an existing version, used as itself.
+  const own = applyConfiguration(config, { ...draftFrom(config), use: 'local', local: { name: 'Made here', fields: [{ name: 'label', type: 'string' }] }, properties: toDraft([{ name: 'label', source: SOURCES.text as Expression }]) }, { feature: orbitTransformV2, workspaceId: WORKSPACE }).config
+  // Resolution that depends on the workspace, and foreign Definitions supplied directly.
+  for (const feature of [orbitTransformV1, orbitTransformV2, orbitTransformV3]) {
+    for (const [name, source] of [['nothing', null], ['text', 'text'], ['first name', 'firstName']] as const) {
+      const properties = toDraft(source ? [{ name: 'label', source: SOURCES[source] as Expression }] : [])
+      cases.push({ name: `own output from the catalogue: ${name} (v${feature.version})`, config: own, draft: { ...draftFrom(own), use: 'catalogue', catalogue: { id: 'transform.output', version: 1 }, properties }, feature, workspaceId: WORKSPACE, input: A1, data: INPUTS[0]!.data })
+      for (const workspaceId of ['ws-acme', WORKSPACE]) {
+        cases.push({ name: `Acme’s output in ${workspaceId}: ${name} (v${feature.version})`, config, draft: { ...draftFrom(config), catalogue: refOf(ACME), properties }, feature, workspaceId, input: A1, data: INPUTS[0]!.data })
+      }
+      cases.push({ name: `a foreign output supplied directly: ${name} (v${feature.version})`, config, draft: { ...draftFrom(config), catalogue: refOf(SECRET), properties }, feature, workspaceId: WORKSPACE, input: A1, data: INPUTS[0]!.data })
+      cases.push({ name: `a foreign input supplied directly: ${name} (v${feature.version})`, config, draft: { ...draftFrom(config), input: refOf(SECRET), properties }, feature, workspaceId: WORKSPACE, input: A1, data: INPUTS[0]!.data })
+    }
   }
   // And what's applied already: nothing to apply.
   cases.push({ name: 'the applied configuration (v2)', config, draft: draftFrom(config), feature: orbitTransformV2, workspaceId: WORKSPACE, input: A1, data: INPUTS[0]!.data })

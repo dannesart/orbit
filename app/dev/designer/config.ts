@@ -41,7 +41,7 @@ export interface RunRecord {
 }
 import { A1, B1, DEFINITIONS, INITIAL_MAPPING, WORKSPACE, definitionLabel, describeDefinitionIssue, describeNamingIssues } from '../features/experiment'
 import { type DraftProperty, fromDraft, toDraft } from './parts'
-import { type DraftReview, reviewDraft } from './preview'
+import { type DraftReview, reviewDraft, unreviewed } from './preview'
 import type { Problem } from './problems'
 import { boundaryFindings, transformSupport } from './support'
 
@@ -144,17 +144,60 @@ export function draftFrom(config: Configuration): TransformDraft {
 /** Whether the local draft is that version: the same name and the same contract (order is presentation). */
 const sameStructure = (d: DefinitionVersion, local: LocalDraft) => d.name === local.name && sameFields(d.fields, local.fields)
 
-/** What the draft's output is: an existing version, or the next local version Apply would freeze. */
-export function outputOf(config: Configuration, draft: TransformDraft): { definition: DefinitionVersion; label: string; isNew: boolean } {
+/**
+ * The draft's output, resolved once, by the authority (the step's scope, scopeOf), and used by
+ * everything after it: the plan, the assessment, the review, the preview and what Apply makes.
+ *   existing    a version this workspace resolves exactly: one from the catalogue, or this
+ *               Transform's own latest version (chosen as its own output, or from the catalogue)
+ *   proposed    the next version of this Transform's own output, as Apply would make it: not a version yet
+ *   unresolved  a version the draft names that can't be resolved here, because it doesn't exist or
+ *               isn't this workspace's to use. Only the identity the draft itself names is known.
+ * `definition` is the resolved version (placed as it will run), the proposed one, or, when
+ * unresolved, a contract that says nothing: that identity, no name and no properties. Nothing is ever
+ * reviewed, previewed or checked against it; it only lets the surfaces show that nothing is known.
+ */
+export type ResolvedContract<K extends string> = {
+  readonly kind: K
+  readonly ref: DefinitionRef
+  readonly definition: DefinitionVersion
+  readonly label: string
+}
+export type ResolvedOutput =
+  | (ResolvedContract<'existing'> & { readonly isNew: false })
+  | (ResolvedContract<'proposed'> & { readonly isNew: true })
+  | (ResolvedContract<'unresolved'> & { readonly isNew: false })
+export type ResolvedInput = ResolvedContract<'existing'> | ResolvedContract<'unresolved'>
+
+/** A contract that can't be resolved here, as only what the draft names: never another workspace's name or properties. */
+const unresolvedContract = (ref: DefinitionRef, scope: Scope): ResolvedContract<'unresolved'> => ({
+  kind: 'unresolved', ref: refOf(ref), label: `${ref.id} · v${ref.version}`,
+  definition: deepFreeze({ id: ref.id, version: ref.version, name: '', workspaceId: scope.workspaceId, fields: [] }),
+})
+const existing = (definition: DefinitionVersion): ResolvedContract<'existing'> =>
+  ({ kind: 'existing', ref: refOf(definition), definition, label: `${definition.name} · v${definition.version}` })
+
+/** Any version a draft or a Mapping names, resolved by the authority: exactly that version, or unresolved. */
+export function contractIn(ref: DefinitionRef, scope: Scope): ResolvedInput {
+  const found = scope.resolve(ref)
+  return found ? existing(found) : unresolvedContract(ref, scope)
+}
+
+/** What the draft reads, resolved by the authority. */
+export const inputIn = (draft: TransformDraft, scope: Scope): ResolvedInput => contractIn(inputOf(draft), scope)
+
+export function outputOf(config: Configuration, draft: TransformDraft, scope: Scope): ResolvedOutput {
   if (draft.use === 'catalogue') {
-    const definition = catalogue(config.offered).find((d) => sameDefinition(d, draft.catalogue)) ?? B1
-    return { definition, label: labelOf(config, definition), isNew: false }
+    const found = scope.resolve(draft.catalogue)
+    return found ? { ...existing(found), isNew: false } : { ...unresolvedContract(draft.catalogue, scope), isNew: false }
   }
   const latest = config.locals.at(-1)
-  if (latest && sameStructure(latest, draft.local)) return { definition: latest, label: `${latest.name} · v${latest.version}`, isNew: false }
+  if (latest && sameStructure(latest, draft.local)) {
+    const found = scope.resolve(latest)
+    return found ? { ...existing(found), isNew: false } : { ...unresolvedContract(latest, scope), isNew: false }
+  }
   const version = (latest?.version ?? 0) + 1
-  const definition: DefinitionVersion = { id: LOCAL_ID, version, name: draft.local.name, workspaceId: WORKSPACE, fields: draft.local.fields }
-  return { definition, label: `${draft.local.name || 'This Transform’s output'} · v${version} (draft)`, isNew: true }
+  const definition = placed<DefinitionVersion>({ id: LOCAL_ID, version, name: draft.local.name, workspaceId: WORKSPACE, fields: draft.local.fields }, scope.workspaceId)
+  return { kind: 'proposed', ref: { id: LOCAL_ID, version }, definition, label: `${draft.local.name || 'This Transform’s output'} · v${version} (draft)`, isNew: true }
 }
 
 /** Why a local output can't be frozen as a Definition version yet, as structured problems. */
@@ -196,20 +239,32 @@ export interface Plan {
   readonly mapping: { readonly id: string; readonly version: number; readonly isNew: boolean }
   /** Whether Apply would change anything at all. */
   readonly changes: boolean
+  /**
+   * A Mapping already has the identity this one would get, but between other contracts (only possible
+   * with a hand-made Definition identity that spells another pair's). Never revised into: refused.
+   */
+  readonly taken: boolean
 }
 
-/** What Apply would do with this draft, without doing it. */
-export function planApply(config: Configuration, draft: TransformDraft): Plan {
-  const output = outputOf(config, draft)
-  const ref = refOf(output.definition)
-  const id = mappingIdFor(ref, inputOf(draft))
-  const latest = config.mappings.filter((m) => m.id === id).at(-1)
+/** What Apply would do with this draft, in the step's workspace, without doing it. */
+export function planApply(config: Configuration, draft: TransformDraft, workspaceId: string): Plan {
+  const scope = scopeOf(config, workspaceId)
+  return planFor(config, draft, inputIn(draft, scope).ref, outputOf(config, draft, scope))
+}
+
+/** The plan for exactly the contracts resolved: the input and output identities given, nothing looked up again. */
+function planFor(config: Configuration, draft: TransformDraft, from: DefinitionRef, output: ResolvedOutput): Plan {
+  const ref = output.ref
+  const id = mappingIdFor(ref, from)
+  const same = config.mappings.filter((m) => m.id === id)
+  const taken = same.some((m) => !sameDefinition(m.from, from) || !sameDefinition(m.to, ref))
+  const latest = same.at(-1)
   const properties = fromDraft(draft.properties)
   // The same Mapping when each property has the same source, in any order (order is presentation).
-  const reuse = !output.isNew && latest && sameMappingProperties(latest.properties, properties)
+  const reuse = !output.isNew && !taken && latest && sameMappingProperties(latest.properties, properties)
   const version = reuse ? latest!.version : (latest?.version ?? 0) + 1
   const changes = output.isNew || !reuse || !sameDefinition(config.output, ref) || config.mapping.id !== id || config.mapping.version !== version
-  return { output: { ref, label: output.label, isNew: output.isNew }, mapping: { id, version, isNew: !reuse }, changes }
+  return { output: { ref, label: output.label, isNew: output.isNew }, mapping: { id, version, isNew: !reuse }, changes, taken }
 }
 
 /**
@@ -258,53 +313,61 @@ export interface ApplyAssessment {
   readonly plan: Plan
   /** Everything in the way, as structured problems (problems.ts); empty when nothing is. */
   readonly problems: readonly Problem[]
+  /** What it reads and what it makes, each resolved once (inputIn, outputOf): what's assessed is what's made. */
+  readonly from: ResolvedInput
+  readonly target: ResolvedOutput
+  /** The input's contract (from.definition), which says nothing when unresolved. */
   readonly input: DefinitionVersion
-  readonly target: ReturnType<typeof outputOf>
+  /** The review, only against contracts that resolved; with either unresolved, nothing is reviewed (unreviewed). */
   readonly review: DraftReview
 }
 
 /**
  * The authoritative assessment, in the boundary's own order, with the boundary's own resolver for
- * the step's workspace (scopeOf): the complete pinned contracts on both sides (every reference,
- * optional or not, read by the Mapping or not: checkContract; the Transform's own new output exactly
- * as making it would check it: versionIssues), the output's structure, the draft reviewed with the
- * step's Transform version (its contracts, its absence rule, its sources, the output's completeness at
- * every level), and, once that review is clean, that version's own pre-run check of the complete
- * Mapping (mappingCompatibility). States come from the problems' categories, never from their words.
+ * the step's workspace (scopeOf), each contract resolved exactly once (inputIn, outputOf): the
+ * complete pinned contracts on both sides (every reference, optional or not, read by the Mapping or
+ * not: checkContract; the Transform's own new output exactly as making it would check it:
+ * versionIssues), the output's structure, the draft reviewed with the step's Transform version (its
+ * contracts, its absence rule, its sources, the output's completeness at every level), and that
+ * version's own pre-run check of the complete Mapping (mappingCompatibility).
+ *
+ * That pre-run check is an intentional backstop. Today the review finds everything it finds (it asks
+ * the same domain checks, property by property and for completeness), so it only adds a problem when
+ * the review is clean and the two disagree, which nothing currently reaches: removing it alone
+ * changes no outcome. It stays because it is the version's own, exact refusal: should the review ever
+ * miss something (a change in how it asks), Apply still never accepts what that version refuses. The
+ * guarantee is tested as a guarantee (apply-guarantee.test.ts), so the tests fail only when both fail.
+ *
+ * With a contract unresolved, nothing is reviewed: not against it, and not against a stand-in.
+ * States come from the problems' categories, never from their words.
  */
 export function assessApply(config: Configuration, draft: TransformDraft, context: ApplyContext): ApplyAssessment {
-  const plan = planApply(config, draft)
   const scope = scopeOf(config, context.workspaceId)
+  const from = inputIn(draft, scope)
+  const target = outputOf(config, draft, scope)
+  const plan = planFor(config, draft, from.ref, target)
   const contract = (words: string): Problem => ({ kind: 'contract', category: 'unresolved', at: null, index: null, words, short: words })
-  const drafted = outputOf(config, draft)
-  // Exactly the versions a run here would resolve: another workspace's is one that can't be found.
-  const known = scope.resolve(inputOf(draft))
-  const made = draft.use === 'local' ? placed(drafted.definition, scope.workspaceId) : scope.resolve(draft.catalogue)
-  const input = known ?? placed(A1, scope.workspaceId)
-  const target = { ...drafted, definition: made ?? placed(drafted.definition, scope.workspaceId) }
   const described = (prefix: string) => (i: DefinitionIssue) => `${prefix}: ${describeDefinitionIssue(i, scope.label)}`
   const contracts: Problem[] = [
-    ...(known ? checkContract(known, scope.resolve).map(described('What it reads')).map(contract) : [contract('The input Definition version can’t be found here.')]),
-    ...(!made ? [contract('The output Definition version can’t be found here.')]
-      : draft.use === 'catalogue' ? checkContract(made, scope.resolve).map(described('What it makes')).map(contract)
+    ...(from.kind === 'unresolved' ? [contract('The input Definition version can’t be found here.')] : checkContract(from.definition, scope.resolve).map(described('What it reads')).map(contract)),
+    ...(target.kind === 'unresolved' ? [contract('The output Definition version can’t be found here.')]
+      : target.kind === 'existing' ? checkContract(target.definition, scope.resolve).map(described('What it makes')).map(contract)
       // The Transform's own output, as making it would check it (defineVersion), so making it can't fail.
       // Names at its top level are the structure's (structureFindings); everything else is here.
-        : versionIssues(made, scope.resolve).filter((i) => !(NAMING.has(i.problem) && i.path.length === 1)).map((i): Problem => {
+        : versionIssues(target.definition, scope.resolve).filter((i) => !(NAMING.has(i.problem) && i.path.length === 1)).map((i): Problem => {
           const words = described('What it makes')(i)
           return REFERENCE.has(i.problem) ? contract(words) : { kind: 'structure', category: 'invalid', at: null, index: null, words, short: words }
         })),
   ]
+  const taken: Problem[] = plan.taken ? [{ kind: 'structure', category: 'invalid', at: null, index: null, words: 'Another Mapping already has the identity this one would get.', short: 'Another Mapping already has this identity.' }] : []
   const properties = fromDraft(draft.properties)
-  const review = reviewDraft(properties, input, target.definition, target.label, transformSupport(input, target.definition, context.feature, scope.resolve))
-  const refused = review.findings.length ? [] : boundaryFindings(context.feature, properties, input, target.definition, scope.resolve)
-  const problems: Problem[] = [
-    ...contracts, ...structureFindings(draft),
-    // A review against a contract that can't be found would be about some other contract.
-    ...(known && made ? [...review.findings, ...refused] : []),
-  ]
+  const resolved = from.kind !== 'unresolved' && target.kind !== 'unresolved'
+  const review = resolved ? reviewDraft(properties, from.definition, target.definition, target.label, transformSupport(from.definition, target.definition, context.feature, scope.resolve)) : unreviewed(properties)
+  const refused = resolved && !review.findings.length ? boundaryFindings(context.feature, properties, from.definition, target.definition, scope.resolve) : []
+  const problems: Problem[] = [...contracts, ...structureFindings(draft), ...taken, ...review.findings, ...refused]
   const has = (c: Problem['category']) => problems.some((p) => p.category === c)
   const state: ApplyState = has('unresolved') ? 'unresolved' : has('invalid') ? 'invalid' : has('incompatible') ? 'incompatible' : has('unfinished') ? 'incomplete' : plan.changes ? 'applicable' : 'unchanged'
-  return { state, plan, problems, input, target, review }
+  return { state, plan, problems, from, target, input: from.definition, review }
 }
 
 const NAMING: ReadonlySet<string> = new Set(['empty_name', 'surrounding_whitespace', 'duplicate_name', 'differs_only_by_case', 'equivalent_unicode'])
@@ -328,7 +391,7 @@ export type ApplyResult =
 export function applyConfiguration(config: Configuration, draft: TransformDraft, context: ApplyContext): ApplyResult {
   const assessment = assessApply(config, draft, context)
   if (!canApply(assessment)) return { applied: false, config, assessment }
-  return { applied: true, config: commit(config, draft, assessment.plan, scopeOf(config, context.workspaceId)), assessment }
+  return { applied: true, config: commit(config, draft, assessment, scopeOf(config, context.workspaceId)), assessment }
 }
 
 /**
@@ -337,13 +400,13 @@ export function applyConfiguration(config: Configuration, draft: TransformDraft,
  * programming error, and it's left to surface rather than passed off as a refusal. Nothing is changed
  * before everything is made (new lists, never edits), so a throw leaves the configuration as it was.
  */
-function commit(config: Configuration, draft: TransformDraft, plan: Plan, scope: Scope): Configuration {
+function commit(config: Configuration, draft: TransformDraft, assessment: ApplyAssessment, scope: Scope): Configuration {
+  const { plan, from, target } = assessment
   let locals = config.locals
-  if (plan.output.isNew) {
-    const local: DefinitionVersion = { id: LOCAL_ID, version: plan.output.ref.version, name: draft.local.name, workspaceId: WORKSPACE, fields: draft.local.fields }
-    // Made exactly as it will be resolved where it runs (placed there), and kept as the scaffolding it is.
-    const made = defineVersion(placed(local, scope.workspaceId), scope.resolve)
-    locals = [...locals, made.workspaceId === local.workspaceId ? made : deepFreeze({ ...made, workspaceId: local.workspaceId })]
+  if (target.kind === 'proposed') {
+    // Exactly the proposed version assessed, made as it will be resolved where it runs, kept as the scaffolding it is.
+    const made = defineVersion(target.definition, scope.resolve)
+    locals = [...locals, made.workspaceId === WORKSPACE ? made : deepFreeze({ ...made, workspaceId: WORKSPACE })]
   }
   let mappings = config.mappings
   if (plan.mapping.isNew) {
@@ -351,11 +414,15 @@ function commit(config: Configuration, draft: TransformDraft, plan: Plan, scope:
     const latest = config.mappings.filter((m) => m.id === plan.mapping.id).at(-1)
     const next: Mapping = latest
       ? reviseMapping(latest, properties)
-      : deepFreeze({ id: plan.mapping.id, version: 1, workspaceId: WORKSPACE, from: refOf(inputOf(draft)), to: plan.output.ref, properties: frozenCopy(properties) })
+      : deepFreeze({ id: plan.mapping.id, version: 1, workspaceId: WORKSPACE, from: from.ref, to: target.ref, properties: frozenCopy(properties) })
+    // Exactly the contracts assessed, or nothing: anything else here is a programming error, never a quiet substitution.
+    if (!sameDefinition(next.from, from.ref) || !sameDefinition(next.to, target.ref)) {
+      throw new Error(`Apply would make Mapping ${next.id}@${next.version} for other contracts than the ones assessed`)
+    }
     mappings = [...config.mappings, next]
   }
   return {
     ...(config.offered ? { offered: config.offered } : {}),
-    locals, mappings, output: plan.output.ref, mapping: { id: plan.mapping.id, version: plan.mapping.version },
+    locals, mappings, output: target.ref, mapping: { id: plan.mapping.id, version: plan.mapping.version },
   }
 }

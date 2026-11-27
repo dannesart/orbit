@@ -138,7 +138,7 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
         <span class="flex h-7 min-w-7 items-center justify-center rounded-full bg-accent-600 px-2 text-xs font-semibold text-white" aria-hidden="true">2</span>
         <div class="min-w-0">
           <h1 id="studio-heading" ref="heading" tabindex="-1" class="truncate text-base leading-tight font-semibold text-slate-900 outline-none">Mapping</h1>
-          <p class="truncate text-xs text-slate-500" data-studio-contracts>{{ label(inputOf(draft)) }} → {{ target.label }}<template v-if="plan.changes"> · <span class="font-medium text-amber-700">unapplied changes</span></template></p>
+          <p class="truncate text-xs text-slate-500" data-studio-contracts>{{ assessment.from.label }} → {{ target.label }}<template v-if="plan.changes"> · <span class="font-medium text-amber-700">unapplied changes</span></template></p>
         </div>
       </div>
       <div ref="tabs" class="flex w-full rounded-full bg-slate-100 p-1 sm:w-auto" role="tablist" aria-label="What you’re looking at" @keydown="onTabKey">
@@ -209,10 +209,10 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
             <section :class="[panel, 'lg:col-start-1 lg:row-start-1', pane === 'input' ? '' : 'max-lg:hidden']" aria-labelledby="studio-input-heading" data-studio-input>
               <div class="mb-3 flex flex-wrap items-baseline gap-x-2" data-input-root>
                 <h2 id="studio-input-heading" class="text-sm font-semibold text-slate-900">Input</h2>
-                <span class="text-xs text-slate-500">{{ label(inputOf(draft)) }}</span>
+                <span class="text-xs text-slate-500">{{ assessment.from.label }}</span>
               </div>
               <StudioInputTree :nodes="inputs" :label="versionWords" :highlight="reads" />
-              <p v-if="!inputs.length" class="text-sm text-slate-500">It has no properties.</p>
+              <p v-if="!inputs.length" class="text-sm text-slate-500">{{ assessment.from.kind === 'unresolved' ? 'It can’t be found here.' : 'It has no properties.' }}</p>
             </section>
 
             <section :class="[panel, 'lg:col-start-3 lg:row-start-1', pane === 'output' ? '' : 'max-lg:hidden']" aria-labelledby="studio-output-heading" data-studio-output>
@@ -222,7 +222,7 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
                 <span class="ml-auto shrink-0 text-xs text-slate-500" :aria-label="`${mapped} of ${needed} mapped`">{{ mapped }}/{{ needed }}</span>
               </div>
               <StudioOutputTree :nodes="outputs" :label="versionWords" :selected="selected" class="-mx-2" @open="open" />
-              <p v-if="!outputs.length" class="text-sm text-slate-500">The output has no properties yet. Add some in General.</p>
+              <p v-if="!outputs.length" class="text-sm text-slate-500">{{ assessment.target.kind === 'unresolved' ? 'The output Definition version can’t be found here.' : 'The output has no properties yet. Add some in General.' }}</p>
           <div v-if="review.extras.length" class="mt-4 rounded-2xl bg-amber-50/70 p-3 text-sm ring-1 ring-amber-200" data-studio-extras>
             <p class="font-medium text-slate-900">{{ review.extras.length === 1 ? 'One mapping has' : `${review.extras.length} mappings have` }} no property to fill</p>
             <ul class="mt-1 flex flex-col gap-1">
@@ -275,6 +275,7 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
         :output="output"
         :example="example"
         :input="input"
+        :input-label="assessment.from.label"
         :applied="applied"
         :step="step"
         :stale="stale"

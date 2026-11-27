@@ -5,10 +5,10 @@
 // it a new Mapping), so it lives apart from mapping values and says so.
 import { type DefinitionRef, type DefinitionVersion, type FieldType, type PropertyType, sameDefinition } from '#shared/features/definitions'
 import { A1, DEFINITIONS, WORKSPACE, definitionLabel, shapeOf } from '../features/experiment'
-import { type Configuration, type TransformDraft, catalogue, findDefinition, inputOf, labelOf, outputOf } from './config'
+import { type Configuration, type TransformDraft, catalogue, inputIn, inputOf, labelOf, outputOf, scopeOf } from './config'
 import { FLAT, READING } from './reading'
 import { asideReason, reconcile } from './switching'
-import { DESIGNER_WORKSPACE, definitionsPath } from '../definitions/designer'
+import { DESIGNER_WORKSPACE, definitionsPath, runsIn } from '../definitions/designer'
 import { fromPiece, removeAt, replaceAt } from './parts'
 import type { DraftReview } from './preview'
 import { describeSource } from './summary'
@@ -31,17 +31,20 @@ const reading = inject(READING, ref(FLAT))
 /** Choosing another output (or input): its properties at once, with mappings that fit it and nothing else. */
 function switchTo(next: Partial<TransformDraft>) {
   const draft = { ...props.draft, ...next }
-  const input = findDefinition(props.config, inputOf(draft)) ?? A1
-  emit('update:draft', reconcile(draft, input, outputOf(props.config, draft).definition, reading.value))
+  // Resolved as the step resolves them (scopeOf): what can't be resolved here has no properties to fit.
+  const scope = scopeOf(props.config, runsIn(workspace))
+  emit('update:draft', reconcile(draft, inputIn(draft, scope).definition, outputOf(props.config, draft, scope).definition, reading.value))
 }
 /** What the Transform reads: Definition A unless another is chosen, on purpose. Never upgraded. */
-const inputs = computed(() => catalogue(props.config.offered))
+/** What can be chosen: the catalogue, as far as the step's workspace resolves it (scopeOf). */
+const choosable = computed(() => { const { resolve } = scopeOf(props.config, runsIn(workspace)); return catalogue(props.config.offered).filter((d) => resolve(d) !== null) })
+const inputs = choosable
 function setInput(key: string) {
   const d = inputs.value.find((x) => keyOf(x) === key)
   if (d) switchTo({ input: sameDefinition(d, A1) ? undefined : { id: d.id, version: d.version } })
 }
 function setCatalogue(key: string) {
-  const d = catalogue(props.config.offered).find((x) => keyOf(x) === key)
+  const d = choosable.value.find((x) => keyOf(x) === key)
   if (d) switchTo({ catalogue: { id: d.id, version: d.version } })
 }
 const aside = computed(() => (props.draft.aside ?? []).map((p) => ({
@@ -50,8 +53,10 @@ const aside = computed(() => (props.draft.aside ?? []).map((p) => ({
 // What can be chosen, by where it comes from (Experiment #7). Only what this workspace may use:
 // another workspace's Definitions aren't listed at all, not even disabled.
 const workspace = inject(DESIGNER_WORKSPACE, null)
-const made = computed(() => (props.config.offered ?? []).filter((o) => o.source === 'workspace').map((o) => o.definition))
-const provided = computed(() => (props.config.offered ?? []).filter((o) => o.source === 'orbit').map((o) => o.definition))
+// Only what the step's workspace resolves (the authority's rule, scopeOf), whatever was offered.
+const usable = computed(() => { const { resolve } = scopeOf(props.config, runsIn(workspace)); return (props.config.offered ?? []).filter((o) => resolve(o.definition) !== null) })
+const made = computed(() => usable.value.filter((o) => o.source === 'workspace').map((o) => o.definition))
+const provided = computed(() => usable.value.filter((o) => o.source === 'orbit').map((o) => o.definition))
 const samples = DEFINITIONS.filter((d) => d.workspaceId === WORKSPACE)
 const chosenSource = computed(() => props.config.offered?.find((o) => keyOf(o.definition) === keyOf(props.draft.catalogue))?.source ?? 'sample')
 const latestLocal = computed(() => props.config.locals.at(-1))

@@ -10,7 +10,7 @@ import { orbitConsole } from '../shared/features/features'
 import { A1, B1, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
 import {
   type Configuration, type Offered, type TransformDraft, allDefinitions, draftFrom, findMapping,
-  initialConfiguration, outputOf, planApply,
+  initialConfiguration, outputOf, planApply, scopeOf,
 } from '../app/dev/designer/config'
 import { type Piece, fromDraft, toPiece } from '../app/dev/designer/parts'
 import { reviewDraft } from '../app/dev/designer/preview'
@@ -31,9 +31,9 @@ const offered: Offered[] = [CONTACT, BADGE, LOOKALIKE].map((definition) => ({ de
 /** What choosing a Definition in Structure does: the draft reconciled against it. */
 function choose(config: Configuration, draft: TransformDraft, d: DefinitionVersion): TransformDraft {
   const next: TransformDraft = { ...draft, use: 'catalogue', catalogue: refOf(d) }
-  return reconcile(next, A1, outputOf(config, next).definition)
+  return reconcile(next, A1, outputOf(config, next, scopeOf(config, WORKSPACE)).definition)
 }
-const review = (config: Configuration, draft: TransformDraft) => reviewDraft(fromDraft(draft.properties), A1, outputOf(config, draft).definition)
+const review = (config: Configuration, draft: TransformDraft) => reviewDraft(fromDraft(draft.properties), A1, outputOf(config, draft, scopeOf(config, WORKSPACE)).definition)
 const named = (draft: TransformDraft, name: string) => draft.properties.find((p) => p.name === name)
 const names = (list: TransformDraft['properties'] | undefined) => (list ?? []).map((p) => p.name)
 function run(config: Configuration) {
@@ -47,7 +47,7 @@ describe('Choosing another output Definition', () => {
 
   it('shows the chosen Definition’s properties at once, keeps a mapping that genuinely fits, and leaves the rest unmapped', () => {
     const contact = choose(config, start, CONTACT)
-    expect(outputOf(config, contact).definition.fields.map((f) => f.name)).toEqual(['fullName', 'email', 'subscribed'])
+    expect(outputOf(config, contact, scopeOf(config, WORKSPACE)).definition.fields.map((f) => f.name)).toEqual(['fullName', 'email', 'subscribed'])
     // Same name, and it makes text where Contact wants text: kept, exactly (the same object).
     expect(named(contact, 'fullName')).toBe(start.properties[0])
     // New required properties: unmapped. Nothing is made up for them.
@@ -118,7 +118,7 @@ describe('Applying after a switch', () => {
     draft = { ...draft, properties: [...draft.properties, { name: 'email', piece: piece(prop('lastName')) }, { name: 'subscribed', piece: { kind: 'literal', value: false } }] }
     expect(names(draft.aside)).toEqual(['code'])
 
-    const plan = planApply(config, draft)
+    const plan = planApply(config, draft, WORKSPACE)
     expect(plan).toMatchObject({ output: { ref: refOf(CONTACT), isNew: false }, mapping: { id: `transform:${CONTACT.id}@1`, version: 1, isNew: true }, changes: true })
     const applied = applyFor(config, draft)
     const made = findMapping(applied, applied.mapping)!
@@ -139,7 +139,7 @@ describe('Applying after a switch', () => {
   it('switching back to the applied Definition and its mappings has nothing to apply', () => {
     const config = initialConfiguration(offered)
     const back = choose(config, choose(config, draftFrom(config), BADGE), B1)
-    expect(planApply(config, back).changes).toBe(false)
+    expect(planApply(config, back, WORKSPACE).changes).toBe(false)
   })
 })
 

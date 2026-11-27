@@ -77,8 +77,8 @@ const fit = computed(() => (!props.output.fits || 'problem' in props.example || 
     <!-- An actual mismatch stays in view; a good fit is said only on demand (above). -->
     <p v-if="fit === false" class="mt-1.5 text-xs text-red-700">{{ target.label }} wouldn’t accept this: {{ output.fits!.issues.join(' ') }}</p>
     <!-- Not a result: what each value reads, and why a run would refuse it -->
-    <p v-if="output.kind === 'illustration' && !('problem' in example)" class="mt-1.5 text-xs" :class="output.refused.length ? 'text-red-700' : 'text-slate-500'" data-preview-illustration>
-      An illustration, not a result.<template v-if="output.refused.length"> This Transform version would refuse the Mapping before running: {{ output.refused.join(' ') }}</template>
+    <p v-if="output.kind === 'illustration' && (output.unresolved || !('problem' in example))" class="mt-1.5 text-xs" :class="output.refused.length ? 'text-red-700' : 'text-slate-500'" data-preview-illustration>
+      An illustration, not a result.<template v-if="output.unresolved"> A Definition it depends on can’t be found here, so nothing was checked against it.</template><template v-if="output.refused.length"> This Transform version would refuse the Mapping before running: {{ output.refused.join(' ') }}</template>
     </p>
   </div>
 </template>

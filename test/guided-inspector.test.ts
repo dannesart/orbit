@@ -85,7 +85,7 @@ describe('The minimal inspector: a tool, not a report', () => {
   })
 
   it('shows input → output with exact versions, without “Reads” and “makes”', () => {
-    expect(inspector).toMatch(/<span>\{\{ definitionLabel\(input\) \}\}<\/span>\s*<span aria-hidden="true"[^>]*>→<\/span>\s*<span class="sr-only">makes<\/span>\s*<span[^>]*>\{\{ target\.label \}\}<\/span>/)
+    expect(inspector).toMatch(/<span>\{\{ assessment\.from\.label \}\}<\/span>\s*<span aria-hidden="true"[^>]*>→<\/span>\s*<span class="sr-only">makes<\/span>\s*<span[^>]*>\{\{ target\.label \}\}<\/span>/)
     expect(inspector).not.toMatch(/>Reads</)
     expect(inspector.replace('<span class="sr-only">makes</span>', '')).not.toMatch(/>makes</)
   })

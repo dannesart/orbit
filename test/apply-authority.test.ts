@@ -2,7 +2,7 @@
 // draft may be applied; every Apply surface shows it (canApply), and the Apply operation enforces it
 // itself, so calling it directly can't make a Mapping version from an invalid, incompatible or
 // incomplete draft. A refusal leaves the applied configuration and every version exactly as they were.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { defineVersion, refOf } from '../shared/features/definitions'
 import { type MappingFeature, orbitTransformV1, orbitTransformV2, orbitTransformV3 } from '../shared/features/features'
 import { APPLICANT, WORKSPACE } from '../app/dev/features/experiment'
@@ -13,6 +13,9 @@ import type { Piece } from '../app/dev/designer/parts'
 import { studioStatus } from '../app/dev/designer/studio'
 import { stepOf } from './apply'
 import { SURFACES, applyButtons, renderSurface } from './surfaces'
+
+// These render real components many times over: under a full, parallel run that can take longer than the 5 s default.
+vi.setConfig({ testTimeout: 60_000 })
 
 const field = (name: string): Piece => ({ kind: 'field', name, trim: false })
 const NICKNAMED = defineVersion({ id: 'nicknamed', version: 1, name: 'Nicknamed', workspaceId: WORKSPACE, fields: [{ name: 'firstName', type: 'string' }, { name: 'nickname', type: 'string', optional: true }] })

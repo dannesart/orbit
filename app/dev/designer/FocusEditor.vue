@@ -123,7 +123,7 @@ const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visib
             <PropertyEditor v-else :output="target.definition" :draft="draft" :field="selected" :review="review" :input="input" :example="example" @update:draft="emit('update:draft', $event)" />
           </section>
           <p v-else-if="selected" class="text-sm text-slate-500">This property has no name yet. Name it in Structure first.</p>
-          <p v-else class="text-sm text-slate-500">The output has no properties yet. Add some in Structure.</p>
+          <p v-else class="text-sm text-slate-500">{{ assessment.target.kind === 'unresolved' ? 'The output Definition version can’t be found here.' : 'The output has no properties yet. Add some in Structure.' }}</p>
           <PreviewObject :draft="draft" :target="target" :review="review" :output="output" :example="example" :problems="problems.length" />
         </div>
       </div>

@@ -219,6 +219,15 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
 }
 
 /**
+ * No review: a contract it would be reviewed against can't be resolved, so nothing about the
+ * Mapping can be judged (not against that contract, and not against a stand-in). Says nothing about
+ * any property: no fields, no places, no problems. The assessment says why (a contract problem).
+ */
+export function unreviewed(properties: readonly MappingProperty[]): DraftReview {
+  return { fields: [], extras: [], issues: properties.map(() => []), findings: [], problems: [], missing: [], errors: [], unsupported: null }
+}
+
+/**
  * The output's completeness problems at its top level, from the domain's whole-Mapping check
  * (checkNestedMapping, which checks each object against its contract): required properties nothing
  * makes, values of the wrong type, properties the output doesn't have, and names missing or repeated.
@@ -258,6 +267,18 @@ export interface OutputPreview {
   readonly refused: readonly string[]
   /** Only for a transformation: whether the result fits the target Definition. */
   readonly fits: { readonly issues: readonly string[] } | null
+  /** An illustration because a contract it depends on can't be resolved here: nothing was checked against it. */
+  readonly unresolved?: true
+}
+
+/**
+ * The preview when a contract can't be resolved here: an illustration, never a result and never a
+ * fit. With the input resolved, what each source reads from the example is still independently
+ * known, so it's shown; with the input unresolved, nothing is (there's no example).
+ */
+export function unresolvedPreview(properties: readonly MappingProperty[], input: DefinitionVersion | null, example: Example, reading: Reading = FLAT): OutputPreview {
+  const values = properties.map((p): ValuePreview => (input ? previewSource(p.source, input, example, reading) : { noExample: true }))
+  return { values, kind: 'illustration', refused: [], fits: null, unresolved: true }
 }
 
 /**

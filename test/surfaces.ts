@@ -10,7 +10,8 @@ import type { ApplyContext, Configuration, TransformDraft } from '../app/dev/des
 const AUTO_IMPORTED = ['computed', 'ref', 'shallowRef', 'reactive', 'readonly', 'toRef', 'inject', 'provide', 'watch', 'watchEffect', 'nextTick', 'onMounted', 'onBeforeUnmount', 'onUnmounted', 'useId', 'useTemplateRef'] as const
 for (const name of AUTO_IMPORTED) (globalThis as Record<string, unknown>)[name] ??= vue[name]
 
-export type SurfaceName = 'inspector' | 'focused editor' | 'Mapping Studio'
+/** Each place the page shows the Transform's draft: the three with Apply, and Mapping Studio's Preview (shown on its own segment). */
+export type SurfaceName = 'inspector' | 'focused editor' | 'Mapping Studio' | 'Studio preview'
 export const SURFACES: readonly SurfaceName[] = ['inspector', 'focused editor', 'Mapping Studio']
 
 /** The surface, rendered as the page renders it for this configuration, draft and step. */
@@ -27,7 +28,10 @@ export async function renderSurface(surface: SurfaceName, config: Configuration,
     ? [(await import('../app/dev/designer/TransformInspector.vue')).default, { ...common, badge: 'Step 2', step: null, stale: false, runNumber: 0, runs: [], featureKey: '', versions: [] }]
     : surface === 'focused editor'
       ? [(await import('../app/dev/designer/FocusEditor.vue')).default, { ...common, mode: 'mapping', property: null }]
-      : [(await import('../app/dev/designer/MappingStudio.vue')).default, { ...common, boundary: view.boundary, feature: `Transform v${step.feature.version}`, applied: appliedPreview(config, step, recordText), step: null, stale: false, runNumber: 0, runs: [] }]
+      : surface === 'Mapping Studio'
+        ? [(await import('../app/dev/designer/MappingStudio.vue')).default, { ...common, boundary: view.boundary, feature: `Transform v${step.feature.version}`, applied: appliedPreview(config, step, recordText), step: null, stale: false, runNumber: 0, runs: [] }]
+        // As MappingStudio passes it its props.
+        : [(await import('../app/dev/designer/StudioPreview.vue')).default, { draft, config, target: view.target, review: view.review, output: view.output, example: view.example, input: view.input, inputLabel: view.assessment.from.label, applied: appliedPreview(config, step, recordText), step: null, stale: false, runNumber: 0, runs: [] }]
   const app = vue.createSSRApp(component, props)
   app.provide(READING, vue.ref(view.reading))
   app.component('NuxtLink', (_: unknown, { slots }: vue.SetupContext) => vue.h('a', slots.default?.()))

@@ -67,9 +67,9 @@ describe('Going to Mapping Studio and back', () => {
     const start = initialConfiguration()
     const draft = { ...draftFrom(start), use: 'catalogue' as const, catalogue: refOf(A1), properties: [{ name: 'firstName', piece: field('firstName') }, { name: 'lastName', piece: field('lastName') }] }
     const applied = applyFor(start, draft)
-    expect(planApply(applied, draft).changes).toBe(false)
-    expect(planApply(applied, { ...draft, properties: [...draft.properties].reverse() }).changes).toBe(false)
-    expect(planApply(applied, { ...draft, properties: [draft.properties[0]!, { name: 'lastName', piece: field('firstName') }] }).changes).toBe(true)
+    expect(planApply(applied, draft, WORKSPACE).changes).toBe(false)
+    expect(planApply(applied, { ...draft, properties: [...draft.properties].reverse() }, WORKSPACE).changes).toBe(false)
+    expect(planApply(applied, { ...draft, properties: [draft.properties[0]!, { name: 'lastName', piece: field('firstName') }] }, WORKSPACE).changes).toBe(true)
     expect(applyFor(applied, { ...draft, properties: [...draft.properties].reverse() })).toBe(applied)
   })
 })
