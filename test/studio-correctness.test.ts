@@ -6,11 +6,12 @@ import { describe, expect, it } from 'vitest'
 import { refOf } from '../shared/features/definitions'
 import { orbitTransformV3 } from '../shared/features/features'
 import { APPLICANT, DEFINITIONS } from '../app/dev/features/experiment'
-import { applyConfiguration, draftFrom, initialConfiguration } from '../app/dev/designer/config'
+import { type TransformDraft, draftFrom, initialConfiguration } from '../app/dev/designer/config'
 import { type DraftProperty, type Piece, fromDraft } from '../app/dev/designer/parts'
 import { reviewDraft } from '../app/dev/designer/preview'
 import { draftAfterApply, draftLoses } from '../app/dev/designer/session'
 import { transformSupport } from '../app/dev/designer/support'
+import { applyFor } from './apply'
 
 const resolve = (r: { id: string; version: number }) => DEFINITIONS.find((d) => d.id === r.id && d.version === r.version) ?? null
 const field = (name: string): Piece => ({ kind: 'field', name, trim: false })
@@ -19,10 +20,14 @@ const review = (draft: DraftProperty[]) => reviewDraft(fromDraft(draft), APPLICA
 
 describe('Discarding after Apply asks only about what someone wrote', () => {
   const start = initialConfiguration()
-  const switched = { ...draftFrom(start), catalogue: refOf(APPLICANT), properties: [{ name: 'firstName', piece: field('firstName') }] }
+  // A complete Applicant draft, input and output alike, for Transform v3 (the only version that takes Applicant).
+  const switched: TransformDraft = {
+    ...draftFrom(start), input: refOf(APPLICANT), catalogue: refOf(APPLICANT),
+    properties: [{ name: 'firstName', piece: field('firstName') }, { name: 'lastName', piece: field('lastName') }, { name: 'home', piece: { kind: 'copy', from: ['home'] } }],
+  }
 
   it('lets an untouched own output follow what’s applied, so Cancel doesn’t warn about it', () => {
-    const after = applyConfiguration(start, switched)
+    const after = applyFor(start, switched, orbitTransformV3)
     const draft = draftAfterApply(switched, start, after)
     expect(draft.local).toEqual(draftFrom(after).local)
     expect(draftLoses(draft, draftFrom(after))).not.toContain('Changes to the Transform’s own output')
@@ -32,7 +37,7 @@ describe('Discarding after Apply asks only about what someone wrote', () => {
 
   it('keeps an own output someone changed, and still warns about it', () => {
     const edited = { ...switched, local: { ...switched.local, name: 'Summary' } }
-    const after = applyConfiguration(start, edited)
+    const after = applyFor(start, edited, orbitTransformV3)
     const draft = draftAfterApply(edited, start, after)
     expect(draft.local.name).toBe('Summary')
     expect(draftLoses(draft, draftFrom(after))).toContain('Changes to the Transform’s own output')

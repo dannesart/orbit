@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { refOf } from '../shared/features/definitions'
 import { A1 } from '../app/dev/features/experiment'
 import type { Piece } from '../app/dev/designer/parts'
-import { applyConfiguration, draftFrom, initialConfiguration, planApply } from '../app/dev/designer/config'
+import { draftFrom, initialConfiguration, planApply } from '../app/dev/designer/config'
+import { applyFor } from './apply'
 
 const field = (name: string): Piece => ({ kind: 'field', name, trim: false })
 const read = (p: string) => readFileSync(join(import.meta.dirname, '..', p), 'utf8')
@@ -48,21 +49,21 @@ describe('Going to Mapping Studio and back', () => {
     // Cancel is always there; Apply only for a changed, compatible draft.
     const bar = read('app/dev/designer/StudioStatusBar.vue')
     expect(bar).toMatch(/<button type="button"[^>]*data-cancel @click="emit\('cancel'\)">Cancel<\/button>/)
-    expect(bar).toContain("const canApply = computed(() => props.plan.changes && props.status.state === 'compatible')")
+    expect(bar).toContain(':disabled="!applicable" data-apply')
   })
 
   it('applies only what Apply allows everywhere: the same apply, the same checks', () => {
     expect(page).toContain('@apply="apply"')
-    expect(read('app/dev/designer/MappingStudio.vue')).toContain('studioStatus(props.plan.changes, props.findings)')
+    expect(read('app/dev/designer/MappingStudio.vue')).toContain('studioStatus(props.assessment)')
   })
 
   it('makes no version for a presentation-only change, such as the order of properties', () => {
     const start = initialConfiguration()
     const draft = { ...draftFrom(start), use: 'catalogue' as const, catalogue: refOf(A1), properties: [{ name: 'firstName', piece: field('firstName') }, { name: 'lastName', piece: field('lastName') }] }
-    const applied = applyConfiguration(start, draft)
+    const applied = applyFor(start, draft)
     expect(planApply(applied, draft).changes).toBe(false)
     expect(planApply(applied, { ...draft, properties: [...draft.properties].reverse() }).changes).toBe(false)
     expect(planApply(applied, { ...draft, properties: [draft.properties[0]!, { name: 'lastName', piece: field('firstName') }] }).changes).toBe(true)
-    expect(applyConfiguration(applied, { ...draft, properties: [...draft.properties].reverse() })).toBe(applied)
+    expect(applyFor(applied, { ...draft, properties: [...draft.properties].reverse() })).toBe(applied)
   })
 })

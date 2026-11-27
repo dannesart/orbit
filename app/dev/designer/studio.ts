@@ -7,6 +7,7 @@ import { type DefinitionRef, type DefinitionVersion, type Field, MAX_OBJECT_LEVE
 import { type Argument, type Expression, type MappingProperty, objectPaths, readablePaths } from '#shared/features/mappings'
 import { type DraftProperty, type Piece, fromPiece } from './parts'
 import { type DraftReview, type Example, type OutputPreview, friendlyIssue } from './preview'
+import type { ApplyAssessment } from './config'
 import type { Problem, ProblemCategory } from './problems'
 import { type Reading, absenceWords, readables } from './reading'
 import { describeSource } from './summary'
@@ -230,13 +231,13 @@ export interface StudioStatus {
 const GENERAL: ReadonlySet<Problem['kind']> = new Set(['unsupported_contract', 'structure'])
 
 /**
- * The draft's state, from the structured problems alone (problems.ts): their categories decide it,
- * their words are only shown. Never a rule of its own.
+ * Where the draft stands, as the authoritative assessment (config.ts, assessApply) says: its state,
+ * and its structured problems as things to do. Never a rule of its own; words are only shown.
  */
-export function studioStatus(changes: boolean, problems: readonly Problem[]): StudioStatus {
+export function studioStatus(assessment: Pick<ApplyAssessment, 'state' | 'problems'>): StudioStatus {
+  const { problems } = assessment
   const item = (p: Problem): StudioItem => ({ text: p.short, at: p.kind === 'no_place' ? null : p.at, where: GENERAL.has(p.kind) ? 'general' : 'mapping', category: p.category })
-  const has = (c: ProblemCategory) => problems.some((p) => p.category === c)
-  const state: StudioState = has('invalid') ? 'invalid' : has('incompatible') ? 'incompatible' : has('unfinished') ? 'incomplete' : !changes ? 'unchanged' : 'compatible'
+  const state: StudioState = assessment.state === 'applicable' ? 'compatible' : assessment.state
   return { state, problems: problems.filter((p) => p.category !== 'unfinished').map(item), todo: problems.filter((p) => p.category === 'unfinished').map(item) }
 }
 

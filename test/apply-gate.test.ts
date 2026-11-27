@@ -1,15 +1,15 @@
 // Phase 4.5A, part E: the Designer's top-level completeness is the domain's rule, not its own, and
 // Apply also asks the step's Transform version, as the boundary does before running, whether it
 // would accept the complete draft.
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { defineVersion } from '../shared/features/definitions'
+import { defineVersion, refOf } from '../shared/features/definitions'
 import { orbitTransformV1, orbitTransformV2, orbitTransformV3 } from '../shared/features/features'
 import type { MappingProperty } from '../shared/features/mappings'
 import { A1, APPLICANT, B1, DEFINITIONS, WORKSPACE } from '../app/dev/features/experiment'
 import { completeness, reviewDraft } from '../app/dev/designer/preview'
 import { boundaryProblems, transformSupport } from '../app/dev/designer/support'
+import { applyConfiguration, draftFrom, initialConfiguration } from '../app/dev/designer/config'
+import { stepOf } from './apply'
 
 const resolve = (r: { id: string; version: number }) => DEFINITIONS.find((d) => d.id === r.id && d.version === r.version) ?? null
 const prop = (name: string) => ({ kind: 'property', name }) as const
@@ -71,11 +71,13 @@ describe('Apply asks the step’s Transform version about the complete draft', (
     expect(boundaryProblems(orbitTransformV2, properties, A1, B1, resolve).length).toBeGreaterThan(0)
   })
 
-  it('is part of Apply’s own condition, and shown where Apply is', () => {
-    const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
-    expect(page).toContain('if (!plan.value.changes || structure.value.length || review.value.problems.length || boundary.value.length) return')
-    for (const f of ['TransformInspector.vue', 'FocusEditor.vue']) {
-      expect(readFileSync(join(import.meta.dirname, `../app/dev/designer/${f}`), 'utf8')).toContain(':errors="[...structure, ...review.errors, ...(boundary ?? [])]"')
-    }
+  it('is part of Apply’s own condition: Apply refuses what the version would refuse, by behaviour', () => {
+    const offered = [NICKNAMED, NICK].map((definition) => ({ definition, name: definition.name, source: 'workspace' as const }))
+    const start = initialConfiguration(offered)
+    const draft = { ...draftFrom(start), input: refOf(NICKNAMED), catalogue: refOf(NICK), properties: [{ name: 'nick', piece: { kind: 'field', name: 'nickname', trim: false } as const }] }
+    const refused = applyConfiguration(start, draft, stepOf(start, orbitTransformV1))
+    expect(refused).toMatchObject({ applied: false, assessment: { state: 'incompatible' } })
+    expect(refused.config).toBe(start)
+    expect(applyConfiguration(start, draft, stepOf(start, orbitTransformV2)).applied).toBe(true)
   })
 })

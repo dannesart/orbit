@@ -39,13 +39,13 @@ import {
 } from './flow'
 import { summarize } from './summary'
 import { fromDraft } from './parts'
-import { exampleFrom, previewOutput, reviewDraft } from './preview'
-import { boundaryFindings, transformSupport } from './support'
+import { exampleFrom, previewOutput } from './preview'
+import { transformSupport } from './support'
 import { READING, readingOf } from './reading'
 import { reconcile } from './switching'
 import {
-  type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findDefinition, findMapping, inputOf,
-  initialConfiguration, labelOf, outputOf, planApply, structureFindings, structureProblems,
+  type ApplyContext, type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, assessApply, draftFrom, findDefinition, findMapping, inputOf,
+  initialConfiguration, labelOf, outputOf, structureProblems,
 } from './config'
 
 // The page's title follows where you are (Mapping Studio, below).
@@ -127,16 +127,23 @@ function undo() {
   lastEdit = 0
   draft.value = previous
 }
-const target = computed(() => outputOf(config.value, draft.value))
+/**
+ * Whether the draft may be applied, and why not: the one authoritative assessment (config.ts), made
+ * with the Transform version this step invokes. Every surface's review, problems and Apply
+ * availability come from it, and Apply itself enforces it again (applyConfiguration).
+ */
+const step = computed<ApplyContext>(() => ({ feature: features.value.transform, resolve }))
+const assessment = computed(() => assessApply(config.value, draft.value, step.value))
+const target = computed(() => assessment.value.target)
 const draftProperties = computed(() => fromDraft(draft.value.properties))
 const structure = computed(() => structureProblems(draft.value))
 /** What the draft reads: Definition A · v1 unless another was chosen in Structure. */
-const input = computed(() => findDefinition(config.value, inputOf(draft.value)) ?? A1)
+const input = computed(() => assessment.value.input)
 // Review, preview and the source picker follow the Transform version this step invokes.
 const support = computed(() => transformSupport(input.value, target.value.definition, features.value.transform, resolve))
 provide(READING, computed(() => support.value.reading!))
 const example = computed(() => exampleFrom(recordText.value, input.value, resolve))
-const review = computed(() => reviewDraft(draftProperties.value, input.value, target.value.definition, target.value.label, support.value))
+const review = computed(() => assessment.value.review)
 const output = computed(() => previewOutput(draftProperties.value, input.value, target.value.definition, example.value, support.value.reading))
 /**
  * The applied Mapping, previewed the same way with the same Record A (Mapping Studio's Preview
@@ -150,25 +157,18 @@ const applied = computed<AppliedPreview>(() => {
   const reading = readingOf(features.value.transform, resolve)
   return { version: mapping.version, label: label(mapping.to), properties: mapping.properties, input: from, target: to, example, preview: previewOutput(mapping.properties, from, to, example, reading) }
 })
-const plan = computed(() => planApply(config.value, draft.value))
+const plan = computed(() => assessment.value.plan)
+/** What the step's Transform version refuses of the complete draft (its pre-run check), in words. */
+const boundary = computed(() => assessment.value.problems.filter((p) => p.kind === 'refused').map((p) => p.words))
 /**
- * Before Apply, the complete draft is checked as the boundary checks it before running, with the
- * Transform version this step invokes (mappingCompatibility). The review already says why in its
- * own words; this is only what it might not have said, so nothing the step would refuse is applied.
- */
-const refused = computed(() => (review.value.problems.length || review.value.unsupported ? [] : boundaryFindings(features.value.transform, draftProperties.value, input.value, target.value.definition, resolve)))
-const boundary = computed(() => refused.value.map((p) => p.words))
-/** Everything that keeps the draft from being applied, as structured problems (problems.ts). */
-const findings = computed(() => [...structureFindings(draft.value), ...review.value.findings, ...refused.value])
-/**
- * The only place versions are made, and only from a sound draft: complete, with no errors, and
- * accepted by the step's Transform version as a whole. (What the boundary does with a Mapping it
- * would refuse is the list view's to show: /dev/features.)
+ * Apply: the authoritative operation decides, with the same assessment every surface shows. A refused
+ * draft changes nothing: the applied configuration, its versions and the draft stay as they are.
  */
 function apply() {
-  if (!plan.value.changes || structure.value.length || review.value.problems.length || boundary.value.length) return
   const before = config.value
-  config.value = applyConfiguration(before, draft.value)
+  const result = applyConfiguration(before, draft.value, step.value)
+  if (!result.applied) return
+  config.value = result.config
   setDraft(draftAfterApply(draft.value, before, config.value), false)
 }
 
@@ -712,7 +712,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :example="example"
         :input="input"
         :can-undo="history.length > 0"
-        :boundary="boundary"
+        :assessment="assessment"
         :step="stepOf('transform')"
         :stale="stale"
         :run-number="runNumber"
@@ -798,7 +798,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :example="example"
         :input="input"
         :can-undo="history.length > 0"
-        :boundary="boundary"
+        :assessment="assessment"
         :mode="focus.mode"
         :property="focus.property"
         @update:draft="setDraft"
@@ -826,7 +826,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           :input="input"
           :can-undo="history.length > 0"
           :boundary="boundary"
-          :findings="findings"
+          :assessment="assessment"
           :feature="featureWords('transform')"
           :applied="applied"
           :step="stepOf('transform')"

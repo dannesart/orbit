@@ -4,14 +4,16 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { defineVersion } from '../shared/features/definitions'
+import { defineVersion, refOf } from '../shared/features/definitions'
 import { orbitTransformV1, orbitTransformV2, orbitTransformV3 } from '../shared/features/features'
 import { APPLICANT, DEFINITIONS, WORKSPACE } from '../app/dev/features/experiment'
 import { type DraftProperty, type Piece, fromDraft } from '../app/dev/designer/parts'
 import { reviewDraft } from '../app/dev/designer/preview'
 import type { Problem } from '../app/dev/designer/problems'
 import { studioStatus } from '../app/dev/designer/studio'
-import { boundaryFindings, transformSupport } from '../app/dev/designer/support'
+import { transformSupport } from '../app/dev/designer/support'
+import { type TransformDraft, applyConfiguration, assessApply, draftFrom, initialConfiguration } from '../app/dev/designer/config'
+import { stepOf } from './apply'
 
 const resolve = (r: { id: string; version: number }) => DEFINITIONS.find((d) => d.id === r.id && d.version === r.version) ?? null
 const field = (name: string): Piece => ({ kind: 'field', name, trim: false })
@@ -22,14 +24,19 @@ const SOUND: DraftProperty[] = [
   { name: 'contact', piece: { kind: 'construct', presence: { when: 'present', source: ['contact'] }, properties: [{ name: 'email', piece: nested('contact', 'email') }] } },
   { name: 'home', piece: { kind: 'copy', from: ['home'] } },
 ]
-const structureProblem = (words: string): Problem => ({ kind: 'structure', category: 'invalid', at: null, index: null, words, short: words })
 const review = (draft: DraftProperty[], feature = orbitTransformV3, label = 'Applicant · v1') =>
   reviewDraft(fromDraft(draft), APPLICANT, APPLICANT, label, transformSupport(APPLICANT, APPLICANT, feature, resolve))
-const status = (draft: DraftProperty[], { changes = true, structure = [] as string[], feature = orbitTransformV3 } = {}) => {
-  const r = review(draft, feature)
-  const refused = r.findings.length ? [] : boundaryFindings(feature, fromDraft(draft), APPLICANT, APPLICANT, resolve)
-  return studioStatus(changes, [...structure.map(structureProblem), ...r.findings, ...refused])
+const start = initialConfiguration()
+/** The Studio's status for an Applicant → Applicant draft, from the authoritative assessment. */
+const status = (properties: DraftProperty[], { changes = true, unnamedOwnOutput = false, feature = orbitTransformV3 } = {}) => {
+  const draft: TransformDraft = unnamedOwnOutput
+    ? { ...draftFrom(start), input: refOf(APPLICANT), use: 'local', local: { name: '', fields: APPLICANT.fields }, properties }
+    : { ...draftFrom(start), input: refOf(APPLICANT), catalogue: refOf(APPLICANT), properties }
+  const config = changes ? start : applyConfiguration(start, draft, stepOf(start, feature)).config
+  return studioStatus(assessApply(config, draft, stepOf(config, feature)))
 }
+/** Items for a review's findings alone (the state isn't what's being looked at). */
+const items = (problems: readonly Problem[]) => studioStatus({ state: 'invalid', problems })
 const at = (items: readonly { at: readonly string[] | null; text: string }[]) => items.map((i) => `${i.at?.join(' › ') ?? '-'}: ${i.text}`)
 
 describe('Where the draft stands', () => {
@@ -55,7 +62,9 @@ describe('Where the draft stands', () => {
   })
 
   it('counts the output’s structure as invalid, in General', () => {
-    expect(status(SOUND, { structure: ['Give the output a name.'] }).problems).toEqual([{ text: 'Give the output a name.', at: null, where: 'general', category: 'invalid' }])
+    const s = status(SOUND, { unnamedOwnOutput: true })
+    expect(s.state).toBe('invalid')
+    expect(s.problems).toEqual([{ text: 'Give the output a name.', at: null, where: 'general', category: 'invalid' }])
   })
 
   it('is Incompatible, once, when the Transform version can’t take these contracts at all', () => {
@@ -69,11 +78,10 @@ describe('Where the draft stands', () => {
   it('is Incompatible when only the version’s limits are in the way: v1 can’t read an optional value', () => {
     const NICKNAMED = defineVersion({ id: 'nicknamed', version: 1, name: 'Nicknamed', workspaceId: WORKSPACE, fields: [{ name: 'nickname', type: 'string', optional: true }] })
     const NICK = defineVersion({ id: 'nick', version: 1, name: 'Nick', workspaceId: WORKSPACE, fields: [{ name: 'nick', type: 'string', optional: true }] })
-    const draft: DraftProperty[] = [{ name: 'nick', piece: field('nickname') }]
-    const r = reviewDraft(fromDraft(draft), NICKNAMED, NICK, 'Nick · v1', transformSupport(NICKNAMED, NICK, orbitTransformV1))
-    const refused = r.findings.length ? [] : boundaryFindings(orbitTransformV1, fromDraft(draft), NICKNAMED, NICK)
-    expect(studioStatus(true, [...r.findings, ...refused]).state).toBe('incompatible')
-    expect(studioStatus(true, reviewDraft(fromDraft(draft), NICKNAMED, NICK, 'Nick · v1', transformSupport(NICKNAMED, NICK, orbitTransformV2)).findings).state).toBe('compatible')
+    const config = initialConfiguration([NICKNAMED, NICK].map((definition) => ({ definition, name: definition.name, source: 'workspace' as const })))
+    const draft: TransformDraft = { ...draftFrom(config), input: refOf(NICKNAMED), catalogue: refOf(NICK), properties: [{ name: 'nick', piece: field('nickname') }] }
+    expect(studioStatus(assessApply(config, draft, stepOf(config, orbitTransformV1))).state).toBe('incompatible')
+    expect(studioStatus(assessApply(config, draft, stepOf(config, orbitTransformV2))).state).toBe('compatible')
   })
 })
 
@@ -91,15 +99,15 @@ describe('Words never decide what a problem means', () => {
     const b = review(messy, orbitTransformV3, 'Something else entirely')
     expect(a.problems).not.toEqual(b.problems)
     expect(facts(a.findings)).toEqual(facts(b.findings))
-    expect(studioStatus(true, a.findings)).toEqual({ ...studioStatus(true, b.findings), problems: expect.any(Array) })
-    expect(studioStatus(true, a.findings).problems.map((p) => [p.at, p.category])).toEqual(studioStatus(true, b.findings).problems.map((p) => [p.at, p.category]))
+    expect(items(a.findings).problems.map((p) => [p.at, p.category, p.where])).toEqual(items(b.findings).problems.map((p) => [p.at, p.category, p.where]))
+    expect(items(a.findings).todo).toEqual(items(b.findings).todo)
   })
 
   it('tells a mapping with no place apart by its reason, even when the words look alike', () => {
     // A name that starts the same way as another reason's words: once read as "not in the output".
     for (const label of ['Another value', 'It']) {
       expect(review(messy, orbitTransformV3, label).extras.map((x) => x.why)).toEqual(['duplicate', 'unnamed', 'unknown'])
-      expect(studioStatus(true, review(messy, orbitTransformV3, label).findings).problems.filter((p) => p.at === null).map((p) => p.text)).toEqual([
+      expect(items(review(messy, orbitTransformV3, label).findings).problems.filter((p) => p.at === null).map((p) => p.text)).toEqual([
         'firstName: another value already makes firstName', 'Unnamed: it has no name', `nickname: not in ${label}`,
       ])
     }

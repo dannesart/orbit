@@ -10,7 +10,7 @@ import PreviewObject from './PreviewObject.vue'
 import PropertyEditor from './PropertyEditor.vue'
 import StructureEditor from './StructureEditor.vue'
 import UnsupportedNotice from './UnsupportedNotice.vue'
-import type { Configuration, Plan, TransformDraft } from './config'
+import type { ApplyAssessment, Configuration, Plan, TransformDraft } from './config'
 import { type DraftReview, type Example, type OutputPreview, mappingWork } from './preview'
 
 const props = defineProps<{
@@ -24,8 +24,8 @@ const props = defineProps<{
   example: Example
   input: DefinitionVersion
   canUndo: boolean
-  /** What the step's Transform version would refuse in the complete draft that the review hasn't said. */
-  boundary?: readonly string[]
+  /** Whether the draft may be applied, and why not: the authoritative assessment. */
+  assessment: ApplyAssessment
   mode: 'mapping' | 'structure'
   property: string | null
 }>()
@@ -142,7 +142,7 @@ const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visib
     </div>
 
     <div class="border-t border-slate-100 px-5 pt-3 pb-4 sm:px-6">
-      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors, ...(boundary ?? [])]" :missing="review.missing" :unsupported="review.unsupported" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
+      <ApplyBar :plan="plan" :config="config" :draft="draft" :assessment="assessment" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
     </div>
   </div>
 </template>

@@ -70,6 +70,8 @@ describe('A composed output in the Designer', () => {
     const bar = readFileSync(join(root, 'app/dev/designer/ApplyBar.vue'), 'utf8')
     expect(preview).toMatch(/<span v-if="r\.unsupported"[^>]*>not supported by this Transform version<\/span>\s*<ShownText v-else-if/)
     expect(bar).toMatch(/<span v-if="unsupported"[^>]*>Apply isn’t available: this Transform version doesn’t support these contracts\.<\/span>\s*<span v-else-if="errors\.length"/)
-    for (const f of ['TransformInspector.vue', 'FocusEditor.vue']) expect(readFileSync(join(root, 'app/dev/designer', f), 'utf8')).toContain(':unsupported="review.unsupported"')
+    // The bar reads it from the assessment's structured problems (kind unsupported_contract), never from words.
+    expect(bar).toContain("const unsupported = computed(() => props.assessment.problems.some((p) => p.kind === 'unsupported_contract'))")
+    for (const f of ['TransformInspector.vue', 'FocusEditor.vue']) expect(readFileSync(join(root, 'app/dev/designer', f), 'utf8')).toContain(':assessment="assessment"')
   })
 })

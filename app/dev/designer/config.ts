@@ -15,10 +15,10 @@
 //   identity it always had; one from another input has its own.
 //   Nothing here changes the domain; it only decides which immutable versions to make.
 import {
-  type DefinitionRef, type DefinitionVersion, type Field, checkPropertyNames, deepFreeze, defineVersion, frozenCopy, refOf, sameDefinition, sameFields, visibleIn,
+  type DefinitionRef, type DefinitionVersion, type Field, type Resolve, checkPropertyNames, deepFreeze, defineVersion, frozenCopy, refOf, sameDefinition, sameFields, visibleIn,
 } from '#shared/features/definitions'
 import { type Mapping, type MappingProperty, reviseMapping, sameMappingProperties } from '#shared/features/mappings'
-import type { FeatureRef, Outcome } from '#shared/features/features'
+import type { FeatureRef, MappingFeature, Outcome } from '#shared/features/features'
 import type { StepId } from './flow'
 
 /** One run, as the Transform step's evidence recorded it: exact versions, never the draft. */
@@ -39,7 +39,9 @@ export interface RunRecord {
 }
 import { A1, B1, DEFINITIONS, INITIAL_MAPPING, WORKSPACE, definitionLabel, describeNamingIssues } from '../features/experiment'
 import { type DraftProperty, fromDraft, toDraft } from './parts'
+import { type DraftReview, reviewDraft } from './preview'
 import type { Problem } from './problems'
+import { boundaryFindings, transformSupport } from './support'
 
 /** The one Definition identity this Transform may define for itself. */
 export const LOCAL_ID = 'transform.output'
@@ -201,17 +203,79 @@ export function planApply(config: Configuration, draft: TransformDraft): Plan {
   return { output: { ref, label: output.label, isNew: output.isNew }, mapping: { id, version, isNew: !reuse }, changes }
 }
 
+/** The step a configuration is applied for: the Transform version it invokes, and how references resolve there. */
+export interface ApplyContext {
+  readonly feature: MappingFeature
+  readonly resolve: Resolve
+}
+
 /**
- * The only way versions are made: freezes a new local Definition version if its structure
- * changed, a new Mapping version if its properties changed, and points the configuration at the
- * exact versions. Returns the same configuration when nothing would change. The caller decides
- * whether a draft with Mapping problems may be applied; a structure that isn't a valid Definition
- * never can be (defineVersion refuses it).
+ * invalid       something is wrong whatever version runs it (structure, sources, types, places)
+ * incompatible  the step's Transform version can't take it
+ * incomplete    sound so far, but something required isn't made yet
+ * unchanged     nothing to apply: it's exactly what's applied
+ * applicable    changed, complete, sound, and accepted by the step's Transform version
  */
-export function applyConfiguration(config: Configuration, draft: TransformDraft): Configuration {
+export type ApplyState = 'invalid' | 'incompatible' | 'incomplete' | 'unchanged' | 'applicable'
+
+/** Whether a draft may be applied, and why not: the one assessment every Apply surface shows. */
+export interface ApplyAssessment {
+  readonly state: ApplyState
+  readonly plan: Plan
+  /** Everything in the way, as structured problems (problems.ts); empty when nothing is. */
+  readonly problems: readonly Problem[]
+  readonly input: DefinitionVersion
+  readonly target: ReturnType<typeof outputOf>
+  readonly review: DraftReview
+}
+
+/**
+ * The authoritative assessment: the output's structure, the draft reviewed with the step's Transform
+ * version (its contracts, its absence rule, its sources, the output's completeness at every level),
+ * and, once that review is clean, that version's own pre-run check of the complete Mapping
+ * (mappingCompatibility). States come from the problems' categories, never from their words.
+ */
+export function assessApply(config: Configuration, draft: TransformDraft, context: ApplyContext): ApplyAssessment {
   const plan = planApply(config, draft)
-  if (!plan.changes) return config
-  if (structureProblems(draft).length) throw new Error('The output structure isn’t a valid Definition yet')
+  const known = findDefinition(config, inputOf(draft))
+  const input = known ?? A1
+  const target = outputOf(config, draft)
+  const properties = fromDraft(draft.properties)
+  const review = reviewDraft(properties, input, target.definition, target.label, transformSupport(input, target.definition, context.feature, context.resolve))
+  const refused = review.findings.length ? [] : boundaryFindings(context.feature, properties, input, target.definition, context.resolve)
+  const problems: Problem[] = [
+    // A Mapping is never made from an input this configuration can't name exactly.
+    ...(known ? [] : [{ kind: 'structure', category: 'invalid', at: null, index: null, words: 'The input Definition version can’t be found here.', short: 'The input Definition version can’t be found here.' } satisfies Problem]),
+    ...structureFindings(draft), ...review.findings, ...refused,
+  ]
+  const has = (c: Problem['category']) => problems.some((p) => p.category === c)
+  const state: ApplyState = has('invalid') ? 'invalid' : has('incompatible') ? 'incompatible' : has('unfinished') ? 'incomplete' : plan.changes ? 'applicable' : 'unchanged'
+  return { state, plan, problems, input, target, review }
+}
+
+/** Whether Apply is available: the one rule every Apply surface shows, and the one applyConfiguration enforces. */
+export const canApply = (assessment: Pick<ApplyAssessment, 'state'>): boolean => assessment.state === 'applicable'
+
+export type ApplyResult =
+  | { readonly applied: true; readonly config: Configuration; readonly assessment: ApplyAssessment }
+  /** Nothing was made: `config` is the very configuration given, its versions untouched. */
+  | { readonly applied: false; readonly config: Configuration; readonly assessment: ApplyAssessment }
+
+/**
+ * Apply: the only way versions are made, and it enforces its own assessment. Only an applicable
+ * draft (assessApply) freezes a new local Definition version if its structure changed, a new Mapping
+ * version if its properties changed, and points the configuration at the exact versions. Anything
+ * else (unchanged, incomplete, incompatible, invalid) is refused: the same configuration comes back,
+ * with every version and the history exactly as they were, and the assessment says why.
+ */
+export function applyConfiguration(config: Configuration, draft: TransformDraft, context: ApplyContext): ApplyResult {
+  const assessment = assessApply(config, draft, context)
+  if (!canApply(assessment)) return { applied: false, config, assessment }
+  return { applied: true, config: commit(config, draft, assessment.plan), assessment }
+}
+
+/** Makes the versions a plan names. Only ever reached through applyConfiguration. */
+function commit(config: Configuration, draft: TransformDraft, plan: Plan): Configuration {
   const locals = plan.output.isNew
     ? [...config.locals, defineVersion({ id: LOCAL_ID, version: plan.output.ref.version, name: draft.local.name, workspaceId: WORKSPACE, fields: draft.local.fields })]
     : config.locals

@@ -10,9 +10,10 @@ import { mappingWork, previewOutput, previewSource, reviewDraft } from '../app/d
 import { propertyRows } from '../app/dev/designer/rows'
 import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment, shapeOf } from '../app/dev/features/experiment'
 import { ORBIT_PROVIDED, addVersion, createDefinition, draftFrom, moveField } from '../app/dev/definitions/model'
-import { applyConfiguration, draftFrom as designerDraft, initialConfiguration, planApply } from '../app/dev/designer/config'
+import { draftFrom as designerDraft, initialConfiguration, planApply } from '../app/dev/designer/config'
 import { toDraft } from '../app/dev/designer/parts'
 import { madeFrom } from '../app/dev/designer/studio'
+import { applyFor } from './apply'
 
 const f = (name: string, type: Field['type'] = 'string', optional = false): Field => (optional ? { name, type, optional: true } : { name, type })
 
@@ -107,11 +108,11 @@ describe('Reordering alone never makes a contract version', () => {
   it('in the Designer, for the Transform’s own output', () => {
     const start = initialConfiguration()
     const local = { ...designerDraft(start), use: 'local' as const, local: { name: 'Out', fields: [f('fullName'), f('note', 'string', true)] } }
-    const once = applyConfiguration(start, local)
+    const once = applyFor(start, local)
     expect(once.locals.map((d) => d.version)).toEqual([1])
     const reordered = { ...local, local: { name: 'Out', fields: [f('note', 'string', true), f('fullName')] } }
     expect(planApply(once, reordered).output.isNew).toBe(false)
-    expect(applyConfiguration(once, reordered)).toBe(once)
+    expect(applyFor(once, reordered)).toBe(once)
   })
 })
 
@@ -144,10 +145,10 @@ describe('Mapping property order is presentation, not meaning', () => {
   it('in the Designer: reordering the Transform’s properties makes no Mapping version', () => {
     const start = initialConfiguration()
     const draft = { ...designerDraft(start), use: 'local' as const, local: { name: 'Out', fields: [f('fullName'), f('last')] }, properties: toDraft([full, last]) }
-    const once = applyConfiguration(start, draft)
+    const once = applyFor(start, draft)
     const reordered = { ...draft, properties: [...draft.properties].reverse() }
     expect(planApply(once, reordered)).toMatchObject({ mapping: { isNew: false }, changes: false })
-    expect(applyConfiguration(once, reordered)).toBe(once)
+    expect(applyFor(once, reordered)).toBe(once)
     // A change inside a source still does.
     const changed = { ...draft, properties: toDraft([full, { ...last, source: prop('firstName') }]) }
     expect(planApply(once, changed).mapping).toMatchObject({ isNew: true, version: 2 })

@@ -8,7 +8,15 @@ import DesignerIcon from './DesignerIcon.vue'
 import { type Configuration, type Plan, type TransformDraft, labelOf } from './config'
 import type { StudioItem, StudioState, StudioStatus } from './studio'
 
-const props = defineProps<{ status: StudioStatus; plan: Plan; config: Configuration; draft: TransformDraft; canUndo: boolean }>()
+const props = defineProps<{
+  status: StudioStatus
+  plan: Plan
+  config: Configuration
+  draft: TransformDraft
+  canUndo: boolean
+  /** Whether Apply is available: canApply(assessment), the rule Apply itself enforces. */
+  applicable: boolean
+}>()
 const emit = defineEmits<{ apply: []; cancel: []; undo: []; go: [StudioItem] }>()
 
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
@@ -35,7 +43,6 @@ const detail = computed(() => {
   if (state === 'unchanged') return `${label(props.config.output)} · Mapping v${props.config.mapping.version} applied`
   return creates.value
 })
-const canApply = computed(() => props.plan.changes && props.status.state === 'compatible')
 
 const open = ref(false)
 const items = computed(() => [...props.status.problems, ...props.status.todo])
@@ -87,7 +94,7 @@ function go(item: StudioItem) {
         <DesignerIcon name="undo" class="size-4" />
       </button>
       <button type="button" class="shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" data-cancel @click="emit('cancel')">Cancel</button>
-      <button type="button" class="btn-primary w-auto shrink-0 rounded-full px-5 py-1.5 text-sm disabled:cursor-default disabled:opacity-40" :disabled="!canApply" data-apply @click="emit('apply')">Apply</button>
+      <button type="button" class="btn-primary w-auto shrink-0 rounded-full px-5 py-1.5 text-sm disabled:cursor-default disabled:opacity-40" :disabled="!applicable" data-apply @click="emit('apply')">Apply</button>
     </div>
   </div>
 </template>

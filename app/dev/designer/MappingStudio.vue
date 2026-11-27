@@ -23,9 +23,8 @@ import StudioOutputTree from './StudioOutputTree.vue'
 import StudioPreview from './StudioPreview.vue'
 import StudioStatusBar from './StudioStatusBar.vue'
 import UnsupportedNotice from './UnsupportedNotice.vue'
-import { type Configuration, type Plan, type RunRecord, type TransformDraft, inputOf, labelOf } from './config'
+import { type ApplyAssessment, type Configuration, type Plan, type RunRecord, type TransformDraft, canApply, inputOf, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
-import type { Problem } from './problems'
 import { FLAT, READING } from './reading'
 import { type AppliedPreview, type StudioItem, connections, inputTree, isWithin, outputTree, studioStatus } from './studio'
 import { fromPiece } from './parts'
@@ -43,8 +42,8 @@ const props = defineProps<{
   input: DefinitionVersion
   canUndo: boolean
   boundary: readonly string[]
-  /** Everything that keeps the draft from being applied, as structured problems. */
-  findings: readonly Problem[]
+  /** Whether the draft may be applied, and why not: the authoritative assessment. */
+  assessment: ApplyAssessment
   /** The exact Transform version the step invokes, in words. */
   feature: string
   applied: AppliedPreview
@@ -107,7 +106,7 @@ type Pane = 'output' | 'input'
 const pane = ref<Pane>('output')
 
 // --- Where the draft stands: the domain's checks, in one word, and what to do on demand ---
-const status = computed(() => studioStatus(props.plan.changes, props.findings))
+const status = computed(() => studioStatus(props.assessment))
 /** Going to something to do: its place in the output (opened in the inspector), or General. */
 function go(item: StudioItem) {
   if (item.where === 'general') return (segment.value = 'general')
@@ -286,7 +285,7 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
 
     <!-- Where the draft stands, with Apply and Cancel, in every segment -->
     <div class="sticky bottom-0 z-30 rounded-b-3xl border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
-      <StudioStatusBar :status="status" :plan="plan" :config="config" :draft="draft" :can-undo="canUndo" @apply="emit('apply')" @cancel="emit('cancel')" @undo="emit('undo')" @go="go" />
+      <StudioStatusBar :status="status" :plan="plan" :config="config" :draft="draft" :can-undo="canUndo" :applicable="canApply(assessment)" @apply="emit('apply')" @cancel="emit('cancel')" @undo="emit('undo')" @go="go" />
     </div>
   </section>
 </template>

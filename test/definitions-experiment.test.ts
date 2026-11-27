@@ -22,6 +22,7 @@ import { placeOf, workspacePlaces } from '../app/utils/workspaceNav'
 import { experimentPlaces } from '../app/dev/workspace/place'
 import { COLORS, DEFAULT_APPEARANCE, ICON_NAMES, checkAppearance } from '../app/dev/definitions/appearance'
 import { validate } from '../shared/features/definitions'
+import { applyFor, stepOf } from './apply'
 
 const root = join(import.meta.dirname, '..')
 const source = (f: string) => readFileSync(join(root, f), 'utf8')
@@ -251,7 +252,7 @@ describe('Journey A: made in Definitions, used as an exact version in the Transf
   const v2 = addVersion(v1, updateField(addField(draftFrom(v1.versions[0]!)), 2, { name: 'email' }))
 
   function use(config: Configuration, ref: { id: string; version: number }, properties: MappingProperty[]) {
-    return applyConfiguration(config, { ...transformDraftFrom(config), use: 'catalogue', catalogue: ref, properties: toDraft(properties) })
+    return applyFor(config, { ...transformDraftFrom(config), use: 'catalogue', catalogue: ref, properties: toDraft(properties) })
   }
   function run(config: Configuration, workspaceId: string) {
     const catalog = { definitions: allDefinitions(config), records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: A1, data: INITIAL_DATA as Data }], mappings: config.mappings }
@@ -285,17 +286,17 @@ describe('Journey A: made in Definitions, used as an exact version in the Transf
     expect(run(config, 'ws-acme')[1]!.output!.definition).toEqual({ id: v1.id, version: 1 })
   })
 
-  it('fails truthfully when the mapping doesn’t fit the chosen version', () => {
+  it('refuses, truthfully, a mapping that doesn’t fit the chosen version: nothing is applied', () => {
     const offered = offeredIn(acme, [v2])
     const start = initialConfiguration(offered)
-    const target = outputOf(start, { ...transformDraftFrom(start), use: 'catalogue', catalogue: { id: v1.id, version: 2 } }).definition
-    expect(reviewDraft([fullName, subscribed], A1, target).problems.length).toBeGreaterThan(0)
-    // Applied regardless (applyConfiguration allows it; the Designer's Apply doesn't): the boundary refuses the output.
-    const config = use(start, { id: v1.id, version: 2 }, [fullName, subscribed])
-    const [, transform, out] = run(config, 'ws-acme')
-    expect(transform!.evidence.outcome).toEqual({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'missing', path: ['email'], expected: 'string' }] })
-    expect(transform!.output).toBeUndefined()
-    expect(out).toBeNull()
+    const draft = { ...transformDraftFrom(start), use: 'catalogue' as const, catalogue: { id: v1.id, version: 2 }, properties: toDraft([fullName, subscribed]) }
+    expect(reviewDraft([fullName, subscribed], A1, outputOf(start, draft).definition).problems.length).toBeGreaterThan(0)
+    // Apply itself refuses (it used to leave that to its caller): the configuration and its versions stay exactly as they were.
+    const result = applyConfiguration(start, draft, stepOf(start))
+    expect(result.applied).toBe(false)
+    expect(result.config).toBe(start)
+    expect(result.assessment.state).toBe('incomplete')
+    expect(result.assessment.problems.map((p) => [p.kind, p.at])).toEqual([['not_made', ['email']]])
   })
 
   it('can’t use one workspace’s Definition from another: not found, exactly as if it didn’t exist', () => {
@@ -309,7 +310,7 @@ describe('Journey A: made in Definitions, used as an exact version in the Transf
 describe('Journey B stays as it was', () => {
   it('keeps the Transform’s own output, under its one identity, apart from the workspace’s Definitions', () => {
     const start = initialConfiguration(offeredIn({ id: 'ws-acme', name: 'Acme' }, [person()]))
-    const config = applyConfiguration(start, { ...transformDraftFrom(start), use: 'local', local: { name: 'Summary', fields: [{ name: 'fullName', type: 'string' }] } })
+    const config = applyFor(start, { ...transformDraftFrom(start), use: 'local', local: { name: 'Summary', fields: [{ name: 'fullName', type: 'string' }] } })
     expect(config.locals[0]).toMatchObject({ id: LOCAL_ID, version: 1 })
     expect(catalogue(config.offered).some((d) => d.id === LOCAL_ID)).toBe(false)
     expect(shelfOf('ws-acme').made.some((d) => d.id === LOCAL_ID)).toBe(false)

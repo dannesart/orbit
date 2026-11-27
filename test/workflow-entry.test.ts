@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { safeDestination } from '../app/utils/returnTo'
+import { applyFor } from './apply'
 
 const root = join(import.meta.dirname, '..')
 const source = (f: string) => readFileSync(join(root, f), 'utf8')
@@ -77,7 +78,7 @@ describe('The way back from the designer', () => {
 
 describe('Leaving the designer never silently discards work', async () => {
   const { workAtRisk } = await import('../app/dev/designer/session')
-  const { applyConfiguration, draftFrom, initialConfiguration } = await import('../app/dev/designer/config')
+  const { draftFrom, initialConfiguration } = await import('../app/dev/designer/config')
   const { INITIAL_DATA } = await import('../app/dev/features/experiment')
   const start = { pinKey: 'a1', recordText: JSON.stringify(INITIAL_DATA, null, 2), features: { 'console-in': 'orbit.console@1', 'transform': 'orbit.transform@2', 'console-out': 'orbit.console@1' } }
   const untouched = { ...start, config: initialConfiguration(), unapplied: false }
@@ -89,7 +90,7 @@ describe('Leaving the designer never silently discards work', async () => {
   it('names applied versions, which exist only in this session, before anything else', () => {
     const initial = initialConfiguration()
     const draft = { ...draftFrom(initial), use: 'local' as const, local: { name: 'Person summary', fields: [{ name: 'fullName', type: 'string' as const }] } }
-    const config = applyConfiguration(initial, draft)
+    const config = applyFor(initial, draft)
     expect(workAtRisk({ ...untouched, config }, start)).toEqual([
       'Applied versions, which exist only in this session: Person summary v1, Mapping v1 for Person summary · v1',
     ])

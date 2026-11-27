@@ -9,7 +9,7 @@ import type { Expression } from '../shared/features/mappings'
 import { orbitConsole } from '../shared/features/features'
 import { A1, B1, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, runExperiment } from '../app/dev/features/experiment'
 import {
-  type Configuration, type Offered, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findMapping,
+  type Configuration, type Offered, type TransformDraft, allDefinitions, draftFrom, findMapping,
   initialConfiguration, outputOf, planApply,
 } from '../app/dev/designer/config'
 import { type Piece, fromDraft, toPiece } from '../app/dev/designer/parts'
@@ -17,6 +17,7 @@ import { reviewDraft } from '../app/dev/designer/preview'
 import { asideReason, reconcile } from '../app/dev/designer/switching'
 import { draftLoses } from '../app/dev/designer/session'
 import { describeSource } from '../app/dev/designer/summary'
+import { applyFor } from './apply'
 
 const prop = (name: string): Expression => ({ kind: 'property', name })
 const piece = (e: Expression): Piece => toPiece(e)
@@ -119,7 +120,7 @@ describe('Applying after a switch', () => {
 
     const plan = planApply(config, draft)
     expect(plan).toMatchObject({ output: { ref: refOf(CONTACT), isNew: false }, mapping: { id: `transform:${CONTACT.id}@1`, version: 1, isNew: true }, changes: true })
-    const applied = applyConfiguration(config, draft)
+    const applied = applyFor(config, draft)
     const made = findMapping(applied, applied.mapping)!
     expect(made.properties.map((p) => p.name)).toEqual(['fullName', 'email', 'subscribed'])
     expect(made.to).toEqual(refOf(CONTACT))
@@ -179,7 +180,12 @@ describe('The calm editor', () => {
 
   it('has no way to apply a draft that is incomplete or wrong', () => {
     expect(read('ApplyBar.vue')).not.toMatch(/anyway/i)
-    expect(read('SpatialDesigner.vue')).toMatch(/function apply\(\) \{\s*if \(!plan\.value\.changes \|\| structure\.value\.length \|\| review\.value\.problems\.length \|\| boundary\.value\.length\) return/)
+    // Behaviour: Apply itself refuses, whoever calls it (apply-authority.test.ts has every case).
+    const config = initialConfiguration(offered)
+    const incomplete = { ...draftFrom(config), catalogue: refOf(CONTACT), properties: [{ name: 'fullName', piece: piece(prop('firstName')) }] }
+    expect(() => applyFor(config, incomplete)).toThrow(/refused \(incomplete\)/)
+    const wrong = { ...draftFrom(config), properties: [{ name: 'fullName', piece: piece(prop('middleName')) }] }
+    expect(() => applyFor(config, wrong)).toThrow(/refused \(invalid\)/)
   })
 
   it('calls a yes-or-no property the same everywhere people see it', () => {

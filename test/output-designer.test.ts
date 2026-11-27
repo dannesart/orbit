@@ -15,6 +15,7 @@ import {
 } from '../app/dev/designer/config'
 import { type Piece, fromDraft, toPiece } from '../app/dev/designer/parts'
 import { previewOutput, reviewDraft } from '../app/dev/designer/preview'
+import { applyFor, stepOf } from './apply'
 
 const prop = (name: string): Expression => ({ kind: 'property', name })
 const text = (value: string): Expression => ({ kind: 'literal', value })
@@ -54,7 +55,7 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
     const config = initialConfiguration()
     const plan = planApply(config, draftFrom(config))
     expect(plan.changes).toBe(false)
-    expect(applyConfiguration(config, draftFrom(config))).toBe(config)
+    expect(applyFor(config, draftFrom(config))).toBe(config)
   })
 
   it('uses an existing Definition version as it is, with a Mapping of its own', () => {
@@ -73,7 +74,7 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
     expect(target).toMatchObject({ isNew: false, label: 'Definition A · v2' })
     expect(reviewDraft(fromDraft(draft.properties), A1, target.definition).problems).toEqual([])
     expect(planApply(config, draft)).toMatchObject({ output: { isNew: false }, mapping: { id: 'transform:person-name@2', version: 1, isNew: true }, changes: true })
-    const next = applyConfiguration(config, draft)
+    const next = applyFor(config, draft)
     expect(next.locals).toEqual([])
     expect(next.output).toEqual({ id: 'person-name', version: 2 })
     expect(next.mappings).toHaveLength(2)
@@ -84,7 +85,7 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
   })
 
   it('freezes a Transform’s own output as a Definition version, and runs it into one complete Value', () => {
-    const config = applyConfiguration(initialConfiguration(), personSummary(initialConfiguration()))
+    const config = applyFor(initialConfiguration(), personSummary(initialConfiguration()))
     expect(config.locals).toHaveLength(1)
     const local = config.locals[0]!
     expect(local).toMatchObject({ id: LOCAL_ID, version: 1, name: 'Person summary', workspaceId: WORKSPACE, fields: SUMMARY_FIELDS })
@@ -108,28 +109,28 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
   })
 
   it('makes nothing when applied again, and nothing when run again and again', () => {
-    const config = applyConfiguration(initialConfiguration(), personSummary(initialConfiguration()))
+    const config = applyFor(initialConfiguration(), personSummary(initialConfiguration()))
     const draft = { ...personSummary(initialConfiguration()), properties: draftFrom(config).properties }
     expect(planApply(config, draft).changes).toBe(false)
-    expect(applyConfiguration(config, draft)).toBe(config)
+    expect(applyFor(config, draft)).toBe(config)
     const before = JSON.stringify(config)
     for (let i = 0; i < 3; i++) expect(run(config)[1]!.evidence.mapping).toEqual(config.mapping)
     expect(JSON.stringify(config)).toBe(before)
   })
 
   it('a changed Mapping alone: the same output version, the next Mapping version', () => {
-    const v1 = applyConfiguration(initialConfiguration(), personSummary(initialConfiguration()))
+    const v1 = applyFor(initialConfiguration(), personSummary(initialConfiguration()))
     const draft = personSummary(v1)
     const edited = { ...draft, properties: draft.properties.map((p) => (p.name === 'active' ? { ...p, piece: { kind: 'literal', value: false } as Piece } : p)) }
     expect(planApply(v1, edited)).toMatchObject({ output: { isNew: false }, mapping: { id: 'transform:transform.output@1', version: 2, isNew: true } })
-    const v2 = applyConfiguration(v1, edited)
+    const v2 = applyFor(v1, edited)
     expect(v2.locals).toBe(v1.locals)
     expect(v2.mapping).toEqual({ id: 'transform:transform.output@1', version: 2 })
     expect(run(v2)[1]!.output!.data.active).toBe(false)
   })
 
   it('a changed structure: the next output version and a new Mapping for it; old versions and old evidence stay true', () => {
-    const v1 = applyConfiguration(initialConfiguration(), personSummary(initialConfiguration()))
+    const v1 = applyFor(initialConfiguration(), personSummary(initialConfiguration()))
     const firstRun = run(v1)[1]!.evidence
     const snapshot = JSON.stringify([v1.locals, v1.mappings])
     const draft = personSummary(v1)
@@ -140,7 +141,7 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
     }
     expect(outputOf(v1, grown)).toMatchObject({ isNew: true, label: 'Person summary · v2 (draft)' })
     expect(planApply(v1, grown)).toMatchObject({ output: { isNew: true, ref: { id: LOCAL_ID, version: 2 } }, mapping: { id: 'transform:transform.output@2', version: 1, isNew: true } })
-    const v2 = applyConfiguration(v1, grown)
+    const v2 = applyFor(v1, grown)
     expect(v2.locals.map((d) => d.version)).toEqual([1, 2])
     expect(JSON.stringify([v2.locals.slice(0, 1), v2.mappings.slice(0, v1.mappings.length)])).toBe(snapshot)
     expect(run(v2)[1]!.output).toEqual({ definition: { id: LOCAL_ID, version: 2 }, data: { fullName: 'Ada Lovelace', displayName: 'Lovelace, Ada', initials: 'AL', active: true, age: 36 } })
@@ -151,17 +152,17 @@ describe('Applying: exactly the versions that changed, and nothing when nothing 
   })
 
   it('renaming the output is a change of structure too', () => {
-    const v1 = applyConfiguration(initialConfiguration(), personSummary(initialConfiguration()))
+    const v1 = applyFor(initialConfiguration(), personSummary(initialConfiguration()))
     const renamed = { ...personSummary(v1), local: { ...personSummary(v1).local, name: 'Profile card' } }
     expect(planApply(v1, renamed).output).toMatchObject({ isNew: true, ref: { version: 2 } })
   })
 
   it('gives every Mapping identity exactly one pair of contracts', () => {
     let config = initialConfiguration()
-    config = applyConfiguration(config, personSummary(config))
-    config = applyConfiguration(config, { ...personSummary(config), properties: personSummary(config).properties.slice(0, 3).concat({ name: 'active', piece: { kind: 'literal', value: false } }) })
-    config = applyConfiguration(config, { ...personSummary(config), local: { name: 'Person summary', fields: SUMMARY_FIELDS.slice(0, 3) }, properties: personSummary(config).properties.slice(0, 3) })
-    config = applyConfiguration(config, { ...draftFrom(config), use: 'catalogue', catalogue: refOf(B1), properties: draftFrom(initialConfiguration()).properties })
+    config = applyFor(config, personSummary(config))
+    config = applyFor(config, { ...personSummary(config), properties: personSummary(config).properties.slice(0, 3).concat({ name: 'active', piece: { kind: 'literal', value: false } }) })
+    config = applyFor(config, { ...personSummary(config), local: { name: 'Person summary', fields: SUMMARY_FIELDS.slice(0, 3) }, properties: personSummary(config).properties.slice(0, 3) })
+    config = applyFor(config, { ...draftFrom(config), use: 'catalogue', catalogue: refOf(B1), properties: draftFrom(initialConfiguration()).properties })
     for (const m of config.mappings) {
       expect(m.id).toBe(mappingIdFor(m.to))
       const first = config.mappings.find((x) => x.id === m.id)!
@@ -215,29 +216,45 @@ describe('A structure must be a valid Definition before it can be frozen', () =>
     expect(structureProblems({ ...local('', []), use: 'catalogue' })).toEqual([])
   })
 
-  it('is refused even when applied “anyway”', () => {
-    expect(() => applyConfiguration(initialConfiguration(), local('Dupes', [{ name: 'b', type: 'number' }, { name: 'b', type: 'string' }]))).toThrow()
+  it('is refused even when applied “anyway”: nothing is made, nothing thrown', () => {
+    const start = initialConfiguration()
+    const result = applyConfiguration(start, local('Dupes', [{ name: 'b', type: 'number' }, { name: 'b', type: 'string' }]), stepOf(start))
+    expect(result).toMatchObject({ applied: false, assessment: { state: 'invalid' } })
+    expect(result.config).toBe(start)
   })
 })
 
-describe('The boundary still decides, whatever the editor allowed', () => {
-  it('stops a Mapping applied anyway that reads a field the input lacks', () => {
-    const draft = personSummary(initialConfiguration())
-    const broken = { ...draft, properties: draft.properties.map((p) => (p.name === 'initials' ? { ...p, piece: piece(prop('middleName')) } : p)) }
-    expect(reviewDraft(fromDraft(broken.properties), A1, outputOf(initialConfiguration(), broken).definition).problems).toEqual(['initials: The input has no field “middleName”.'])
-    const [, transform, after] = run(applyConfiguration(initialConfiguration(), broken))
+describe('Apply refuses what the boundary would refuse; the boundary still decides on its own', () => {
+  const start = initialConfiguration()
+  const draft = personSummary(start)
+  const broken = { ...draft, properties: draft.properties.map((p) => (p.name === 'initials' ? { ...p, piece: piece(prop('middleName')) } : p)) }
+  const wrongType = { ...draft, properties: draft.properties.map((p) => (p.name === 'active' ? { ...p, piece: { kind: 'text', value: 'yes', trim: false } as Piece } : p)) }
+  const extra = { ...draft, properties: [...draft.properties, { name: 'nickname', piece: piece(prop('firstName')) }] }
+  /** A Mapping version that skipped Apply (a test fixture only: nothing in the Designer can make one). */
+  const forced = (d: TransformDraft): Configuration => {
+    const config = applyFor(start, draft)
+    const last = config.mappings.at(-1)!
+    return { ...config, mappings: [...config.mappings.slice(0, -1), { ...last, properties: fromDraft(d.properties) }] }
+  }
+
+  it('refuses each of them, and makes nothing', () => {
+    expect(reviewDraft(fromDraft(broken.properties), A1, outputOf(start, broken).definition).problems).toEqual(['initials: The input has no field “middleName”.'])
+    for (const d of [broken, wrongType, extra]) {
+      const result = applyConfiguration(start, d, stepOf(start))
+      expect(result).toMatchObject({ applied: false, assessment: { state: 'invalid' } })
+      expect(result.config).toBe(start)
+    }
+  })
+
+  it('stops a Mapping that reads a field the input lacks', () => {
+    const [, transform, after] = run(forced(broken))
     expect(transform!.evidence.outcome).toMatchObject({ kind: 'not_attempted', reason: 'invalid_mapping' })
     expect(after).toBeNull()
   })
 
   it('rejects an output its Definition forbids: a wrong type, or a property it doesn’t have', () => {
-    const draft = personSummary(initialConfiguration())
-    const wrongType = { ...draft, properties: draft.properties.map((p) => (p.name === 'active' ? { ...p, piece: { kind: 'text', value: 'yes', trim: false } as Piece } : p)) }
-    const target = outputOf(initialConfiguration(), wrongType).definition
-    expect(reviewDraft(fromDraft(wrongType.properties), A1, target, 'Person summary · v1').problems).toEqual(['active: Person summary · v1 needs yes or no here, but this makes text.'])
-    expect(run(applyConfiguration(initialConfiguration(), wrongType))[1]!.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output' })
-    const extra = { ...draft, properties: [...draft.properties, { name: 'nickname', piece: piece(prop('firstName')) }] }
-    const [, transform, after] = run(applyConfiguration(initialConfiguration(), extra))
+    expect(run(forced(wrongType))[1]!.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output' })
+    const [, transform, after] = run(forced(extra))
     expect(transform!.evidence.outcome).toMatchObject({ kind: 'failed', reason: 'invalid_output', issues: [{ problem: 'unexpected', path: ['nickname'] }] })
     expect(after).toBeNull()
   })

@@ -3,18 +3,22 @@
 // none), with Undo and Discard beside it. Shared by the inspector, the focused editor and Mapping
 // Studio, so the version boundary always reads the same. In the Studio, Discard is Cancel: always
 // available, it discards the draft on purpose and returns to the Designer.
-import type { DefinitionRef } from '#shared/features/definitions'
+import { type DefinitionRef, propertyPathWords } from '#shared/features/definitions'
 import DesignerIcon from './DesignerIcon.vue'
-import { type Configuration, type Plan, type TransformDraft, labelOf } from './config'
+import { type ApplyAssessment, type Configuration, type Plan, type TransformDraft, canApply, labelOf } from './config'
 
-const props = defineProps<{ plan: Plan; config: Configuration; draft: TransformDraft; errors: readonly string[]; missing: readonly string[]; canUndo: boolean; unsupported?: string | null; cancel?: boolean }>()
+const props = defineProps<{ plan: Plan; config: Configuration; draft: TransformDraft; assessment: ApplyAssessment; canUndo: boolean; cancel?: boolean }>()
 const emit = defineEmits<{ apply: []; discard: []; undo: [] }>()
 
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
+// Everything here comes from the authoritative assessment: whether Apply is available, and why not.
 // Incomplete isn't wrong: a property nothing makes yet is the next thing to do, not an error.
-const blocked = computed(() => props.errors.length + props.missing.length > 0)
+const blocked = computed(() => !canApply(props.assessment) && props.assessment.state !== 'unchanged')
+const errors = computed(() => props.assessment.problems.filter((p) => p.category !== 'unfinished').map((p) => p.words))
+const missing = computed(() => props.assessment.problems.filter((p) => p.category === 'unfinished').map((p) => propertyPathWords(p.at ?? [])))
+const unsupported = computed(() => props.assessment.problems.some((p) => p.kind === 'unsupported_contract'))
 const next = computed(() => {
-  const [first, ...rest] = props.missing
+  const [first, ...rest] = missing.value
   return rest.length ? `Next: choose a value for ${first} (${rest.length} more after it).` : `Next: choose a value for ${first}.`
 })
 const words = computed(() => {
@@ -45,7 +49,7 @@ const words = computed(() => {
         <DesignerIcon name="undo" class="size-4" />
       </button>
       <button type="button" class="rounded-full px-3.5 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-40 disabled:hover:bg-transparent" :disabled="!plan.changes && !cancel" :data-cancel="cancel || undefined" @click="emit('discard')">{{ cancel ? 'Cancel' : 'Discard' }}</button>
-      <button type="button" class="btn-primary w-auto rounded-full px-5 py-1.5 text-sm disabled:cursor-default disabled:opacity-40" :disabled="!plan.changes || blocked" @click="emit('apply')">Apply</button>
+      <button type="button" class="btn-primary w-auto rounded-full px-5 py-1.5 text-sm disabled:cursor-default disabled:opacity-40" :disabled="!canApply(assessment)" data-apply @click="emit('apply')">Apply</button>
     </div>
     <p v-if="plan.changes && blocked" class="mt-2 text-xs text-slate-600">
       <!-- Not something to fix here: the Transform version can't take these contracts (said above). -->

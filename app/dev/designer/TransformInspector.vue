@@ -13,7 +13,7 @@ import PropertyRows from './PropertyRows.vue'
 import RunHistory from './RunHistory.vue'
 import RunStatus from './RunStatus.vue'
 import UnsupportedNotice from './UnsupportedNotice.vue'
-import { type Configuration, type Plan, type RunRecord, type TransformDraft, labelOf } from './config'
+import { type ApplyAssessment, type Configuration, type Plan, type RunRecord, type TransformDraft, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
 
 const props = defineProps<{
@@ -28,8 +28,8 @@ const props = defineProps<{
   example: Example
   input: DefinitionVersion
   canUndo: boolean
-  /** What the step's Transform version would refuse in the complete draft that the review hasn't said. */
-  boundary?: readonly string[]
+  /** Whether the draft may be applied, and why not: the authoritative assessment. */
+  assessment: ApplyAssessment
   step: Step
   stale: boolean
   runNumber: number
@@ -136,7 +136,7 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
     </div>
 
     <div class="border-t border-slate-100 px-5 pt-3 pb-4">
-      <ApplyBar :plan="plan" :config="config" :draft="draft" :errors="[...structure, ...review.errors, ...(boundary ?? [])]" :missing="review.missing" :unsupported="review.unsupported" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
+      <ApplyBar :plan="plan" :config="config" :draft="draft" :assessment="assessment" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
     </div>
   </div>
 </template>

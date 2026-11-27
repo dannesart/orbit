@@ -9,12 +9,13 @@ import { type Data, type DefinitionVersion, defineVersion, refOf } from '../shar
 import { invoke, orbitTransformV2, orbitTransformV3 } from '../shared/features/features'
 import type { Expression, Mapping } from '../shared/features/mappings'
 import { A1, APPLICANT, B1, DEFINITIONS, INITIAL_MAPPING, PINS, TRANSFORMS, WORKSPACE, featureKey } from '../app/dev/features/experiment'
-import { applyConfiguration, draftFrom, initialConfiguration, inputOf, mappingIdFor, planApply } from '../app/dev/designer/config'
+import { draftFrom, initialConfiguration, inputOf, mappingIdFor, planApply } from '../app/dev/designer/config'
 import { INITIAL_STEP_FEATURES } from '../app/dev/designer/flow'
 import { fromPiece, toPiece } from '../app/dev/designer/parts'
 import { exampleFrom, previewOutput, previewSource, reviewDraft } from '../app/dev/designer/preview'
 import { FLAT, absenceWords, checkWith, readables } from '../app/dev/designer/reading'
 import { transformSupport } from '../app/dev/designer/support'
+import { applyFor } from './apply'
 
 const resolve = (r: { id: string; version: number }) => DEFINITIONS.find((d) => d.id === r.id && d.version === r.version) ?? null
 const NESTED = { nested: true, resolve }
@@ -128,7 +129,7 @@ describe('The Transform’s input, chosen on purpose', () => {
     const initial = initialConfiguration()
     const draft = { ...draftFrom(initial), input: refOf(APPLICANT), properties: [{ name: 'fullName', piece: { kind: 'nested', path: ['home', 'city'], trim: false } as const }] }
     expect(planApply(initial, draft)).toMatchObject({ mapping: { id: 'transform:applicant@1->full-name@1', version: 1, isNew: true }, changes: true })
-    const applied = applyConfiguration(initial, draft)
+    const applied = applyFor(initial, draft, orbitTransformV3)
     const mapping = applied.mappings.at(-1)!
     expect(mapping).toMatchObject({ from: { id: 'applicant', version: 1 }, to: { id: 'full-name', version: 1 }, properties: [{ name: 'fullName', source: path('home', 'city') }] })
     expect(inputOf(draftFrom(applied))).toEqual({ id: 'applicant', version: 1 })
