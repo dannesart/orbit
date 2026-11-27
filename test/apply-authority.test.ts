@@ -6,12 +6,13 @@ import { describe, expect, it } from 'vitest'
 import { defineVersion, refOf } from '../shared/features/definitions'
 import { type MappingFeature, orbitTransformV1, orbitTransformV2, orbitTransformV3 } from '../shared/features/features'
 import { APPLICANT, WORKSPACE } from '../app/dev/features/experiment'
-import { type Configuration, type Offered, type TransformDraft, applyConfiguration, assessApply, canApply, draftFrom, initialConfiguration } from '../app/dev/designer/config'
+import { type Configuration, type Offered, type TransformDraft, applyConfiguration, assessApply, draftFrom, initialConfiguration } from '../app/dev/designer/config'
 import { draftAfterApply } from '../app/dev/designer/session'
 import { applyDraft } from '../app/dev/designer/view'
 import type { Piece } from '../app/dev/designer/parts'
 import { studioStatus } from '../app/dev/designer/studio'
 import { stepOf } from './apply'
+import { SURFACES, applyButtons, renderSurface } from './surfaces'
 
 const field = (name: string): Piece => ({ kind: 'field', name, trim: false })
 const NICKNAMED = defineVersion({ id: 'nicknamed', version: 1, name: 'Nicknamed', workspaceId: WORKSPACE, fields: [{ name: 'firstName', type: 'string' }, { name: 'nickname', type: 'string', optional: true }] })
@@ -90,9 +91,15 @@ describe('Apply enforces its own assessment', () => {
 })
 
 describe('Every Apply surface agrees with the authoritative operation', () => {
-  it.each(CASES)('$name', ({ draft, feature }) => {
+  // Rendered, not restated: each real surface, with the props the page gives it (test/surfaces.ts),
+  // against what the Apply action every surface calls actually does.
+  it.each(CASES)('$name', async ({ draft, feature }) => {
     const applies = applyDraft(start, draft, stepOf(start, feature)) !== null
-    expect(canApply(assessApply(start, draft, stepOf(start, feature)))).toBe(applies)
+    for (const surface of SURFACES) {
+      const buttons = applyButtons(await renderSurface(surface, start, draft, stepOf(start, feature), JSON.stringify({ firstName: 'Ada', lastName: 'Lovelace' })))
+      expect(buttons.length, surface).toBeGreaterThan(0)
+      expect(buttons, surface).toEqual(buttons.map(() => applies))
+    }
     // The Studio's word for it: Compatible exactly when Apply applies.
     expect(studioStatus(assessApply(start, draft, stepOf(start, feature))).state === 'compatible').toBe(applies)
   })
