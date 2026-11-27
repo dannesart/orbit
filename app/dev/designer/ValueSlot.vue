@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One value's editor: the parts editor for text, field-or-fixed-value for numbers and true/false.
-// The focused editor's own, used for a top-level property and for each value inside a built object
+// PropertyEditor's own, used for a top-level property and for each value inside a built object
 // alike, so both read the same.
 import type { DefinitionVersion, FieldType } from '#shared/features/definitions'
 import type { Path } from '#shared/features/mappings'

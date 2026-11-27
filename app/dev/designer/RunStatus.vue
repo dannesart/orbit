@@ -61,9 +61,10 @@ function evidence() {
     </button>
     <div v-if="open" id="run-status" role="dialog" aria-label="Latest run" class="absolute top-full right-0 z-40 mt-2 w-64 animate-rise rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-lg shadow-slate-900/10">
       <p class="font-medium text-slate-900">{{ state.label }} · Run {{ runNumber }}</p>
-      <p v-if="run?.output || run?.mapping" class="mt-1 text-xs text-slate-600">
-        <template v-if="run?.output">{{ label(run.output) }}</template><template v-if="run?.output && run?.mapping"> · </template><template v-if="run?.mapping">Mapping v{{ run.mapping.version }}</template>
+      <p v-if="run?.feature || run?.mapping" class="mt-1 text-xs text-slate-600" data-run-versions :title="[run.feature && `${run.feature.id}@${run.feature.version}`, run.mapping && `${run.mapping.id}@${run.mapping.version}`].filter(Boolean).join(' · ')">
+        {{ [run.feature && `Feature v${run.feature.version}`, run.mapping && `Mapping v${run.mapping.version}`].filter(Boolean).join(' · ') }}
       </p>
+      <p v-if="run?.output" class="mt-0.5 text-xs text-slate-600">Made {{ label(run.output) }}</p>
       <p v-if="stale" class="mt-2 text-xs text-amber-800">Things changed since this run.</p>
       <p v-else-if="unapplied" class="mt-2 text-xs text-slate-500">Your draft isn’t applied. Runs use the applied versions.</p>
       <button type="button" class="link mt-3 text-xs" @click="evidence">Evidence</button>

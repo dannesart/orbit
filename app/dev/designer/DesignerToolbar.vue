@@ -2,7 +2,7 @@
 // The Designer's floating toolbar: Orbit's glass, like the workspace navigation. The workflow's
 // identity and its state, Run (the one prominent action), and the rest behind "More".
 const props = defineProps<{ back: string | null; status: string; attention: string | null; canRun: boolean }>()
-const emit = defineEmits<{ run: []; startOver: [] }>()
+const emit = defineEmits<{ run: []; startOver: []; versions: [] }>()
 
 const open = ref(false)
 const menu = ref<HTMLElement>()
@@ -52,6 +52,7 @@ const item = 'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text
         </button>
         <div v-if="open" ref="menu" role="menu" aria-label="More" class="absolute top-full right-0 z-40 mt-2 w-64 animate-rise rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-lg shadow-slate-900/10">
           <button type="button" role="menuitem" :class="item" @click="close(true); emit('startOver')">Start over<span class="ml-auto text-xs text-slate-400">Record, Console, draft</span></button>
+          <button type="button" role="menuitem" data-open-versions :class="item" @click="close(false); emit('versions')">Feature versions<span class="ml-auto text-xs text-slate-400">development</span></button>
           <NuxtLink to="/dev/features" role="menuitem" :class="item">List view<span class="ml-auto text-xs text-slate-400">the same chain</span></NuxtLink>
           <p class="mt-1 border-t border-slate-100 px-3 pt-2 pb-1 text-xs text-slate-500">Experiment · preview only, never in production. Nothing is saved.</p>
         </div>

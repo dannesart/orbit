@@ -2,8 +2,8 @@
 // How one output property's value is made, with room to compose it: the parts editor for text,
 // field-or-fixed-value for numbers and true/false (ValueSlot), the advanced editor for anything
 // else, and for a local object or a referenced Definition, building it property by property
-// (ConstructionEditor, Transform v3). Used by the focused editor. Mapping only: the property's name
-// and type belong to Structure.
+// (ConstructionEditor, Transform v3). Used by Mapping Studio's property inspector. Mapping only: the property's name
+// and type belong to General.
 import type { DefinitionVersion } from '#shared/features/definitions'
 import ConstructionEditor from './ConstructionEditor.vue'
 import ValueSlot from './ValueSlot.vue'

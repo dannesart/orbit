@@ -5,6 +5,7 @@ import type { PropertyType } from '#shared/features/definitions'
 import type { TransformDraft } from './config'
 import { fromPiece } from './parts'
 import { type DraftReview, friendlyIssue } from './preview'
+import type { StudioOpening } from './studio'
 import { describeSource } from './summary'
 
 export type RowState = DraftReview['fields'][number]['state']
@@ -19,8 +20,8 @@ export interface PropertyRow {
   readonly problem: string
   /** Everything the row shows, in the order it shows it, then what activating it does. */
   readonly label: string
-  /** Where the row opens the editor: Mapping at this property, or Structure while it has no name. */
-  readonly opens: { readonly mode: 'mapping' | 'structure'; readonly property: string | null }
+  /** Where the row opens Mapping Studio: Mapping at this property, or General while it has no name. */
+  readonly opens: StudioOpening
 }
 
 export const typeWords: Record<PropertyType, string> = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object', reference: 'Definition' }
@@ -41,8 +42,8 @@ export function propertyRows(draft: TransformDraft, review: DraftReview): Proper
       state: f.state,
       summary,
       problem,
-      label: `${shown} ${f.name ? 'Edit in Mapping' : 'Name it in Structure'}`,
-      opens: f.name ? { mode: 'mapping', property: f.name } : { mode: 'structure', property: null },
+      label: `${shown} ${f.name ? 'Edit in Mapping Studio' : 'Name it in Mapping Studio'}`,
+      opens: f.name ? { segment: 'mapping', property: f.name } : { segment: 'general' },
     }
   })
 }

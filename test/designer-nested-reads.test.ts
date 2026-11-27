@@ -33,14 +33,13 @@ describe('The step’s Transform version is chosen explicitly', () => {
     expect(TRANSFORMS.map((t) => [featureKey(t.feature), t.label])).toEqual([['orbit.transform@2', 'Orbit.Transform v2'], ['orbit.transform@3', 'Orbit.Transform v3 (provisional)']])
     expect(INITIAL_STEP_FEATURES.transform).toBe('orbit.transform@2')
     const designer = read('app/dev/designer/SpatialDesigner.vue')
-    expect(designer).toContain('@feature="stepFeatures.transform = $event"')
+    expect(designer).toContain('@pin="pinVersion"')
     // The page provides the reading its view derives (view.ts), and that follows the step's version.
     expect(designer).toContain('const step = computed<ApplyContext>(() => ({ feature: features.value.transform, workspaceId: runsIn }))')
     expect(designer).toContain('provide(READING, computed(() => view.value.reading))')
     const config = initialConfiguration()
     expect(transformView(config, draftFrom(config), { feature: orbitTransformV2, workspaceId: WORKSPACE }, '{}').reading).toMatchObject({ nested: false, feature: orbitTransformV2 })
     expect(transformView(config, draftFrom(config), { feature: orbitTransformV3, workspaceId: WORKSPACE }, '{}').reading).toMatchObject({ nested: true, feature: orbitTransformV3 })
-    expect(read('app/dev/designer/TransformInspector.vue')).toMatch(/<select :value="featureKey"[^>]*data-transform-version @change="emit\('feature'/)
   })
 
   it('says composed contracts are unsupported by v2 and fine for v3', () => {

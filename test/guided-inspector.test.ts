@@ -1,7 +1,8 @@
-// Guided flow and the minimal inspector (Related to #41): Structure offers "Continue to Mapping"
-// only when there is mapping work, both tabs stay free, the latest run sits behind one status
-// button, every output property is one row that opens Mapping at it (nothing is edited in the
-// inspector), and the current preview is never mistaken for a run.
+// Guided flow and the minimal inspector (Related to #41): mapping work is known only when the
+// structure is sound, the latest run sits behind one status button, every output property is one
+// row that opens Mapping Studio at it (nothing is edited in the inspector), and the current preview
+// is never mistaken for a run. The inspector's header and actions are rendered in
+// inspector-simplified.test.ts.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -29,29 +30,11 @@ describe('Structure → Mapping', () => {
     expect(mappingWork(reviewDraft([], A1, B1), ['Give the output a name.'])).toEqual([])
   })
 
-  it('opens Mapping at the first property with work, only when asked, and both tabs stay free', () => {
-    const editor = source('FocusEditor.vue')
-    expect(editor).toMatch(/<div v-if="work\.length"[^>]*>\s*<button[^>]*data-continue-mapping[^>]*@click="continueToMapping">Continue to Mapping/)
-    expect(editor).toMatch(/function continueToMapping\(\) \{\s*emit\('update:property', work\.value\[0\]!\)\s*emit\('update:mode', 'mapping'\)/)
-    // Nothing switches tabs by itself: the mode changes only from these clicks.
-    expect(editor.match(/emit\('update:mode', '(mapping|structure)'\)/g)!.sort()).toEqual([
-      "emit('update:mode', 'mapping')", "emit('update:mode', 'mapping')", "emit('update:mode', 'structure')", "emit('update:mode', 'structure')",
-    ])
-    expect(editor).not.toMatch(/watch\([^)]*mode/)
-  })
 })
 
 describe('The minimal inspector: a tool, not a report', () => {
   const inspector = source('TransformInspector.vue')
 
-  it('has a compact header: number, title, applied Mapping version, run status and Close, and nothing else', () => {
-    const header = inspector.slice(inspector.indexOf('<!-- Header -->'), inspector.indexOf('<div class="min-h-0 flex-1 overflow-y-auto'))
-    expect(header).toMatch(/\{\{ badge \}\}<\/span>[\s\S]*?>Transform<\/h2>\s*<p[^>]*>Mapping v\{\{ config\.mapping\.version \}\}<\/p>[\s\S]*?<RunStatus [\s\S]*?aria-label="Close the Transform inspector"/)
-    expect(header).not.toMatch(/Feature|descriptions|Builds a new Value/)
-    // The shared header (Feature label, description) is for the other steps only.
-    expect(source('SpatialDesigner.vue')).toMatch(/<div v-if="selectedId !== 'transform'" class="flex items-start gap-3/)
-    expect(source('SpatialDesigner.vue')).toMatch(/:badge="panelTitle\.badge"[\s\S]*?@close="closeInspector"/)
-  })
 
   it('puts the latest run behind one square status button: every outcome, with an accessible name and a popover', () => {
     const status = source('RunStatus.vue')
@@ -62,7 +45,8 @@ describe('The minimal inspector: a tool, not a report', () => {
     // The popover: what executed, the exact versions, what changed since, and the evidence.
     expect(status).toMatch(/role="dialog" aria-label="Latest run"/)
     expect(status).toMatch(/\{\{ state\.label \}\} · Run \{\{ runNumber \}\}/)
-    expect(status).toMatch(/\{\{ label\(run\.output\) \}\}[\s\S]*?Mapping v\{\{ run\.mapping\.version \}\}/)
+    expect(status).toMatch(/run\.feature && `Feature v\$\{run\.feature\.version\}`, run\.mapping && `Mapping v\$\{run\.mapping\.version\}`/)
+    expect(status).toMatch(/>Made \{\{ label\(run\.output\) \}\}</)
     expect(status).toMatch(/v-if="stale"[^>]*>Things changed since this run\./)
     expect(status).toMatch(/v-else-if="unapplied"[^>]*>Your draft isn’t applied\. Runs use the applied versions\./)
     expect(status).toMatch(/@click="evidence">Evidence</)
@@ -90,14 +74,8 @@ describe('The minimal inspector: a tool, not a report', () => {
     expect(inspector.replace('<span class="sr-only">makes</span>', '')).not.toMatch(/>makes</)
   })
 
-  it('has one Output heading with its count and a square pencil, Edit output, opening Structure; focus returns to it', () => {
-    const section = inspector.slice(inspector.indexOf('<section aria-labelledby="output-heading"'), inspector.indexOf('</section>', inspector.indexOf('output-heading')))
-    expect(section).toMatch(/>Output<\/h3>\s*<span[^>]*>\{\{ mapped \}\}\/\{\{ needed \}\}<\/span>/)
-    expect(section).toMatch(/<button\s*type="button"\s*data-open-editor\s*aria-label="Edit output"\s*title="Edit output"[\s\S]*?@click="emit\('focus', 'structure', null\)"\s*>\s*<DesignerIcon name="pencil"/)
-    expect((source('SpatialDesigner.vue') + inspector).match(/data-open-editor(?!\])/g)).toHaveLength(1)
-  })
 
-  it('lists every property the same way: one row opening the editor, with nothing to edit inline', () => {
+  it('lists every property the same way: one row opening Mapping Studio, with nothing to edit inline', () => {
     const rows = source('PropertyRows.vue')
     // One kind of row whatever makes the value: no inline controls, and no per-property value
     // (the Preview shows the values).
@@ -105,7 +83,7 @@ describe('The minimal inspector: a tool, not a report', () => {
     expect(rows).toMatch(/<button\s*type="button"\s*:data-property-row="r\.name"[\s\S]*?:aria-label="r\.label"\s*@click="emit\('open', r\.opens\)"\s*>/)
     expect(rows).toMatch(/\{\{ r\.name \|\| '\(no name\)' \}\}<\/span>\s*<span[^>]*>\{\{ r\.type \}\}<\/span>[\s\S]*?\{\{ r\.summary \}\}[\s\S]*?\{\{ r\.problem \}\}[\s\S]*?<DesignerIcon name="chevron"/)
     expect(rows).not.toMatch(/<select|<input|ShownText|update:draft/)
-    expect(inspector).toMatch(/<PropertyRows :draft="draft" :review="review" @open="emit\('focus', \$event\.mode, \$event\.property\)" \/>/)
+    expect(inspector).toMatch(/<PropertyRows :draft="draft" :review="review" @open="emit\('studio', \$event\)" \/>/)
     expect(inspector).not.toMatch(/'update:draft'/)
     expect(source('SpatialDesigner.vue').match(/<TransformInspector[\s\S]*?\/>/)![0]).not.toMatch(/@update:draft/)
   })
@@ -140,26 +118,26 @@ describe('The minimal inspector: a tool, not a report', () => {
       ['middle', 'text', 'problem', 'middleName'],
       ['size', 'number', 'problem', 'firstName'],
     ])
-    // Every kind opens Mapping at exactly its own property.
-    for (const r of rows) expect(r.opens).toEqual({ mode: 'mapping', property: r.name })
+    // Every kind opens Mapping Studio's Mapping at exactly its own property.
+    for (const r of rows) expect(r.opens).toEqual({ segment: 'mapping', property: r.name })
     // A missing value and an actual error stay identifiable: in view, and in the row's name.
-    expect(by('email')).toMatchObject({ problem: '', label: 'email, text, Not mapped. Edit in Mapping' })
+    expect(by('email')).toMatchObject({ problem: '', label: 'email, text, Not mapped. Edit in Mapping Studio' })
     expect(by('middle').problem).toMatch(/middleName/)
     expect(by('size').problem).toBe('Card needs a number here, but this makes text.')
-    expect(by('size').label).toBe('size, number, Needs attention: firstName. Card needs a number here, but this makes text. Edit in Mapping')
-    expect(by('fullName').label).toBe('fullName, text, Mapped: firstName + a space + lastName. Edit in Mapping')
+    expect(by('size').label).toBe('size, number, Needs attention: firstName. Card needs a number here, but this makes text. Edit in Mapping Studio')
+    expect(by('fullName').label).toBe('fullName, text, Mapped: firstName + a space + lastName. Edit in Mapping Studio')
     for (const r of rows.filter((x) => x.state !== 'problem')) expect(r.problem).toBe('')
-    // A property without a name yet (an output being drafted) can only be named, in Structure.
+    // A property without a name yet (an output being drafted) can only be named, in General.
     const unnamed = { ...target, fields: [{ name: '', type: 'string' as const }] }
     const [row] = propertyRows(draft, reviewDraft([], A1, unnamed, 'Unnamed'))
-    expect(row!.opens).toEqual({ mode: 'structure', property: null })
-    expect(row!.label).toBe('(no name), text, Not mapped. Name it in Structure')
+    expect(row!.opens).toEqual({ segment: 'general' })
+    expect(row!.label).toBe('(no name), text, Not mapped. Name it in Mapping Studio')
   })
 
-  it('returns focus to the row the editor was opened from, or else to Edit output', () => {
+  it('returns focus to the row Mapping Studio was opened from, or else to its pencil', () => {
     const page = source('SpatialDesigner.vue')
-    expect(page).toMatch(/function openFocus\(mode: 'mapping' \| 'structure', property: string \| null\) \{\s*origin = property/)
-    expect(page).toMatch(/const row = origin === null \? null : inspector\.value\?\.querySelector<HTMLElement>\(`\[data-property-row="\$\{CSS\.escape\(origin\)\}"\]`\)\s*;\(row \?\? inspector\.value\?\.querySelector<HTMLElement>\('\[data-open-editor\]'\)\)\?\.focus\(\)/)
+    expect(page).toMatch(/function openStudio\(at: StudioOpening \| null = null\) \{\s*studioStart\.value = at\s*studioOrigin = at\?\.property \?\? null/)
+    expect(page).toMatch(/const row = studioOrigin === null \? null : document\.querySelector<HTMLElement>\(`\[data-property-row="\$\{CSS\.escape\(studioOrigin\)\}"\]`\)\s*;\(row \?\? document\.querySelector<HTMLElement>\('\[data-edit-mapping\]'\)\)\?\.focus\(\)/)
   })
 
   it('keeps choosing a field and typing a fixed value in the full Mapping editor', () => {

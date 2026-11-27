@@ -217,6 +217,12 @@ export function outputTree(target: DefinitionVersion, properties: readonly Draft
  */
 export type StudioState = 'unresolved' | 'invalid' | 'incompatible' | 'incomplete' | 'unchanged' | 'compatible'
 
+/**
+ * Where Mapping Studio opens: a segment and, in Mapping, the output property whose editor is open
+ * (as if it had been selected there). Opening changes nothing in the draft.
+ */
+export interface StudioOpening { readonly segment: 'general' | 'mapping' | 'preview'; readonly property?: string }
+
 /** One thing to do, where it is: an output place (opened in the inspector), or General. */
 export interface StudioItem { readonly text: string; readonly at: PropertyPath | null; readonly where: 'mapping' | 'general'; readonly category: ProblemCategory }
 

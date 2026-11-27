@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The output's properties in the inspector, one row each and all alike: state, name, type, and
-// what makes the value below. The whole row opens the editor at that property (rows.ts); nothing
+// what makes the value below. The whole row opens Mapping Studio at that property (rows.ts); nothing
 // is edited here, and the values themselves are in the Preview.
 import DesignerIcon from './DesignerIcon.vue'
 import type { TransformDraft } from './config'
@@ -46,6 +46,6 @@ const icon = {
         <DesignerIcon name="chevron" class="size-4 shrink-0 text-slate-400" />
       </button>
     </li>
-    <li v-if="!rows.length" class="px-2 py-3 text-sm text-slate-500">No properties yet. Add some in Structure.</li>
+    <li v-if="!rows.length" class="px-2 py-3 text-sm text-slate-500">No properties yet. Add some in Mapping Studio.</li>
   </ul>
 </template>

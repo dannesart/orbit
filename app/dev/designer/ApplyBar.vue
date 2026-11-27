@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Committing the draft: exactly which versions Apply would create (or that it would create
-// none), with Undo and Discard beside it. Shared by the inspector, the focused editor and Mapping
+// none), with Undo and Discard beside it. Shared by the inspector and Mapping
 // Studio, so the version boundary always reads the same. In the Studio, Discard is Cancel: always
 // available, it discards the draft on purpose and returns to the Designer.
 import { type DefinitionRef, propertyPathWords } from '#shared/features/definitions'

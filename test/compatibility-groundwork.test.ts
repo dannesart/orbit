@@ -113,7 +113,9 @@ describe('Each Designer step names the exact Feature version it invokes', () => 
   it('assumes no version in the flow, and changes one only when someone picks another', () => {
     expect(designer).not.toMatch(/import \{[^}]*orbitConsole[^}]*\} from '#shared\/features\/features'/)
     expect(designer).toContain('const stepFeatures = ref<Record<FeatureStep, string>>({ ...INITIAL_STEP_FEATURES })')
-    expect(designer).toMatch(/<select id="console-variant" v-model="stepFeatures\[selectedId\]"/)
+    // A step's version is pinned only from the development control (FeatureVersions.vue).
+    expect(designer).toContain('@pin="pinVersion"')
+    expect(designer).toMatch(/function pinVersion\(step: string, key: string\) \{\s*stepFeatures\.value = \{ \.\.\.stepFeatures\.value, \[step as FeatureStep\]: key \}\s*\}/)
     expect(designer).not.toMatch(/stepFeatures\.value(\[[^\]]+\]|\.\w+) =/)
     // Choosing another version makes the last run stale, and starting over or leaving says so.
     expect(designer).toContain('JSON.stringify([pinKey.value, recordText.value, stepFeatures.value,')

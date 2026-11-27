@@ -11,7 +11,7 @@
 //   Preview  the example input and what the draft would make from it (not executed), beside the
 //            applied Mapping's preview and what actually ran (evidence)
 //
-// The same draft, review, preview and Apply as the inspector and the focused editor: opening,
+// The same draft, review, preview and Apply as the Designer's inspector: opening,
 // leaving or moving between segments changes nothing. Apply and Cancel are always in view.
 import type { DefinitionRef, DefinitionVersion, PropertyPath } from '#shared/features/definitions'
 import type { Step } from '../features/experiment'
@@ -26,7 +26,7 @@ import UnsupportedNotice from './UnsupportedNotice.vue'
 import { type ApplyAssessment, type Configuration, type Plan, type RunRecord, type TransformDraft, canApply, inputOf, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
 import { FLAT, READING } from './reading'
-import { type AppliedPreview, type StudioItem, connections, inputTree, isWithin, outputTree, studioStatus } from './studio'
+import { type AppliedPreview, type StudioItem, type StudioOpening, connections, inputTree, isWithin, outputTree, studioStatus } from './studio'
 import { fromPiece } from './parts'
 import { describeSource } from './summary'
 
@@ -51,13 +51,15 @@ const props = defineProps<{
   stale: boolean
   runNumber: number
   runs: readonly RunRecord[]
+  /** Where it opens (the Designer's inspector asks for a segment, or a property's editor); Mapping otherwise. */
+  start?: StudioOpening | null
 }>()
 const emit = defineEmits<{ 'update:draft': [TransformDraft]; apply: []; cancel: []; undo: []; back: [] }>()
 
-type Segment = 'general' | 'mapping' | 'preview'
+type Segment = StudioOpening['segment']
 const SEGMENTS: Segment[] = ['general', 'mapping', 'preview']
 const LABELS: Record<Segment, string> = { general: 'General', mapping: 'Mapping', preview: 'Preview' }
-const segment = ref<Segment>('mapping')
+const segment = ref<Segment>(props.start?.segment ?? 'mapping')
 
 const reading = inject(READING, ref(FLAT))
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
@@ -70,7 +72,9 @@ const needed = computed(() => props.review.fields.filter((f) => f.state !== 'lef
 // --- The selected output property, in the inspector ---
 // The trees never change shape while a property is edited: the inspector floats beside them. Its
 // editor is the top-level property's (a built object is edited whole), opened at the place chosen.
-const selected = ref<PropertyPath | null>(null)
+// Opened at a property (from a row in the Designer's inspector): its editor is open from the start.
+const startAt = props.start?.segment === 'mapping' ? props.start.property : undefined
+const selected = ref<PropertyPath | null>(startAt && outputs.value.some((o) => o.name === startAt) ? [startAt] : null)
 const editing = computed(() => selected.value?.[0] ?? null)
 const field = computed(() => props.review.fields.find((f) => f.name === editing.value) ?? null)
 const node = computed(() => outputs.value.find((o) => o.name === editing.value) ?? null)
@@ -79,12 +83,14 @@ const samePath = (a: PropertyPath | null, b: PropertyPath) => !!a && a.join(' �
 function open(path: PropertyPath) {
   if (samePath(selected.value, path)) return close()
   selected.value = path
-  nextTick(() => {
-    const inspector = document.querySelector<HTMLElement>('[data-studio-inspector]')
-    const place = path.length > 1 ? inspector?.querySelector<HTMLElement>(`[data-construction-property="${CSS.escape(path.join(' › '))}"]`) : null
-    place?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    ;(place ?? inspector?.querySelector<HTMLElement>('[data-inspector-body]'))?.querySelector<HTMLElement>('button, select, input')?.focus({ preventScroll: true })
-  })
+  nextTick(() => focusAt(path))
+}
+/** The inspector's first control at a place: where editing a property starts. */
+function focusAt(path: PropertyPath) {
+  const inspector = document.querySelector<HTMLElement>('[data-studio-inspector]')
+  const place = path.length > 1 ? inspector?.querySelector<HTMLElement>(`[data-construction-property="${CSS.escape(path.join(' › '))}"]`) : null
+  place?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  ;(place ?? inspector?.querySelector<HTMLElement>('[data-inspector-body]'))?.querySelector<HTMLElement>('button, select, input')?.focus({ preventScroll: true })
 }
 /** Closing the inspector: focus goes back to the row it was opened from. */
 function close() {
@@ -124,7 +130,8 @@ function onTabKey(event: KeyboardEvent) {
   nextTick(() => tabs.value?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus())
 }
 const heading = ref<HTMLElement>()
-onMounted(() => heading.value?.focus())
+// Opened at a property: its editor's first control has focus (as if the row had been selected). Otherwise the heading.
+onMounted(() => (selected.value ? focusAt(selected.value) : heading.value?.focus()))
 const tab = 'rounded-full px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500'
 const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
 </script>
@@ -177,7 +184,7 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
               <template v-else-if="boundary.length">Wouldn’t accept this Mapping: {{ boundary[0] }}</template>
               <template v-else>Takes these contracts.</template>
             </p>
-            <p class="mt-3 text-xs text-slate-500">Chosen on the Transform step. The Mapping doesn’t belong to it: any version that accepts the Mapping can invoke it.</p>
+            <p class="mt-3 text-xs text-slate-500">The exact version the Transform step pins. The Mapping doesn’t belong to it: any version that accepts the Mapping can invoke it.</p>
           </section>
           <section :class="panel" aria-labelledby="applied-heading">
             <h2 id="applied-heading" class="text-sm font-semibold text-slate-900">Applied</h2>

@@ -55,23 +55,24 @@ describe('A composed output in the Designer', () => {
     expect(mappingWork(reviewDraft([], A1, B1), [])).toEqual(['fullName'])
   })
 
-  it('shows the notice in the inspector and the focused editor, and nothing to map for such a property', () => {
+  it('shows the notice in the inspector and Mapping Studio, and nothing to map for such a property', () => {
     const root = join(import.meta.dirname, '..')
     const inspector = readFileSync(join(root, 'app/dev/designer/TransformInspector.vue'), 'utf8')
-    const focus = readFileSync(join(root, 'app/dev/designer/FocusEditor.vue'), 'utf8')
+    const studio = readFileSync(join(root, 'app/dev/designer/MappingStudio.vue'), 'utf8')
+    const property = readFileSync(join(root, 'app/dev/designer/StudioInspector.vue'), 'utf8')
     expect(inspector).toContain('<UnsupportedNotice v-if="review.unsupported"')
-    expect(focus).toContain('<UnsupportedNotice v-if="review.unsupported"')
-    expect(focus).toMatch(/v-if="selected\.state === 'unsupported'"[\s\S]*<PropertyEditor v-else/)
+    expect(studio).toContain('<UnsupportedNotice v-if="review.unsupported"')
+    expect(property).toMatch(/v-if="field\.state === 'unsupported'"[\s\S]*<PropertyEditor v-else/)
   })
 
   it('neither previews such a property as “not mapped” nor asks to fix it before applying', () => {
     const root = join(import.meta.dirname, '..')
     const preview = readFileSync(join(root, 'app/dev/designer/PreviewObject.vue'), 'utf8')
     const bar = readFileSync(join(root, 'app/dev/designer/ApplyBar.vue'), 'utf8')
-    expect(preview).toMatch(/<span v-if="r\.unsupported"[^>]*>not supported by this Transform version<\/span>\s*<ShownText v-else-if/)
+    expect(preview).toMatch(/<span v-if="r\.unsupported"[^>]*>Not supported by this Transform version<\/span>\s*<ShownText v-else-if/)
     expect(bar).toMatch(/<span v-if="unsupported"[^>]*>Apply isn’t available: this Transform version doesn’t support these contracts\.<\/span>\s*<span v-else-if="errors\.length"/)
     // The bar reads it from the assessment's structured problems (kind unsupported_contract), never from words.
     expect(bar).toContain("const unsupported = computed(() => props.assessment.problems.some((p) => p.kind === 'unsupported_contract'))")
-    for (const f of ['TransformInspector.vue', 'FocusEditor.vue']) expect(readFileSync(join(root, 'app/dev/designer', f), 'utf8')).toContain(':assessment="assessment"')
+    for (const f of ['TransformInspector.vue', 'SpatialDesigner.vue']) expect(readFileSync(join(root, 'app/dev/designer', f), 'utf8')).toContain(':assessment="assessment"')
   })
 })

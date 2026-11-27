@@ -1,5 +1,5 @@
 // What the Transform's editing surfaces show, and what their Apply does, derived in one place. The
-// Designer page renders the inspector, the focused editor and Mapping Studio from exactly this, and
+// Designer page renders the inspector and Mapping Studio from exactly this, and
 // wires every Apply button to applyDraft, so tests can derive the same state and render the same
 // surfaces. Pure: nothing here holds state, and nothing runs a Feature.
 import { type ApplyAssessment, type ApplyContext, type Configuration, type TransformDraft, applyConfiguration, assessApply, contractIn, findMapping, scopeOf, structureProblems } from './config'

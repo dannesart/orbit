@@ -3,7 +3,7 @@
   16×16, 1.5 stroke). Always decorative: the control they sit in carries the accessible name.
 -->
 <script setup lang="ts">
-defineProps<{ name: 'check' | 'error' | 'clock' | 'minus' | 'pencil' | 'chevron' | 'undo' | 'close' }>()
+defineProps<{ name: 'check' | 'error' | 'clock' | 'minus' | 'pencil' | 'chevron' | 'undo' | 'close' | 'code' }>()
 </script>
 
 <template>
@@ -27,6 +27,7 @@ defineProps<{ name: 'check' | 'error' | 'clock' | 'minus' | 'pencil' | 'chevron'
       <path d="M5.5 4 2.75 6.75 5.5 9.5" />
       <path d="M3 6.75h6.25a3.75 3.75 0 0 1 0 7.5H7" />
     </template>
+    <path v-else-if="name === 'code'" d="M5.5 4 2.5 8l3 4M10.5 4l3 4-3 4" />
     <path v-else d="m4 4 8 8M12 4l-8 8" />
   </svg>
 </template>

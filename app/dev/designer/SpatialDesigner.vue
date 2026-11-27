@@ -2,7 +2,7 @@
 // Experiment #2: the Feature playground's chain on a canvas. Disposable: it exists to find out
 // whether a spatial view makes Orbit better, not to become the workflow designer.
 // Experiment #5: the same Designer in Orbit's own design language: a floating toolbar, a floating
-// inspector for understanding and simple changes, and a focused editor with room to create.
+// inspector for understanding a step. Editing the Transform's Mapping is Mapping Studio's.
 //
 // Development and Deploy Previews only (registered by nuxt.config.ts, like /dev/features). It runs
 // the same in-memory experiment as the list playground: same fixtures, same boundary (invoke), same
@@ -17,9 +17,10 @@ import {
 } from '@xyflow/vue'
 import '@xyflow/vue/dist/style.css'
 import type { Data, DefinitionRef } from '#shared/features/definitions'
+import type { FeatureRef } from '#shared/features/features'
 import {
   A1, CONSOLES, DEFINITIONS, INITIAL_DATA, PINS, RECORD_ID, TRANSFORMS, WORKSPACE, type Step,
-  definitionLabel, featureKey, outcomeLabel, parseRecordData, shapeOf,
+  definitionLabel, featureKey, featureVersionWords, outcomeLabel, parseRecordData, shapeOf,
 } from '../features/experiment'
 import RunResult from './RunResult.vue'
 import DesignerToolbar from './DesignerToolbar.vue'
@@ -28,9 +29,9 @@ import { draftLoses, workAtRisk } from './session'
 import { appliedPreview, applyDraft, transformView } from './view'
 import { lastWorkspace, shelfOf } from '../definitions/store'
 import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput, runsIn as workspaceIn } from '../definitions/designer'
-import FocusEditor from './FocusEditor.vue'
+import FeatureVersions, { type VersionChoice } from './FeatureVersions.vue'
 import MappingStudio from './MappingStudio.vue'
-import type { AppliedPreview } from './studio'
+import type { AppliedPreview, StudioOpening } from './studio'
 import TransformInspector from './TransformInspector.vue'
 import StepNode, { type StepView } from './StepNode.vue'
 import { drawEdges, initialNodes, nodeLabel, resetPositions } from './graph'
@@ -135,7 +136,7 @@ function undo() {
  * availability come from it, and Apply itself enforces it again (applyConfiguration).
  */
 const step = computed<ApplyContext>(() => ({ feature: features.value.transform, workspaceId: runsIn }))
-/** Everything the inspector, the focused editor and Mapping Studio show, derived in one place (view.ts). */
+/** Everything the inspector and Mapping Studio show, derived in one place (view.ts). */
 const view = computed(() => transformView(config.value, draft.value, step.value, recordText.value))
 const assessment = computed(() => view.value.assessment)
 const target = computed(() => view.value.target)
@@ -438,12 +439,11 @@ const views = computed<Record<StepId, StepView>>(() => {
   }
 })
 
-// --- The inspector and the focused editor ---
-// Both float over the canvas, so opening or closing them never resizes it and never moves a node.
-// The one deliberate exception: a step you select (or start editing) that would sit underneath is
-// brought into view by panning, without zooming, on wide screens; on phones, where they're sheets,
-// the selected step is fitted above the sheet.
-const focus = ref<{ mode: 'mapping' | 'structure'; property: string | null } | null>(null)
+// --- The inspector ---
+// It floats over the canvas, so opening or closing it never resizes it and never moves a node.
+// The one deliberate exception: a step you select that would sit underneath is brought into view
+// by panning, without zooming, on wide screens; on phones, where it's a sheet, the selected step is
+// fitted above the sheet. Nothing is edited in it: editing the Transform is Mapping Studio's.
 
 // --- Mapping Studio (Phase 4.5A) ---
 // Its own view, over the Designer rather than instead of it: this page stays as it is underneath
@@ -455,8 +455,12 @@ const router = useRouter()
 const studio = computed(() => route.query.studio === 'mapping')
 useHead({ title: () => (studio.value ? 'Mapping Studio (experiment) · Orbit' : 'Spatial designer (experiment) · Orbit') })
 let pushed = false
-function openStudio() {
-  focus.value = null
+/** Where the Studio opens (a segment, or a property's editor), and the inspector row it was opened from. */
+const studioStart = shallowRef<StudioOpening | null>(null)
+let studioOrigin: string | null = null
+function openStudio(at: StudioOpening | null = null) {
+  studioStart.value = at
+  studioOrigin = at?.property ?? null
   pushed = true
   router.push({ query: { ...route.query, studio: 'mapping' } })
 }
@@ -468,9 +472,13 @@ function closeStudio() {
   const { studio: _, ...rest } = route.query
   router.replace({ query: rest })
 }
-// Back on the canvas: focus returns to where the Studio was opened from.
+// Back on the canvas: focus returns to where the Studio was opened from (a property's row, or the pencil).
 watch(studio, (open) => {
-  if (!open) nextTick(() => document.querySelector<HTMLElement>('[data-edit-mapping]')?.focus())
+  if (open) return
+  nextTick(() => {
+    const row = studioOrigin === null ? null : document.querySelector<HTMLElement>(`[data-property-row="${CSS.escape(studioOrigin)}"]`)
+    ;(row ?? document.querySelector<HTMLElement>('[data-edit-mapping]'))?.focus()
+  })
 })
 /** Cancel discards the draft on purpose (asking first when that loses work), then returns. */
 function cancelStudio() {
@@ -481,23 +489,8 @@ function cancelStudio() {
   })
 }
 const inspector = ref<HTMLElement>()
-/** The property row the editor was opened from (null: the Output pencil); focus returns there. */
-let origin: string | null = null
-function openFocus(mode: 'mapping' | 'structure', property: string | null) {
-  origin = property
-  focus.value = { mode, property }
-  nextTick(() => reveal('transform'))
-}
-function closeFocus() {
-  focus.value = null
-  nextTick(() => {
-    const row = origin === null ? null : inspector.value?.querySelector<HTMLElement>(`[data-property-row="${CSS.escape(origin)}"]`)
-    ;(row ?? inspector.value?.querySelector<HTMLElement>('[data-open-editor]'))?.focus()
-  })
-}
 function closeInspector() {
   const id = selectedId.value
-  focus.value = null
   select(undefined)
   if (id) nextTick(() => document.querySelector<HTMLElement>(`.vue-flow__node[data-id="${id}"]`)?.focus())
 }
@@ -518,7 +511,6 @@ function reveal(id: StepId) {
   })
 }
 watch(selectedId, (id) => {
-  if (id !== 'transform') focus.value = null
   if (!id) return
   if (small()) nextTick(() => requestAnimationFrame(() => fit()))
   else nextTick(() => reveal(id))
@@ -583,15 +575,30 @@ function onBeforeUnload(event: BeforeUnloadEvent) {
   event.returnValue = ''
 }
 onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
-// Arriving with a requested version: open the Transform's structure, where that choice shows.
+// Arriving with a requested version: Mapping Studio's General, where that choice shows.
 onMounted(() => {
-  if (requested) nextTick(() => { select('transform'); openFocus('structure', null) })
+  if (requested) nextTick(() => { select('transform'); openStudio({ segment: 'general' }) })
   // Arriving in Mapping Studio: the Transform is what it's about, so that's where the way back leads.
   if (studio.value) nextTick(() => select('transform'))
 })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
-const card = 'rounded-2xl bg-white p-4 ring-1 ring-slate-200/80'
+// --- Feature versions: a development-only control (FeatureVersions.vue), apart from the inspectors.
+// A step's version changes only when someone pins another there; nothing upgrades on its own.
+const versionsOpen = ref(false)
+const option = (c: { feature: FeatureRef; label: string }) => ({ key: featureKey(c.feature), label: c.label })
+const consoleGroups = [
+  { label: 'Orbit', options: CONSOLES.filter((c) => c.feature.id.startsWith('orbit.')).map(option) },
+  { label: 'Misbehaving on purpose', options: CONSOLES.filter((c) => !c.feature.id.startsWith('orbit.')).map(option) },
+]
+const versionChoices = computed<VersionChoice[]>(() => (['console-in', 'transform', 'console-out'] as const).map((id) => ({
+  step: id,
+  name: `Step ${stepBadge(id, path.value)} · ${stepTitle(id)}`,
+  groups: id === 'transform' ? [{ label: 'Orbit', options: TRANSFORMS.map(option) }] : consoleGroups,
+})))
+function pinVersion(step: string, key: string) {
+  stepFeatures.value = { ...stepFeatures.value, [step as FeatureStep]: key }
+}
 const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100'
 </script>
 
@@ -611,6 +618,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       :can-run="canRun"
       @run="run"
       @start-over="startOver"
+      @versions="versionsOpen = true"
     />
 
     <div class="absolute inset-0" :inert="studio || undefined">
@@ -652,7 +660,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
             </ControlButton>
           </Controls>
           <!-- Why a connection wasn't made, briefly, where the hint sits; then it goes. -->
-          <Panel position="bottom-center" :class="{ 'lg:hidden': focus }">
+          <Panel position="bottom-center">
             <p role="status" aria-live="polite">
               <span v-if="refusal" class="flex items-center gap-2 rounded-full border border-red-200 bg-white/90 py-1.5 pr-1.5 pl-4 text-xs text-red-700 shadow-lg shadow-slate-900/[0.06] backdrop-blur-md">
                 {{ refusal }}
@@ -673,7 +681,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
 
     <!-- The inspector: contextual, floating. Phones: a sheet with one scroll and a clear way back. -->
     <aside
-      v-if="selectedId && panelTitle && !focus"
+      v-if="selectedId && panelTitle"
       ref="inspector"
       :inert="studio || undefined"
       data-floating-surface
@@ -687,9 +695,10 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       <div v-if="selectedId !== 'transform'" class="flex items-start gap-3 px-5 pt-3 pb-3 lg:pt-4">
         <span class="mt-0.5 flex h-7 min-w-7 items-center justify-center rounded-full bg-accent-600 px-2 text-xs font-semibold text-white" aria-hidden="true">{{ panelTitle.badge }}</span>
         <div class="min-w-0 flex-1">
-          <p class="text-xs text-slate-500">{{ panelTitle.kind }}</p>
-          <h2 class="text-base font-semibold text-slate-900">{{ panelTitle.title }}</h2>
-          <p class="mt-0.5 text-xs text-slate-500">{{ descriptions[selectedId] }}</p>
+          <h2 class="text-base leading-tight font-semibold text-slate-900">{{ panelTitle.title }}</h2>
+          <p v-if="selectedId === 'record'" class="text-xs text-slate-500">Record · in memory</p>
+          <p v-else class="text-xs text-slate-500" data-step-versions :title="stepFeatures[selectedId]">{{ featureVersionWords(features[selectedId]) }}</p>
+          <p class="mt-1.5 text-xs text-slate-500">{{ descriptions[selectedId] }}</p>
         </div>
         <button type="button" class="grid size-10 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" :aria-label="`Close the ${panelTitle.title} inspector`" @click="closeInspector">✕</button>
       </div>
@@ -712,22 +721,20 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :stale="stale"
         :run-number="runNumber"
         :runs="runs"
+        :feature="featureVersionWords(features.transform)"
         :feature-key="stepFeatures.transform"
-        :versions="TRANSFORMS.map((t) => ({ key: featureKey(t.feature), label: t.label }))"
-        @feature="stepFeatures.transform = $event"
         @apply="apply"
         @discard="discard"
         @undo="undo"
-        @focus="openFocus"
         @studio="openStudio"
         @close="closeInspector"
       />
       <div v-else class="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-        <section aria-labelledby="setup-heading">
+        <section v-if="selectedId === 'record'" aria-labelledby="setup-heading" class="mb-5">
           <h3 id="setup-heading" class="text-sm font-semibold text-slate-900">Setup</h3>
           <p class="mt-0.5 text-xs text-slate-500">Changes take effect the next time you run.</p>
 
-          <div v-if="selectedId === 'record'" class="mt-3">
+          <div class="mt-3">
             <label for="pin" class="block text-xs font-medium text-slate-600">Pinned to</label>
             <select id="pin" v-model="pinKey" :class="[control, 'mt-1 w-full']">
               <option v-for="p in PINS" :key="p.key" :value="p.key">{{ definitionLabel(p.ref) }}</option>
@@ -745,22 +752,10 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
             </p>
           </div>
 
-          <!-- The exact Feature version this step invokes: changed only by choosing another here. -->
-          <div v-else-if="selectedId === 'console-in' || selectedId === 'console-out'" :class="[card, 'mt-3']">
-            <label for="console-variant" class="block text-xs font-medium text-slate-600">Feature version</label>
-            <select id="console-variant" v-model="stepFeatures[selectedId]" :class="[control, 'mt-1 w-full']" data-feature-version>
-              <optgroup label="Orbit">
-                <option v-for="c in CONSOLES.filter((x) => x.feature.id.startsWith('orbit.'))" :key="featureKey(c.feature)" :value="featureKey(c.feature)">{{ c.label }}</option>
-              </optgroup>
-              <optgroup label="Misbehaving on purpose">
-                <option v-for="c in CONSOLES.filter((x) => !x.feature.id.startsWith('orbit.'))" :key="featureKey(c.feature)" :value="featureKey(c.feature)">{{ c.label }}</option>
-              </optgroup>
-            </select>
-          </div>
         </section>
 
         <!-- What happened: read-only, from an actual run. -->
-        <section aria-labelledby="run-heading" class="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200/70">
+        <section aria-labelledby="run-heading" class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200/70">
           <div class="flex flex-wrap items-baseline justify-between gap-2">
             <h3 id="run-heading" class="text-sm font-semibold text-slate-900">What happened</h3>
             <p class="text-xs text-slate-500">{{ runLabel }}</p>
@@ -773,38 +768,6 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         </section>
       </div>
     </aside>
-
-    <!-- The focused editor: the inspector, grown. Wide screens leave the canvas (and the selected
-         step) in view on the left; phones get the whole screen, with Done as the way back. -->
-    <section
-      v-if="focus && selectedId === 'transform'"
-      data-floating-surface
-      aria-label="Transform: focused editor"
-      class="fixed inset-0 z-30 flex animate-rise flex-col overflow-hidden bg-white lg:absolute lg:inset-auto lg:top-4 lg:right-4 lg:bottom-4 lg:left-[max(1rem,calc(100%-68rem))] lg:rounded-3xl lg:border lg:border-slate-200/80 lg:shadow-2xl lg:shadow-slate-900/15"
-    >
-      <FocusEditor
-        :draft="draft"
-        :config="config"
-        :target="target"
-        :plan="plan"
-        :structure="structure"
-        :review="review"
-        :output="output"
-        :example="example"
-        :input="input"
-        :can-undo="history.length > 0"
-        :assessment="assessment"
-        :mode="focus.mode"
-        :property="focus.property"
-        @update:draft="setDraft"
-        @update:mode="focus = { ...focus!, mode: $event }"
-        @update:property="focus = { ...focus!, property: $event }"
-        @apply="apply"
-        @discard="discard"
-        @undo="undo"
-        @close="closeFocus"
-      />
-    </section>
 
     <!-- Mapping Studio: its own view, over the Designer, which stays as it is underneath -->
     <div v-if="studio" class="fixed inset-0 z-40 overflow-y-auto bg-slate-50" data-studio-view>
@@ -828,6 +791,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           :stale="stale"
           :run-number="runNumber"
           :runs="runs"
+          :start="studioStart"
           @update:draft="setDraft"
           @apply="apply"
           @cancel="cancelStudio"
@@ -837,6 +801,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       </main>
     </div>
 
+    <FeatureVersions :open="versionsOpen" :choices="versionChoices" :pinned="stepFeatures" @pin="pinVersion" @close="versionsOpen = false" />
     <LeaveDialog :losing="leaving ? atRisk : null" @stay="stay" @leave="leave" />
     <LeaveDialog
       :losing="resetting?.losing ?? null"

@@ -114,6 +114,24 @@ export const TRANSFORMS: readonly { feature: MappingFeature; label: string }[] =
 /** A Feature version as one key ("orbit.console@1"): identity and version, never a "current" alias. */
 export const featureKey = (f: FeatureRef) => `${f.id}@${f.version}`
 
+/**
+ * The exact Feature version a step pins, briefly, as its inspector's header shows it ("Feature v3").
+ * Said plainly when it's provisional, or one of the playground's misbehaving Features.
+ *
+ * Choosing a step's version is a development control here (the Designer's "Feature versions"), so
+ * the experiment can exercise every version, provisional Transform v3 included. The proposed
+ * product policy, not built yet:
+ *   - adding a step, Orbit recommends a published Feature version;
+ *   - the step pins that exact version;
+ *   - existing steps never upgrade silently;
+ *   - an upgrade is an explicit decision, made only after checking compatibility.
+ */
+export function featureVersionWords(f: FeatureRef & { readonly provisional?: true }): string {
+  const words = `Feature v${f.version}`
+  if (!f.id.startsWith('orbit.')) return `${words}, misbehaving on purpose`
+  return f.provisional ? `${words} (provisional)` : words
+}
+
 /** One step of the chain: its result, or null when it was never invoked. */
 export type Step = InvocationResult | null
 

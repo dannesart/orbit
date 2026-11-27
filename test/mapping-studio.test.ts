@@ -42,13 +42,13 @@ describe('Going to Mapping Studio and back', () => {
     expect(page).toContain('<div v-if="studio" class="fixed inset-0 z-40 overflow-y-auto bg-slate-50" data-studio-view>')
   })
 
-  it('is opened on purpose from the Transform’s inspector, and opens on Mapping', () => {
+  it('is opened on purpose from the Transform’s inspector, and opens on Mapping unless asked for a place', () => {
     expect(read('app/dev/designer/TransformInspector.vue')).toContain('data-edit-mapping')
-    expect(read('app/dev/designer/MappingStudio.vue')).toContain("const segment = ref<Segment>('mapping')")
+    expect(read('app/dev/designer/MappingStudio.vue')).toContain("const segment = ref<Segment>(props.start?.segment ?? 'mapping')")
   })
 
   it('applies nothing by going or coming back; Cancel discards on purpose, asking first when that loses work', () => {
-    const open = page.slice(page.indexOf('function openStudio()'), page.indexOf('function cancelStudio()'))
+    const open = page.slice(page.indexOf('function openStudio('), page.indexOf('function cancelStudio()'))
     expect(open).not.toMatch(/apply|setDraft|config\.value =/)
     expect(page).toContain('losing: draftLoses(draft.value, to, config.value.mappings), act: () => { setDraft(to, false); closeStudio() },')
     expect(page).toContain('@cancel="cancelStudio"')

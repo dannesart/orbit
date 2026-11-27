@@ -87,7 +87,7 @@ describe('Every Apply entry point agrees with the operation', () => {
     })
   })()
 
-  it('the inspector, the focused editor and Mapping Studio render Apply enabled exactly when Apply applies', async () => {
+  it('the inspector and Mapping Studio render Apply enabled exactly when Apply applies', async () => {
     expect(new Set(sample.map((c) => assessApply(c.config, c.draft, step(c)).state)).size).toBe(6)
     for (const c of sample) {
       const applies = applyDraft(c.config, c.draft, step(c)) !== null
@@ -105,7 +105,7 @@ describe('Every Apply entry point agrees with the operation', () => {
 
   it('wires every surface’s Apply to the one operation (the page, which can’t be rendered here)', () => {
     const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
-    expect(page.match(/@apply="[^"]*"/g)).toEqual(['@apply="apply"', '@apply="apply"', '@apply="apply"'])
+    expect(page.match(/@apply="[^"]*"/g)).toEqual(['@apply="apply"', '@apply="apply"'])
     expect(page).toMatch(/function apply\(\) \{\s+const next = applyDraft\(config\.value, draft\.value, step\.value\)/)
     expect(page).not.toMatch(/applyConfiguration\(|commit\(|defineVersion\(|reviseMapping\(/)
   })
