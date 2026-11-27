@@ -21,6 +21,7 @@ const emit = defineEmits<{ apply: []; cancel: []; undo: []; go: [StudioItem] }>(
 
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
 const STATE: Record<StudioState, { words: string; dot: string }> = {
+  unresolved: { words: 'Unresolved', dot: 'bg-red-500' },
   invalid: { words: 'Invalid', dot: 'bg-red-500' },
   incompatible: { words: 'Incompatible', dot: 'bg-red-500' },
   incomplete: { words: 'Incomplete', dot: 'bg-amber-500' },
@@ -38,7 +39,7 @@ const creates = computed(() => {
 })
 const detail = computed(() => {
   const { state, problems, todo } = props.status
-  if (state === 'invalid' || state === 'incompatible') return count(problems.length, 'problem to fix', 'problems to fix')
+  if (state === 'unresolved' || state === 'invalid' || state === 'incompatible') return count(problems.length, 'problem to fix', 'problems to fix')
   if (state === 'incomplete') return `${count(todo.length || 1, 'property needs', 'properties need')} a value`
   if (state === 'unchanged') return `${label(props.config.output)} · Mapping v${props.config.mapping.version} applied`
   return creates.value

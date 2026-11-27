@@ -4,9 +4,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { refOf } from '../shared/features/definitions'
-import { A1 } from '../app/dev/features/experiment'
+import { orbitTransformV2 } from '../shared/features/features'
+import { A1, WORKSPACE } from '../app/dev/features/experiment'
 import type { Piece } from '../app/dev/designer/parts'
 import { draftFrom, initialConfiguration, planApply } from '../app/dev/designer/config'
+import { appliedPreview } from '../app/dev/designer/view'
 import { applyFor } from './apply'
 
 const field = (name: string): Piece => ({ kind: 'field', name, trim: false })
@@ -15,7 +17,11 @@ const read = (p: string) => readFileSync(join(import.meta.dirname, '..', p), 'ut
 describe('Preview names what it shows', () => {
   it('shows the applied Mapping from what’s applied, and runs from their evidence, each named apart', () => {
     const page = read('app/dev/designer/SpatialDesigner.vue')
-    expect(page).toContain('const applied = computed<AppliedPreview>(() => {')
+    // The page's applied preview is view.ts's: the applied Mapping, never the draft.
+    expect(page).toContain('const applied = computed<AppliedPreview>(() => appliedPreview(config.value, step.value, recordText.value))')
+    const config = initialConfiguration()
+    const shown = appliedPreview(config, { feature: orbitTransformV2, workspaceId: WORKSPACE }, JSON.stringify({ firstName: 'Ada', lastName: 'Lovelace' }))
+    expect([shown.version, shown.properties]).toEqual([config.mapping.version, config.mappings[0]!.properties])
     const preview = read('app/dev/designer/StudioPreview.vue')
     expect(preview).toContain('This draft, previewed with the example. Nothing has run.')
     expect(preview).toContain('what runs use now, previewed with the same example. Nothing has run.')

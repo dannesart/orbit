@@ -50,7 +50,7 @@ function previewed(properties: readonly MappingProperty[], preview: OutputPrevie
   }
   properties.forEach((p) => { if (!target.fields.some((f) => f.name === p.name)) notes.push(`${p.name || 'An unnamed value'}: not part of ${targetLabel}`) })
   const fits = preview.fits ? preview.fits.issues : null
-  return { data, notes, fits, fields: target.fields as readonly Field[], label: targetLabel }
+  return { data, notes, fits, kind: preview.kind, refused: preview.refused, fields: target.fields as readonly Field[], label: targetLabel }
 }
 const draftView = computed(() => previewed(fromDraft(props.draft.properties), props.output, props.target.definition, props.target.label))
 const appliedView = computed(() => previewed(props.applied.properties, props.applied.preview, props.applied.target, props.applied.label))
@@ -106,6 +106,10 @@ const segment = 'rounded-full px-3 py-1 text-xs font-medium transition focus-vis
           </ul>
           <p v-if="shown.fits && shown.fits.length" class="mt-2 text-xs text-red-700">{{ shown.label }} wouldn’t accept this: {{ shown.fits.join(' ') }}</p>
           <p v-else-if="shown.fits" class="mt-2 text-xs text-slate-500" data-preview-fits>Fits {{ shown.label }}.</p>
+          <!-- Not a result: what each value reads, shown as such, and why a run would refuse it -->
+          <p v-if="shown.kind === 'illustration'" class="mt-2 text-xs" :class="shown.refused.length ? 'text-red-700' : 'text-slate-500'" data-preview-illustration>
+            An illustration, not a result.<template v-if="shown.refused.length"> This Transform version would refuse the Mapping before running: {{ shown.refused.join(' ') }}</template>
+          </p>
           <details class="mt-3 text-xs text-slate-500">
             <summary class="cursor-pointer">JSON</summary>
             <pre class="mt-1 overflow-x-auto rounded-xl bg-slate-50 p-3 font-mono text-slate-700">{{ JSON.stringify(shown.data, null, 2) }}</pre>

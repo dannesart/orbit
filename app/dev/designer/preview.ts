@@ -6,7 +6,7 @@
 // optional property has no value and that property is left out, never filled in; v1 refuses to read one.
 import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type PropertyType, type Resolve, type Scalar, checkContract, frozenCopy, kindOf, propertyPathWords, validate } from '#shared/features/definitions'
 import { type Expression, type LocatedMappingIssue, type MappingProperty, checkNestedMapping } from '#shared/features/mappings'
-import { transformData } from '#shared/features/features'
+import { contractCompatibility, mappingCompatibility, transformData } from '#shared/features/features'
 import { type Problem, categoryOf } from './problems'
 import { FLAT, type Reading, type ReviewIssue, checkWith, featureOf, presentIn } from './reading'
 import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData } from '../features/experiment'
@@ -191,7 +191,7 @@ export function reviewDraft(properties: readonly MappingProperty[], input: Defin
       const place = 'at' in i ? i.at.output : [field.name]
       const short = friendlyIssue(i)
       const unmade = 'at' in i && i.problem === 'missing_output_property'
-      add({ kind: unmade ? 'not_made' : 'mapping', category: categoryOf(i), at: place, index, issue: i, words: `${propertyPathWords(place)}: ${short}`, short: unmade ? 'Needs a value' : short })
+      add({ kind: unmade ? 'not_made' : 'mapping', category: categoryOf(i, [properties[index]!]), at: place, index, issue: i, words: `${propertyPathWords(place)}: ${short}`, short: unmade ? 'Needs a value' : short })
     }
     return { name: field.name, expected: field.type, optional, index, state: own.length || issues[index]!.length ? 'problem' : 'set', problems: own }
   })
@@ -241,24 +241,50 @@ export const mappingWork = (review: DraftReview, structure: readonly string[]): 
 export interface OutputPreview {
   /** Each property's value from the example, or why it has none. */
   readonly values: readonly ValuePreview[]
-  /** Only when every value could be made: whether the result fits the target Definition. */
+  /**
+   * What this preview is:
+   *   transformation  what the step's Transform version would make from the example: it accepts the
+   *                   contracts and the complete Mapping before running (the boundary's own checks),
+   *                   and its own run made this. Only then is `fits` said.
+   *   illustration    what the draft's sources read from the example, one by one: useful while the
+   *                   draft is incomplete or refused, but not a result any run would make.
+   */
+  readonly kind: 'transformation' | 'illustration'
+  /**
+   * Why the step's Transform version would refuse the complete Mapping before running, in words
+   * (its own pre-run check, mappingCompatibility): empty when it wouldn't, or when that can't be
+   * asked yet (contracts it can't take, or that don't resolve).
+   */
+  readonly refused: readonly string[]
+  /** Only for a transformation: whether the result fits the target Definition. */
   readonly fits: { readonly issues: readonly string[] } | null
 }
 
-/** The object the draft would make from the example, property by property, absent ones left out. */
+/**
+ * The object the draft would make from the example, property by property, absent ones left out. A
+ * transformation only when the step's Transform version would accept everything before running, as
+ * the boundary checks it (the contracts resolve, the version takes them, it accepts the complete
+ * Mapping); otherwise an illustration, never shown as fitting.
+ */
 export function previewOutput(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, example: Example, reading: Reading = FLAT): OutputPreview {
   const values = properties.map((p) => previewSource(p.source, input, example, reading))
-  if (!values.every((v) => 'value' in v || 'absent' in v || 'object' in v) || new Set(properties.map((p) => p.name)).size !== properties.length || !('data' in example)) return { values, fits: null }
+  const illustration = (refused: readonly string[] = []): OutputPreview => ({ values, kind: 'illustration', refused, fits: null })
+  const feature = featureOf(reading)
+  // The boundary's own checks, in its order: contracts that resolve, that this version takes, then the complete Mapping.
+  if (checkContract(input, reading.resolve).length || checkContract(target, reading.resolve).length) return illustration()
+  if (contractCompatibility(feature, input, 'input').length || contractCompatibility(feature, target, 'output').length) return illustration()
+  const refused = mappingCompatibility(feature, { properties }, input, target, reading.resolve)
+  if (refused.length) return illustration(refused.map(describeMappingIssue))
+  if (!values.every((v) => 'value' in v || 'absent' in v || 'object' in v) || !('data' in example)) return illustration()
   // The whole object, as the step's Transform version's own run makes it.
   let output: Data
   try {
-    output = transformData(featureOf(reading), properties, example.data)
+    output = transformData(feature, properties, example.data)
   } catch {
-    return { values, fits: null }
+    return illustration()
   }
   // The one validator, through the same resolver, at every depth.
-  if (checkContract(target, reading.resolve).length) return { values, fits: null }
-  return { values, fits: { issues: validate(target, output, reading.resolve).map(describeIssue) } }
+  return { values, kind: 'transformation', refused: [], fits: { issues: validate(target, output, reading.resolve).map(describeIssue) } }
 }
 
 // --- Whitespace you can see ---

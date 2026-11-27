@@ -4,7 +4,7 @@
 // receives the answer as plain data (ContractSupport, Reading).
 import type { DefinitionVersion, Resolve } from '#shared/features/definitions'
 import { type MappingFeature, contractCompatibility, mappingCompatibility } from '#shared/features/features'
-import type { MappingProperty } from '#shared/features/mappings'
+import { type MappingProperty, propertyIndexAt } from '#shared/features/mappings'
 import { describeMappingIssue } from '../features/experiment'
 import type { ContractSupport } from './preview'
 import { type Problem, categoryOf } from './problems'
@@ -29,11 +29,11 @@ export const boundaryProblems = (feature: MappingFeature, properties: readonly M
 /** The same refusal as structured problems: each issue's kind decides its category, its place where it is. */
 export function boundaryFindings(feature: MappingFeature, properties: readonly MappingProperty[], input: DefinitionVersion, output: DefinitionVersion, resolve: Resolve = () => null): Problem[] {
   return mappingCompatibility(feature, { properties }, input, output, resolve).map((issue): Problem => {
-    // Nested versions locate an issue in the output; flat ones by the property's index in the Mapping.
-    const first = 'at' in issue ? null : issue.path[0]
-    const index = typeof first === 'number' && first < properties.length ? first : null
-    const at = 'at' in issue ? (issue.at.output.length ? issue.at.output : null) : index !== null ? [properties[index]!.name] : null
+    // Nested versions locate an issue in the output; flat ones by the property its Path starts at (its name, or its position when unnamed).
+    const found = 'at' in issue ? -1 : propertyIndexAt(properties, issue.path)
+    const index = found >= 0 ? found : null
+    const at = 'at' in issue ? (issue.at.output.length ? issue.at.output : null) : index !== null && properties[index]!.name ? [properties[index]!.name] : null
     const words = describeMappingIssue(issue)
-    return { kind: 'refused', category: categoryOf(issue), at, index, issue, words, short: words }
+    return { kind: 'refused', category: categoryOf(issue, properties), at, index, issue, words, short: words }
   })
 }

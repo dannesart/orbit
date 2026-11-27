@@ -24,7 +24,8 @@ import {
 import RunResult from './RunResult.vue'
 import DesignerToolbar from './DesignerToolbar.vue'
 import LeaveDialog from './LeaveDialog.vue'
-import { draftAfterApply, draftLoses, workAtRisk } from './session'
+import { draftLoses, workAtRisk } from './session'
+import { appliedPreview, applyDraft, transformView } from './view'
 import { lastWorkspace, shelfOf } from '../definitions/store'
 import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput } from '../definitions/designer'
 import FocusEditor from './FocusEditor.vue'
@@ -38,14 +39,11 @@ import {
   connectionProblems, flowOutcome, pathOf, runFlow, stepBadge, stepTitle,
 } from './flow'
 import { summarize } from './summary'
-import { fromDraft } from './parts'
-import { exampleFrom, previewOutput } from './preview'
-import { transformSupport } from './support'
 import { READING, readingOf } from './reading'
 import { reconcile } from './switching'
 import {
-  type ApplyContext, type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, assessApply, draftFrom, findDefinition, findMapping, inputOf,
-  initialConfiguration, labelOf, outputOf, structureProblems,
+  type ApplyContext, type Configuration, type RunRecord, type TransformDraft, allDefinitions, draftFrom, findMapping, inputOf, scopeOf,
+  initialConfiguration, labelOf, outputOf,
 } from './config'
 
 // The page's title follows where you are (Mapping Studio, below).
@@ -85,8 +83,12 @@ const pin = computed(() => PINS.find((p) => p.key === pinKey.value)!)
 const parsed = computed(() => parseRecordData(recordText.value))
 const appliedMapping = computed(() => findMapping(config.value, config.value.mapping)!)
 const label = (ref: DefinitionRef) => labelOf(config.value, ref)
-/** Exactly the version named, among those runs here use (they never change, so a past run reads the same). */
-const resolve = (ref: DefinitionRef) => findDefinition(config.value, ref)
+/**
+ * Exactly the version named, as a run in this workspace resolves it (scopeOf: the boundary's own
+ * resolver, over the versions runs here use). Apply, the preview and runs all resolve this way.
+ */
+const scope = computed(() => scopeOf(config.value, runsIn))
+const resolve = (ref: DefinitionRef) => scope.value.resolve(ref)
 /** The contracts connections are judged by: Record A's pinned Definition and the applied Mapping's. */
 const contracts = computed<Contracts>(() => ({
   record: pin.value.ref,
@@ -109,7 +111,7 @@ const draft = shallowRef<TransformDraft>(requested ? requestedDraft(requested) :
 function requestedDraft(output: DefinitionRef): TransformDraft {
   const next: TransformDraft = { ...draftFrom(config.value), use: 'catalogue', catalogue: output }
   // At setup, before the review exists: read as the step's Transform version reads.
-  return reconcile(next, findDefinition(config.value, inputOf(next)) ?? A1, outputOf(config.value, next).definition, readingOf(features.value.transform, resolve))
+  return reconcile(next, resolve(inputOf(next)) ?? A1, outputOf(config.value, next).definition, readingOf(features.value.transform, resolve))
 }
 const history = shallowRef<TransformDraft[]>([])
 let lastEdit = 0
@@ -132,44 +134,37 @@ function undo() {
  * with the Transform version this step invokes. Every surface's review, problems and Apply
  * availability come from it, and Apply itself enforces it again (applyConfiguration).
  */
-const step = computed<ApplyContext>(() => ({ feature: features.value.transform, resolve }))
-const assessment = computed(() => assessApply(config.value, draft.value, step.value))
-const target = computed(() => assessment.value.target)
-const draftProperties = computed(() => fromDraft(draft.value.properties))
-const structure = computed(() => structureProblems(draft.value))
+const step = computed<ApplyContext>(() => ({ feature: features.value.transform, workspaceId: runsIn }))
+/** Everything the inspector, the focused editor and Mapping Studio show, derived in one place (view.ts). */
+const view = computed(() => transformView(config.value, draft.value, step.value, recordText.value))
+const assessment = computed(() => view.value.assessment)
+const target = computed(() => view.value.target)
+const structure = computed(() => view.value.structure)
 /** What the draft reads: Definition A · v1 unless another was chosen in Structure. */
-const input = computed(() => assessment.value.input)
+const input = computed(() => view.value.input)
 // Review, preview and the source picker follow the Transform version this step invokes.
-const support = computed(() => transformSupport(input.value, target.value.definition, features.value.transform, resolve))
-provide(READING, computed(() => support.value.reading!))
-const example = computed(() => exampleFrom(recordText.value, input.value, resolve))
-const review = computed(() => assessment.value.review)
-const output = computed(() => previewOutput(draftProperties.value, input.value, target.value.definition, example.value, support.value.reading))
+provide(READING, computed(() => view.value.reading))
+const example = computed(() => view.value.example)
+const review = computed(() => view.value.review)
+const output = computed(() => view.value.output)
 /**
  * The applied Mapping, previewed the same way with the same Record A (Mapping Studio's Preview
  * shows it beside the draft's). A preview, never a run: runs are what made the evidence.
  */
-const applied = computed<AppliedPreview>(() => {
-  const mapping = appliedMapping.value
-  const from = findDefinition(config.value, mapping.from) ?? A1
-  const to = findDefinition(config.value, mapping.to)!
-  const example = exampleFrom(recordText.value, from, resolve)
-  const reading = readingOf(features.value.transform, resolve)
-  return { version: mapping.version, label: label(mapping.to), properties: mapping.properties, input: from, target: to, example, preview: previewOutput(mapping.properties, from, to, example, reading) }
-})
-const plan = computed(() => assessment.value.plan)
+const applied = computed<AppliedPreview>(() => appliedPreview(config.value, step.value, recordText.value))
+const plan = computed(() => view.value.plan)
 /** What the step's Transform version refuses of the complete draft (its pre-run check), in words. */
-const boundary = computed(() => assessment.value.problems.filter((p) => p.kind === 'refused').map((p) => p.words))
+const boundary = computed(() => view.value.boundary)
 /**
- * Apply: the authoritative operation decides, with the same assessment every surface shows. A refused
- * draft changes nothing: the applied configuration, its versions and the draft stay as they are.
+ * Apply, from every surface: the authoritative operation decides (view.ts, applyDraft), with the same
+ * assessment every surface shows. A refused draft changes nothing: the applied configuration, its
+ * versions and the draft stay as they are.
  */
 function apply() {
-  const before = config.value
-  const result = applyConfiguration(before, draft.value, step.value)
-  if (!result.applied) return
-  config.value = result.config
-  setDraft(draftAfterApply(draft.value, before, config.value), false)
+  const next = applyDraft(config.value, draft.value, step.value)
+  if (!next) return
+  config.value = next.config
+  setDraft(next.draft, false)
 }
 
 // Discard and Start over reset the draft on purpose. When that would lose work someone wrote

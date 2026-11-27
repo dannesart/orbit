@@ -61,10 +61,15 @@ export function requestedOutput(param: unknown, offered: readonly Offered[]): De
  */
 export function placeIn(catalog: Catalog, workspaceId: string): Catalog {
   if (workspaceId === WORKSPACE) return catalog
-  const move = <T extends { workspaceId: string | null }>(item: T): T => (item.workspaceId === WORKSPACE ? { ...item, workspaceId } : item)
+  const move = <T extends { workspaceId: string | null }>(item: T) => placed(item, workspaceId)
   return {
     definitions: catalog.definitions.map(move),
     records: catalog.records.map(move),
     mappings: catalog.mappings.map(move),
   }
+}
+
+/** One piece of sample scaffolding placed in `workspaceId` (placeIn's rule); anything else as it is. */
+export function placed<T extends { workspaceId: string | null }>(item: T, workspaceId: string): T {
+  return item.workspaceId === WORKSPACE && workspaceId !== WORKSPACE ? { ...item, workspaceId } : item
 }

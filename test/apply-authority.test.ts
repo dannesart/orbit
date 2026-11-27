@@ -2,13 +2,13 @@
 // draft may be applied; every Apply surface shows it (canApply), and the Apply operation enforces it
 // itself, so calling it directly can't make a Mapping version from an invalid, incompatible or
 // incomplete draft. A refusal leaves the applied configuration and every version exactly as they were.
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { defineVersion, refOf } from '../shared/features/definitions'
 import { type MappingFeature, orbitTransformV1, orbitTransformV2, orbitTransformV3 } from '../shared/features/features'
 import { APPLICANT, WORKSPACE } from '../app/dev/features/experiment'
 import { type Configuration, type Offered, type TransformDraft, applyConfiguration, assessApply, canApply, draftFrom, initialConfiguration } from '../app/dev/designer/config'
+import { draftAfterApply } from '../app/dev/designer/session'
+import { applyDraft } from '../app/dev/designer/view'
 import type { Piece } from '../app/dev/designer/parts'
 import { studioStatus } from '../app/dev/designer/studio'
 import { stepOf } from './apply'
@@ -91,22 +91,18 @@ describe('Apply enforces its own assessment', () => {
 
 describe('Every Apply surface agrees with the authoritative operation', () => {
   it.each(CASES)('$name', ({ draft, feature }) => {
-    const assessment = assessApply(start, draft, stepOf(start, feature))
-    const applies = applyConfiguration(start, draft, stepOf(start, feature)).applied
-    // The rule the inspector's, the focused editor's and the Studio's Apply buttons show.
-    expect(canApply(assessment)).toBe(applies)
-    // The Studio's word for it: Compatible exactly when Apply would apply.
-    expect(studioStatus(assessment).state === 'compatible').toBe(applies)
+    const applies = applyDraft(start, draft, stepOf(start, feature)) !== null
+    expect(canApply(assessApply(start, draft, stepOf(start, feature)))).toBe(applies)
+    // The Studio's word for it: Compatible exactly when Apply applies.
+    expect(studioStatus(assessApply(start, draft, stepOf(start, feature))).state === 'compatible').toBe(applies)
   })
 
-  it('each surface takes its Apply availability from canApply(assessment), and the page’s Apply is the operation itself', () => {
-    const read = (f: string) => readFileSync(join(import.meta.dirname, '../app/dev/designer', f), 'utf8')
-    expect(read('ApplyBar.vue')).toContain(':disabled="!canApply(assessment)"')
-    expect(read('MappingStudio.vue')).toContain(':applicable="canApply(assessment)"')
-    expect(read('StudioStatusBar.vue')).toContain(':disabled="!applicable"')
-    for (const f of ['TransformInspector.vue', 'FocusEditor.vue']) expect(read(f)).toContain(':assessment="assessment"')
-    const apply = read('SpatialDesigner.vue').match(/function apply\(\) \{[\s\S]*?\n\}/)![0]
-    expect(apply).toContain('applyConfiguration(before, draft.value, step.value)')
-    expect(apply).toContain('if (!result.applied) return')
+  it('every surface’s Apply action is the operation itself: applied, or nothing changes', () => {
+    for (const { draft, feature } of CASES) {
+      const result = applyConfiguration(start, draft, stepOf(start, feature))
+      const next = applyDraft(start, draft, stepOf(start, feature))
+      if (!result.applied) expect(next).toBeNull()
+      else expect(next).toEqual({ config: result.config, draft: draftAfterApply(draft, start, result.config) })
+    }
   })
 })

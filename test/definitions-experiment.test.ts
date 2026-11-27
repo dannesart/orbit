@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Data } from '../shared/features/definitions'
 import type { Expression, MappingProperty } from '../shared/features/mappings'
-import { orbitConsole } from '../shared/features/features'
+import { orbitConsole, orbitTransformV2 } from '../shared/features/features'
 import {
   type Draft, ORBIT_PROVIDED, addField, addVersion, blankDraft, changesFrom, checkExample, checkSequence, createDefinition,
   draftFrom, draftProblems, exampleData, fieldsOf, issueWords, nameNotes, newIdentity, removeField, renamed, updateField,
@@ -251,8 +251,9 @@ describe('Journey A: made in Definitions, used as an exact version in the Transf
   const v1 = person()
   const v2 = addVersion(v1, updateField(addField(draftFrom(v1.versions[0]!)), 2, { name: 'email' }))
 
+  // Applied for the workspace it runs in, as the Designer opened from Acme applies it.
   function use(config: Configuration, ref: { id: string; version: number }, properties: MappingProperty[]) {
-    return applyFor(config, { ...transformDraftFrom(config), use: 'catalogue', catalogue: ref, properties: toDraft(properties) })
+    return applyFor(config, { ...transformDraftFrom(config), use: 'catalogue', catalogue: ref, properties: toDraft(properties) }, orbitTransformV2, 'ws-acme')
   }
   function run(config: Configuration, workspaceId: string) {
     const catalog = { definitions: allDefinitions(config), records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: A1, data: INITIAL_DATA as Data }], mappings: config.mappings }
@@ -292,7 +293,7 @@ describe('Journey A: made in Definitions, used as an exact version in the Transf
     const draft = { ...transformDraftFrom(start), use: 'catalogue' as const, catalogue: { id: v1.id, version: 2 }, properties: toDraft([fullName, subscribed]) }
     expect(reviewDraft([fullName, subscribed], A1, outputOf(start, draft).definition).problems.length).toBeGreaterThan(0)
     // Apply itself refuses (it used to leave that to its caller): the configuration and its versions stay exactly as they were.
-    const result = applyConfiguration(start, draft, stepOf(start))
+    const result = applyConfiguration(start, draft, stepOf(start, orbitTransformV2, 'ws-acme'))
     expect(result.applied).toBe(false)
     expect(result.config).toBe(start)
     expect(result.assessment.state).toBe('incomplete')

@@ -208,13 +208,14 @@ export function outputTree(target: DefinitionVersion, properties: readonly Draft
 // --- Where the draft stands, in one word ---
 
 /**
+ * unresolved    a contract it depends on can't be established here
  * invalid       something in the configuration is wrong, whatever version runs it
  * incompatible  the step's Transform version can't take it (another version might)
  * incomplete    sound so far, but something required isn't made yet
  * unchanged     exactly what's applied
  * compatible    changed, complete and sound: Apply is available
  */
-export type StudioState = 'invalid' | 'incompatible' | 'incomplete' | 'unchanged' | 'compatible'
+export type StudioState = 'unresolved' | 'invalid' | 'incompatible' | 'incomplete' | 'unchanged' | 'compatible'
 
 /** One thing to do, where it is: an output place (opened in the inspector), or General. */
 export interface StudioItem { readonly text: string; readonly at: PropertyPath | null; readonly where: 'mapping' | 'general'; readonly category: ProblemCategory }
@@ -228,7 +229,7 @@ export interface StudioStatus {
 }
 
 /** Where a problem is dealt with: the contracts and the output's structure in General, the rest in Mapping. */
-const GENERAL: ReadonlySet<Problem['kind']> = new Set(['unsupported_contract', 'structure'])
+const GENERAL: ReadonlySet<Problem['kind']> = new Set(['contract', 'unsupported_contract', 'structure'])
 
 /**
  * Where the draft stands, as the authoritative assessment (config.ts, assessApply) says: its state,

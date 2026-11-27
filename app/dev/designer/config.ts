@@ -15,10 +15,12 @@
 //   identity it always had; one from another input has its own.
 //   Nothing here changes the domain; it only decides which immutable versions to make.
 import {
-  type DefinitionRef, type DefinitionVersion, type Field, type Resolve, checkPropertyNames, deepFreeze, defineVersion, frozenCopy, refOf, sameDefinition, sameFields, visibleIn,
+  type DefinitionIssue, type DefinitionRef, type DefinitionVersion, type Field, type Resolve,
+  checkContract, checkPropertyNames, deepFreeze, defineVersion, frozenCopy, refOf, sameDefinition, sameFields, versionIssues, visibleIn,
 } from '#shared/features/definitions'
 import { type Mapping, type MappingProperty, reviseMapping, sameMappingProperties } from '#shared/features/mappings'
-import type { FeatureRef, MappingFeature, Outcome } from '#shared/features/features'
+import { type FeatureRef, type MappingFeature, type Outcome, resolverIn } from '#shared/features/features'
+import { placeIn, placed } from '../definitions/designer'
 import type { StepId } from './flow'
 
 /** One run, as the Transform step's evidence recorded it: exact versions, never the draft. */
@@ -37,7 +39,7 @@ export interface RunRecord {
    */
   readonly path: readonly StepId[]
 }
-import { A1, B1, DEFINITIONS, INITIAL_MAPPING, WORKSPACE, definitionLabel, describeNamingIssues } from '../features/experiment'
+import { A1, B1, DEFINITIONS, INITIAL_MAPPING, WORKSPACE, definitionLabel, describeDefinitionIssue, describeNamingIssues } from '../features/experiment'
 import { type DraftProperty, fromDraft, toDraft } from './parts'
 import { type DraftReview, reviewDraft } from './preview'
 import type { Problem } from './problems'
@@ -162,8 +164,15 @@ export function structureFindings(draft: TransformDraft): Problem[] {
   const words: string[] = []
   if (!name.trim()) words.push('Give the output a name.')
   if (!fields.length) words.push('Add at least one property.')
-  // Orbit's naming rule, the one the Studio uses too.
-  words.push(...describeNamingIssues(checkPropertyNames(fields.map((f) => f.name))))
+  // Orbit's naming rule, the one the Studio uses too: one problem per fact (several names with
+  // surrounding spaces in one object are one), whatever the sentences say.
+  const seen = new Set<string>()
+  for (const issue of checkPropertyNames(fields.map((f) => f.name))) {
+    const fact = JSON.stringify([issue.problem, issue.path.slice(0, -1), issue.problem === 'empty_name' || issue.problem === 'surrounding_whitespace' ? null : [issue.path.at(-1), 'other' in issue ? issue.other : null]])
+    if (seen.has(fact)) continue
+    seen.add(fact)
+    words.push(describeNamingIssues([issue])[0]!)
+  }
   return words.map((w) => ({ kind: 'structure', category: 'invalid', at: null, index: null, words: w, short: w }))
 }
 
@@ -203,20 +212,45 @@ export function planApply(config: Configuration, draft: TransformDraft): Plan {
   return { output: { ref, label: output.label, isNew: output.isNew }, mapping: { id, version, isNew: !reuse }, changes }
 }
 
-/** The step a configuration is applied for: the Transform version it invokes, and how references resolve there. */
-export interface ApplyContext {
-  readonly feature: MappingFeature
+/**
+ * Where a configuration's versions are resolved: exactly as a run in `workspaceId` resolves them.
+ * The same versions a run's catalogue holds (the samples, what's offered and this Transform's own),
+ * the configuration's own placed in that workspace exactly as the run places them (placeIn), and the
+ * boundary's own resolver over them (resolverIn): exact identity, and only what that workspace may
+ * see, references included. So Apply, the preview and a run agree on what every reference is, and
+ * another workspace's private version is, to all of them, one that doesn't exist.
+ */
+export interface Scope {
+  readonly workspaceId: string
   readonly resolve: Resolve
+  /** A version in words, by what this workspace may see: never another workspace's name. */
+  readonly label: (ref: DefinitionRef) => string
+}
+
+export function scopeOf(config: Configuration, workspaceId: string): Scope {
+  const { definitions } = placeIn({ definitions: allDefinitions(config), records: [], mappings: [] }, workspaceId)
+  const resolve = resolverIn(definitions, workspaceId)
+  return { workspaceId, resolve, label: (ref) => `${resolve(ref)?.name ?? ref.id} · v${ref.version}` }
 }
 
 /**
+ * The step a configuration is applied for: the Transform version it invokes, and the workspace it
+ * runs in. How references resolve follows from those (scopeOf), never from whoever asks.
+ */
+export interface ApplyContext {
+  readonly feature: MappingFeature
+  readonly workspaceId: string
+}
+
+/**
+ * unresolved    a contract can't be established here (the boundary would refuse it: invalid_contract)
  * invalid       something is wrong whatever version runs it (structure, sources, types, places)
  * incompatible  the step's Transform version can't take it
  * incomplete    sound so far, but something required isn't made yet
  * unchanged     nothing to apply: it's exactly what's applied
  * applicable    changed, complete, sound, and accepted by the step's Transform version
  */
-export type ApplyState = 'invalid' | 'incompatible' | 'incomplete' | 'unchanged' | 'applicable'
+export type ApplyState = 'unresolved' | 'invalid' | 'incompatible' | 'incomplete' | 'unchanged' | 'applicable'
 
 /** Whether a draft may be applied, and why not: the one assessment every Apply surface shows. */
 export interface ApplyAssessment {
@@ -230,28 +264,51 @@ export interface ApplyAssessment {
 }
 
 /**
- * The authoritative assessment: the output's structure, the draft reviewed with the step's Transform
- * version (its contracts, its absence rule, its sources, the output's completeness at every level),
- * and, once that review is clean, that version's own pre-run check of the complete Mapping
- * (mappingCompatibility). States come from the problems' categories, never from their words.
+ * The authoritative assessment, in the boundary's own order, with the boundary's own resolver for
+ * the step's workspace (scopeOf): the complete pinned contracts on both sides (every reference,
+ * optional or not, read by the Mapping or not: checkContract; the Transform's own new output exactly
+ * as making it would check it: versionIssues), the output's structure, the draft reviewed with the
+ * step's Transform version (its contracts, its absence rule, its sources, the output's completeness at
+ * every level), and, once that review is clean, that version's own pre-run check of the complete
+ * Mapping (mappingCompatibility). States come from the problems' categories, never from their words.
  */
 export function assessApply(config: Configuration, draft: TransformDraft, context: ApplyContext): ApplyAssessment {
   const plan = planApply(config, draft)
-  const known = findDefinition(config, inputOf(draft))
-  const input = known ?? A1
-  const target = outputOf(config, draft)
+  const scope = scopeOf(config, context.workspaceId)
+  const contract = (words: string): Problem => ({ kind: 'contract', category: 'unresolved', at: null, index: null, words, short: words })
+  const drafted = outputOf(config, draft)
+  // Exactly the versions a run here would resolve: another workspace's is one that can't be found.
+  const known = scope.resolve(inputOf(draft))
+  const made = draft.use === 'local' ? placed(drafted.definition, scope.workspaceId) : scope.resolve(draft.catalogue)
+  const input = known ?? placed(A1, scope.workspaceId)
+  const target = { ...drafted, definition: made ?? placed(drafted.definition, scope.workspaceId) }
+  const described = (prefix: string) => (i: DefinitionIssue) => `${prefix}: ${describeDefinitionIssue(i, scope.label)}`
+  const contracts: Problem[] = [
+    ...(known ? checkContract(known, scope.resolve).map(described('What it reads')).map(contract) : [contract('The input Definition version can’t be found here.')]),
+    ...(!made ? [contract('The output Definition version can’t be found here.')]
+      : draft.use === 'catalogue' ? checkContract(made, scope.resolve).map(described('What it makes')).map(contract)
+      // The Transform's own output, as making it would check it (defineVersion), so making it can't fail.
+      // Names at its top level are the structure's (structureFindings); everything else is here.
+        : versionIssues(made, scope.resolve).filter((i) => !(NAMING.has(i.problem) && i.path.length === 1)).map((i): Problem => {
+          const words = described('What it makes')(i)
+          return REFERENCE.has(i.problem) ? contract(words) : { kind: 'structure', category: 'invalid', at: null, index: null, words, short: words }
+        })),
+  ]
   const properties = fromDraft(draft.properties)
-  const review = reviewDraft(properties, input, target.definition, target.label, transformSupport(input, target.definition, context.feature, context.resolve))
-  const refused = review.findings.length ? [] : boundaryFindings(context.feature, properties, input, target.definition, context.resolve)
+  const review = reviewDraft(properties, input, target.definition, target.label, transformSupport(input, target.definition, context.feature, scope.resolve))
+  const refused = review.findings.length ? [] : boundaryFindings(context.feature, properties, input, target.definition, scope.resolve)
   const problems: Problem[] = [
-    // A Mapping is never made from an input this configuration can't name exactly.
-    ...(known ? [] : [{ kind: 'structure', category: 'invalid', at: null, index: null, words: 'The input Definition version can’t be found here.', short: 'The input Definition version can’t be found here.' } satisfies Problem]),
-    ...structureFindings(draft), ...review.findings, ...refused,
+    ...contracts, ...structureFindings(draft),
+    // A review against a contract that can't be found would be about some other contract.
+    ...(known && made ? [...review.findings, ...refused] : []),
   ]
   const has = (c: Problem['category']) => problems.some((p) => p.category === c)
-  const state: ApplyState = has('invalid') ? 'invalid' : has('incompatible') ? 'incompatible' : has('unfinished') ? 'incomplete' : plan.changes ? 'applicable' : 'unchanged'
+  const state: ApplyState = has('unresolved') ? 'unresolved' : has('invalid') ? 'invalid' : has('incompatible') ? 'incompatible' : has('unfinished') ? 'incomplete' : plan.changes ? 'applicable' : 'unchanged'
   return { state, plan, problems, input, target, review }
 }
+
+const NAMING: ReadonlySet<string> = new Set(['empty_name', 'surrounding_whitespace', 'duplicate_name', 'differs_only_by_case', 'equivalent_unicode'])
+const REFERENCE: ReadonlySet<string> = new Set(['unresolved_reference', 'unavailable_reference', 'cyclic_reference'])
 
 /** Whether Apply is available: the one rule every Apply surface shows, and the one applyConfiguration enforces. */
 export const canApply = (assessment: Pick<ApplyAssessment, 'state'>): boolean => assessment.state === 'applicable'
@@ -271,14 +328,23 @@ export type ApplyResult =
 export function applyConfiguration(config: Configuration, draft: TransformDraft, context: ApplyContext): ApplyResult {
   const assessment = assessApply(config, draft, context)
   if (!canApply(assessment)) return { applied: false, config, assessment }
-  return { applied: true, config: commit(config, draft, assessment.plan), assessment }
+  return { applied: true, config: commit(config, draft, assessment.plan, scopeOf(config, context.workspaceId)), assessment }
 }
 
-/** Makes the versions a plan names. Only ever reached through applyConfiguration. */
-function commit(config: Configuration, draft: TransformDraft, plan: Plan): Configuration {
-  const locals = plan.output.isNew
-    ? [...config.locals, defineVersion({ id: LOCAL_ID, version: plan.output.ref.version, name: draft.local.name, workspaceId: WORKSPACE, fields: draft.local.fields })]
-    : config.locals
+/**
+ * Makes the versions a plan names. Only ever reached through applyConfiguration, after its assessment
+ * asked every check making them asks, so none of them refuses here: if one throws anyway, that's a
+ * programming error, and it's left to surface rather than passed off as a refusal. Nothing is changed
+ * before everything is made (new lists, never edits), so a throw leaves the configuration as it was.
+ */
+function commit(config: Configuration, draft: TransformDraft, plan: Plan, scope: Scope): Configuration {
+  let locals = config.locals
+  if (plan.output.isNew) {
+    const local: DefinitionVersion = { id: LOCAL_ID, version: plan.output.ref.version, name: draft.local.name, workspaceId: WORKSPACE, fields: draft.local.fields }
+    // Made exactly as it will be resolved where it runs (placed there), and kept as the scaffolding it is.
+    const made = defineVersion(placed(local, scope.workspaceId), scope.resolve)
+    locals = [...locals, made.workspaceId === local.workspaceId ? made : deepFreeze({ ...made, workspaceId: local.workspaceId })]
+  }
   let mappings = config.mappings
   if (plan.mapping.isNew) {
     const properties: MappingProperty[] = JSON.parse(JSON.stringify(fromDraft(draft.properties)))

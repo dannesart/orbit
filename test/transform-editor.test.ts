@@ -238,10 +238,11 @@ describe('The preview: the Transform’s own evaluation, without a run', () => {
 
   it('never imports anything that invokes a Feature or records evidence', () => {
     const preview = readFileSync(join(import.meta.dirname, '../app/dev/designer/preview.ts'), 'utf8')
-    // From Features, only the pure transformData (the chosen version's own run, nothing around it);
-    // that it previews exactly what a run makes is shown by behaviour in preview-integrity.test.ts.
+    // From Features, only pure functions: the boundary's own pre-run checks (contracts the version
+    // takes, the Mapping it accepts) and transformData (the chosen version's own run, nothing around
+    // it). That it previews exactly what a run makes is shown by behaviour in preview-integrity.test.ts.
     const imports = [...preview.matchAll(/import \{([^}]*)\} from '#shared\/features\/features'/g)].map((m) => m[1]!.trim())
-    expect(imports).toEqual(['transformData'])
+    expect(imports).toEqual(['contractCompatibility, mappingCompatibility, transformData'])
     expect(preview).not.toMatch(/\binvoke\s*\(|runExperiment|evidence\s*:/)
   })
 

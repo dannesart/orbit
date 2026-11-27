@@ -15,6 +15,7 @@ import { fromPiece, toPiece } from '../app/dev/designer/parts'
 import { exampleFrom, previewOutput, previewSource, reviewDraft } from '../app/dev/designer/preview'
 import { FLAT, absenceWords, checkWith, readables } from '../app/dev/designer/reading'
 import { transformSupport } from '../app/dev/designer/support'
+import { transformView } from '../app/dev/designer/view'
 import { applyFor } from './apply'
 
 const resolve = (r: { id: string; version: number }) => DEFINITIONS.find((d) => d.id === r.id && d.version === r.version) ?? null
@@ -33,8 +34,12 @@ describe('The step’s Transform version is chosen explicitly', () => {
     expect(INITIAL_STEP_FEATURES.transform).toBe('orbit.transform@2')
     const designer = read('app/dev/designer/SpatialDesigner.vue')
     expect(designer).toContain('@feature="stepFeatures.transform = $event"')
-    expect(designer).toContain('const support = computed(() => transformSupport(input.value, target.value.definition, features.value.transform, resolve))')
-    expect(designer).toContain('provide(READING, computed(() => support.value.reading!))')
+    // The page provides the reading its view derives (view.ts), and that follows the step's version.
+    expect(designer).toContain('const step = computed<ApplyContext>(() => ({ feature: features.value.transform, workspaceId: runsIn }))')
+    expect(designer).toContain('provide(READING, computed(() => view.value.reading))')
+    const config = initialConfiguration()
+    expect(transformView(config, draftFrom(config), { feature: orbitTransformV2, workspaceId: WORKSPACE }, '{}').reading).toMatchObject({ nested: false, feature: orbitTransformV2 })
+    expect(transformView(config, draftFrom(config), { feature: orbitTransformV3, workspaceId: WORKSPACE }, '{}').reading).toMatchObject({ nested: true, feature: orbitTransformV3 })
     expect(read('app/dev/designer/TransformInspector.vue')).toMatch(/<select :value="featureKey"[^>]*data-transform-version @change="emit\('feature'/)
   })
 

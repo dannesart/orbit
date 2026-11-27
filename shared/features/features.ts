@@ -257,6 +257,17 @@ export interface Catalog {
   readonly mappings: readonly Mapping[]
 }
 
+/**
+ * The one way Definitions are resolved for a workspace: exactly the version named, and only one this
+ * workspace may see (its own, or one Orbit provides). Anything else, another workspace's version
+ * included, is indistinguishable from one that doesn't exist. References resolve through it too, so
+ * another workspace's versions can't be reached through a reference either. The boundary resolves
+ * with it; so does anything that must agree with the boundary before running (applying a configuration).
+ */
+export function resolverIn(definitions: readonly DefinitionVersion[], workspaceId: string): Resolve {
+  return (ref) => definitions.find((d) => sameDefinition(d, ref) && visibleIn(d, workspaceId)) ?? null
+}
+
 /** What a Feature is invoked on: a Record, by id, or a Value (such as another Feature's output). */
 export type Input = { readonly record: string } | Value
 
@@ -325,10 +336,8 @@ export function invoke(catalog: Catalog, invocation: Invocation): InvocationResu
     ...rest,
     evidence: frozenCopy({ ...evidence, ...(output ? { output: { definition: refOf(output) } } : {}), outcome }),
   })
-  // The one resolver: exact identity, only what this workspace may see. References resolve through
-  // it too, so another workspace's versions can't be reached through a reference either.
-  const definition: Resolve = (ref) =>
-    catalog.definitions.find((d) => sameDefinition(d, ref) && visibleIn(d, workspaceId)) ?? null
+  // The one resolver: exact identity, only what this workspace may see (resolverIn).
+  const definition = resolverIn(catalog.definitions, workspaceId)
 
   // 1. Resolve the input, only within this workspace. Another workspace's Record or Definition is
   //    indistinguishable from one that doesn't exist.

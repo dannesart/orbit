@@ -413,6 +413,15 @@ const canonicalFields = (fields: readonly Field[]): Field[] => fields.map((f): F
 })
 
 /**
+ * Why this would not be made as a version (defineVersion's very check, asked without making it): the
+ * naming rule, each property's shape, every reference resolved exactly with `resolve` and allowed for
+ * the version's own workspace, no cycles (a reference back to itself included), the depth limit.
+ * None: defineVersion makes it. Lets whoever is about to make a version refuse it first, never by catching.
+ */
+export const versionIssues = (definition: DefinitionVersion, resolve?: Resolve): DefinitionIssue[] =>
+  checkFields(definition.fields, { owner: definition.workspaceId, resolve, self: refOf(definition) })
+
+/**
  * A new, immutable Definition version, frozen all the way down, local objects and references
  * included. Refused, never tidied, cut short or flattened, when checkFields finds anything wrong.
  * References are resolved with `resolve`, as the version's own workspace sees them: without a
@@ -420,7 +429,7 @@ const canonicalFields = (fields: readonly Field[]): Field[] => fields.map((f): F
  * exact { id, version }), never copied into the version as an anonymous local object.
  */
 export function defineVersion(definition: DefinitionVersion, resolve?: Resolve): DefinitionVersion {
-  const issues = checkFields(definition.fields, { owner: definition.workspaceId, resolve, self: refOf(definition) })
+  const issues = versionIssues(definition, resolve)
   if (issues.length) {
     throw new Error(`Definition ${definition.id}@${definition.version} can’t be made (${issues.map((i) => `${i.problem} at ${propertyPathWords(i.path)}`).join('; ')})`)
   }

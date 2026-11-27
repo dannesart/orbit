@@ -92,8 +92,9 @@ describe('The preview follows the chosen version’s own run, and is never a run
     expect(preview.values[0]).toEqual({ value: 'ADA' })
     expect(preview.fits).toEqual({ issues: [] })
     expect(calls).toBeGreaterThan(0)
-    // Plain data back: values and fit, nothing like an outcome or evidence.
-    expect(Object.keys(preview).sort()).toEqual(['fits', 'values'])
+    // Plain data back: values, what kind of preview it is, and fit; nothing like an outcome or evidence.
+    expect(Object.keys(preview).sort()).toEqual(['fits', 'kind', 'refused', 'values'])
+    expect(preview.kind).toBe('transformation')
   })
 
   it('never changes the example or the Mapping it previews', () => {

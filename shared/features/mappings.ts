@@ -295,6 +295,54 @@ export interface ReadablePath {
   readonly optional: readonly PropertyPath[]
 }
 
+/** A list of exact property names, at least `min` and no more than the depth limit: the shape of a path, a condition's source and a copy's source. */
+function exactNames(names: unknown, min: number): names is PropertyPath {
+  return Array.isArray(names) && names.length >= min && names.length <= MAX_OBJECT_LEVELS && names.every((n) => typeof n === 'string')
+}
+
+/**
+ * Whether a source (or one part of one) is something this language has, well formed, whichever
+ * Transform version reads it: a value expression, a nested read, a construction or a copy, each of
+ * the shape the version that reads it requires (its own parts aside: they are judged where they are).
+ * It decides nothing about what any version accepts (checkMapping, checkNestedMapping do). It tells a
+ * capability a version lacks (a nested read, for a flat version) from something no version could
+ * read, for whoever explains an unsupported_source: both are refused the same way, as published.
+ */
+export function wellFormedSource(source: unknown): boolean {
+  if (kindOf(source) !== 'object') return false
+  const s = source as Record<string, unknown>
+  if (s.kind === 'path') return exactNames(s.path, 2)
+  if (s.kind === 'copy') return exactNames(s.from, 0)
+  if (s.kind === 'construct') return wellFormedConstruction(s as Extract<Expression, { kind: 'construct' }>)
+  return wellFormed(s, { nested: false })
+}
+
+/**
+ * Which property a flat Path starts at: its first step is the property's name, or its position when
+ * it has no name (checkProperties). With two properties of one name (itself a problem), the first. -1: none.
+ */
+export function propertyIndexAt(properties: readonly MappingProperty[], path: Path): number {
+  const first = path[0]
+  if (typeof first === 'number') return first < properties.length ? first : -1
+  return properties.findIndex((p) => p.name === first)
+}
+
+/**
+ * The part of a Mapping a flat Path leads to: the property it starts at (propertyIndexAt), then into
+ * a call's arguments (a function's name, then a position) and a list's items (a position). Undefined
+ * when nothing is there.
+ */
+export function sourceAt(properties: readonly MappingProperty[], path: Path): unknown {
+  let here: unknown = properties[propertyIndexAt(properties, path)]?.source
+  for (const step of path.slice(1)) {
+    if (typeof step === 'string') continue
+    const node = here as { kind?: unknown; args?: unknown; items?: unknown } | undefined
+    const inner = node?.kind === 'call' ? node.args : node?.kind === 'list' ? node.items : undefined
+    here = Array.isArray(inner) ? inner[step] : undefined
+  }
+  return here
+}
+
 type Resolved = { readonly readable: ReadablePath } | { readonly problem: 'malformed_path' | 'path_to_object' } | { readonly problem: 'unknown_path_property' | 'path_through_value' | 'unresolved_path'; readonly step: number }
 
 /**
@@ -303,7 +351,7 @@ type Resolved = { readonly readable: ReadablePath } | { readonly problem: 'malfo
  * owner decides what it may reference, as everywhere). Names match exactly; nothing is guessed.
  */
 export function resolvePath(input: DefinitionVersion, path: unknown, resolve?: Resolve): Resolved {
-  if (!Array.isArray(path) || path.length < 2 || path.length > MAX_OBJECT_LEVELS || !path.every((n) => typeof n === 'string')) return { problem: 'malformed_path' }
+  if (!exactNames(path, 2)) return { problem: 'malformed_path' }
   let fields: readonly Field[] = input.fields
   let owner = input.workspaceId
   const optional: PropertyPath[] = []
@@ -338,7 +386,7 @@ type ObjectResolved = { readonly object: { readonly path: PropertyPath; readonly
  * name or more), and the optional properties along its path; or why it doesn't.
  */
 export function resolveObjectPath(input: DefinitionVersion, path: unknown, resolve?: Resolve): ObjectResolved {
-  if (!Array.isArray(path) || path.length < 1 || path.length > MAX_OBJECT_LEVELS || !path.every((n) => typeof n === 'string')) return { problem: 'malformed_path' }
+  if (!exactNames(path, 1)) return { problem: 'malformed_path' }
   let fields: readonly Field[] = input.fields
   let owner = input.workspaceId
   const optional: PropertyPath[] = []
@@ -414,7 +462,7 @@ type CopyResolved = { readonly value: { readonly definition: DefinitionRef; read
  * References along the way (and the one copied) resolve exactly, with the owner rules as everywhere.
  */
 export function resolveCopySource(input: DefinitionVersion, from: unknown, resolve?: Resolve): CopyResolved {
-  if (!Array.isArray(from) || from.length > MAX_OBJECT_LEVELS || !from.every((n) => typeof n === 'string')) return { problem: 'malformed_copy' }
+  if (!exactNames(from, 0)) return { problem: 'malformed_copy' }
   if (!from.length) return { value: { definition: refOf(input), optional: [] } }
   let fields: readonly Field[] = input.fields
   let owner = input.workspaceId

@@ -1,7 +1,5 @@
 // Phase 4.5B, correctness: an untouched own output never reads as someone's work after Apply, and a
 // required value inside a built object that nothing makes yet is unfinished work, not an error.
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { refOf } from '../shared/features/definitions'
 import { orbitTransformV3 } from '../shared/features/features'
@@ -11,7 +9,8 @@ import { type DraftProperty, type Piece, fromDraft } from '../app/dev/designer/p
 import { reviewDraft } from '../app/dev/designer/preview'
 import { draftAfterApply, draftLoses } from '../app/dev/designer/session'
 import { transformSupport } from '../app/dev/designer/support'
-import { applyFor } from './apply'
+import { applyDraft } from '../app/dev/designer/view'
+import { applyFor, stepOf } from './apply'
 
 const resolve = (r: { id: string; version: number }) => DEFINITIONS.find((d) => d.id === r.id && d.version === r.version) ?? null
 const field = (name: string): Piece => ({ kind: 'field', name, trim: false })
@@ -53,8 +52,11 @@ describe('Discarding after Apply asks only about what someone wrote', () => {
   })
 
   it('is what Apply does', () => {
-    const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
-    expect(page).toContain('setDraft(draftAfterApply(draft.value, before, config.value), false)')
+    // Every surface's Apply leaves the draft draftAfterApply leaves (view.ts, applyDraft).
+    const start = initialConfiguration()
+    const draft = { ...draftFrom(start), properties: [{ name: 'fullName', piece: field('lastName') }] }
+    const next = applyDraft(start, draft, stepOf(start))!
+    expect(next.draft).toEqual(draftAfterApply(draft, start, next.config))
   })
 })
 
