@@ -41,7 +41,7 @@ import { summarize } from './summary'
 import { fromDraft } from './parts'
 import { exampleFrom, previewOutput, reviewDraft } from './preview'
 import { boundaryFindings, transformSupport } from './support'
-import { READING } from './reading'
+import { READING, readingOf } from './reading'
 import { reconcile } from './switching'
 import {
   type Configuration, type RunRecord, type TransformDraft, allDefinitions, applyConfiguration, draftFrom, findDefinition, findMapping, inputOf,
@@ -109,7 +109,7 @@ const draft = shallowRef<TransformDraft>(requested ? requestedDraft(requested) :
 function requestedDraft(output: DefinitionRef): TransformDraft {
   const next: TransformDraft = { ...draftFrom(config.value), use: 'catalogue', catalogue: output }
   // At setup, before the review exists: read as the step's Transform version reads.
-  return reconcile(next, findDefinition(config.value, inputOf(next)) ?? A1, outputOf(config.value, next).definition, { nested: features.value.transform.sources === 'nested', resolve })
+  return reconcile(next, findDefinition(config.value, inputOf(next)) ?? A1, outputOf(config.value, next).definition, readingOf(features.value.transform, resolve))
 }
 const history = shallowRef<TransformDraft[]>([])
 let lastEdit = 0
@@ -147,7 +147,7 @@ const applied = computed<AppliedPreview>(() => {
   const from = findDefinition(config.value, mapping.from) ?? A1
   const to = findDefinition(config.value, mapping.to)!
   const example = exampleFrom(recordText.value, from, resolve)
-  const reading = { nested: features.value.transform.sources === 'nested', resolve }
+  const reading = readingOf(features.value.transform, resolve)
   return { version: mapping.version, label: label(mapping.to), properties: mapping.properties, input: from, target: to, example, preview: previewOutput(mapping.properties, from, to, example, reading) }
 })
 const plan = computed(() => planApply(config.value, draft.value))

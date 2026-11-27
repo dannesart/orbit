@@ -12,6 +12,7 @@ import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, r
 import { ORBIT_PROVIDED, addVersion, createDefinition, draftFrom, moveField } from '../app/dev/definitions/model'
 import { applyConfiguration, draftFrom as designerDraft, initialConfiguration, planApply } from '../app/dev/designer/config'
 import { toDraft } from '../app/dev/designer/parts'
+import { madeFrom } from '../app/dev/designer/studio'
 
 const f = (name: string, type: Field['type'] = 'string', optional = false): Field => (optional ? { name, type, optional: true } : { name, type })
 
@@ -278,10 +279,12 @@ describe('The Designer previews absence by the domain’s own rules', () => {
     expect(mappingWork(reviewDraft([], CONTACT, CARD), [])).toEqual(['title'])
   })
 
-  it('uses the domain’s evaluation, not its own', () => {
-    const source = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/preview.ts'), 'utf8')
-    expect(source).toMatch(/evaluatePresent\(source, example\.data\)/)
-    expect(source).not.toMatch(/\bevaluate\(/)
+  it('uses the domain’s evaluation, not its own: what it previews is what the run made', () => {
+    // Behaviour, not source text (preview-integrity.test.ts has every version and kind of source).
+    const properties = [{ name: 'title', source: prop('name') }, { name: 'alias', source: prop('nickname') }]
+    const m: Mapping = { id: 'm', version: 1, workspaceId: W, from: refOf(CONTACT), to: refOf(CARD), properties }
+    const ran = invoke({ definitions: [CONTACT, CARD], records: [{ id: 'r', workspaceId: W, definition: refOf(CONTACT), data: ada.data }], mappings: [m] }, { workspaceId: W, feature: orbitTransformV2, input: { record: 'r' }, mapping: { id: 'm', version: 1 } })
+    expect(madeFrom(properties, previewOutput(properties, CONTACT, CARD, ada))).toEqual(ran.output!.data)
   })
 })
 

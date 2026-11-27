@@ -238,12 +238,11 @@ describe('The preview: the Transform’s own evaluation, without a run', () => {
 
   it('never imports anything that invokes a Feature or records evidence', () => {
     const preview = readFileSync(join(import.meta.dirname, '../app/dev/designer/preview.ts'), 'utf8')
-    const imports = [...preview.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1])
-    expect(imports).toEqual(['#shared/features/definitions', '#shared/features/mappings', './problems', './reading', '../features/experiment'])
-    expect(preview).not.toMatch(/\binvoke\s*\(|runExperiment|orbitTransformV\d|evidence\s*:/)
-    // How the chosen version reads (reading.ts) is plain data and the domain's own checks: no Feature either.
-    const reading = readFileSync(join(import.meta.dirname, '../app/dev/designer/reading.ts'), 'utf8')
-    expect([...reading.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1])).toEqual(['#shared/features/definitions', '#shared/features/mappings'])
+    // From Features, only the pure transformData (the chosen version's own run, nothing around it);
+    // that it previews exactly what a run makes is shown by behaviour in preview-integrity.test.ts.
+    const imports = [...preview.matchAll(/import \{([^}]*)\} from '#shared\/features\/features'/g)].map((m) => m[1]!.trim())
+    expect(imports).toEqual(['transformData'])
+    expect(preview).not.toMatch(/\binvoke\s*\(|runExperiment|evidence\s*:/)
   })
 
   it('makes whitespace visible where it matters, and says it in words', () => {

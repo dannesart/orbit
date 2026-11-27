@@ -57,9 +57,11 @@ describe('Apply asks the step’s Transform version about the complete draft', (
     expect(boundaryProblems(orbitTransformV3, properties, A1, B1, resolve)).toEqual([])
   })
 
-  it('catches what only the version knows: v1 has no behaviour for absence', () => {
+  it('catches what only the version knows: v1 has no behaviour for absence (now in the review too)', () => {
     const properties: MappingProperty[] = [{ name: 'nick', source: prop('nickname') }]
-    expect(reviewDraft(properties, NICKNAMED, NICK, 'Nick · v1', transformSupport(NICKNAMED, NICK, orbitTransformV1)).problems).toEqual([])
+    // The review checks with the version's own absence rule, as the boundary does.
+    expect(reviewDraft(properties, NICKNAMED, NICK, 'Nick · v1', transformSupport(NICKNAMED, NICK, orbitTransformV1)).findings.map((f) => [f.issue?.problem, f.category])).toEqual([['absence_unsupported', 'incompatible']])
+    expect(reviewDraft(properties, NICKNAMED, NICK, 'Nick · v1', transformSupport(NICKNAMED, NICK, orbitTransformV2)).problems).toEqual([])
     expect(boundaryProblems(orbitTransformV1, properties, NICKNAMED, NICK)).toHaveLength(1)
     expect(boundaryProblems(orbitTransformV2, properties, NICKNAMED, NICK)).toEqual([])
   })

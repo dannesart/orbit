@@ -1,12 +1,14 @@
-// What a draft Mapping would make from the example input (Experiment #3). Preview only: it uses
-// the very functions Orbit.Transform v2 runs with (checkMapping, evaluatePresent, validate), and
-// never invokes a Feature, so there is no outcome and no evidence. Nothing here mutates its input.
-// Absence follows the domain's rule: a source reading an absent optional property has no value,
-// and that property is left out of the object, never filled in.
+// What a draft Mapping would make from the example input (Experiment #3). Preview only, with the
+// semantics of the Transform version the step invokes: that version's own checks (its absence rule
+// included) decide what's previewed, and that version's own pure run makes it (transformData), then
+// the one validator checks it. Never invoke: no boundary, no outcome, no evidence. Nothing here
+// mutates its input. Absence follows that version's rule: for v2 and v3 a source reading an absent
+// optional property has no value and that property is left out, never filled in; v1 refuses to read one.
 import { type Data, type DefinitionVersion, type FieldType, type PropertyPath, type PropertyType, type Resolve, type Scalar, checkContract, frozenCopy, kindOf, propertyPathWords, validate } from '#shared/features/definitions'
-import { type Expression, type LocatedMappingIssue, type MappingProperty, checkNestedMapping, evaluatePresent } from '#shared/features/mappings'
+import { type Expression, type LocatedMappingIssue, type MappingProperty, checkNestedMapping } from '#shared/features/mappings'
+import { transformData } from '#shared/features/features'
 import { type Problem, categoryOf } from './problems'
-import { FLAT, type Reading, type ReviewIssue, checkWith, presentIn } from './reading'
+import { FLAT, type Reading, type ReviewIssue, checkWith, featureOf, presentIn } from './reading'
 import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData } from '../features/experiment'
 
 // --- The example input ---
@@ -54,9 +56,15 @@ export function previewSource(source: Expression, input: DefinitionVersion, exam
   const { issues, absent } = checkWith(reading, [{ name: 'preview', source }], input)
   if (issues.length) return { problems: issues.map(friendlyIssue) }
   if (!('data' in example)) return { noExample: true }
-  // The very evaluation the Transform runs with: the same result, the same absence.
-  const result = evaluatePresent(source, example.data)
-  if (result.present) return kindOf(result.value) === 'object' ? { object: result.value as Data } : { value: result.value as Scalar }
+  // The step's Transform version's own run, on this one property: the same result, the same absence,
+  // nothing around it (no boundary, no evidence). Only reached for what that version accepts.
+  let made: Data
+  try {
+    made = transformData(featureOf(reading), [{ name: 'value', source }], example.data)
+  } catch {
+    return { problems: ['This Transform version couldn’t make it from the example.'] }
+  }
+  if (Object.hasOwn(made, 'value')) return kindOf(made.value) === 'object' ? { object: made.value as Data } : { value: made.value as Scalar }
   // A built object is left out only by its condition: the source object the example doesn't have.
   if (source.kind === 'construct' && source.presence.when === 'present') return { absent: [propertyPathWords(source.presence.source)] }
   return { absent: absent[0]!.filter((path) => !presentIn(example.data, path)).map(propertyPathWords) }
@@ -240,11 +248,14 @@ export interface OutputPreview {
 /** The object the draft would make from the example, property by property, absent ones left out. */
 export function previewOutput(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion, example: Example, reading: Reading = FLAT): OutputPreview {
   const values = properties.map((p) => previewSource(p.source, input, example, reading))
-  if (!values.every((v) => 'value' in v || 'absent' in v || 'object' in v) || new Set(properties.map((p) => p.name)).size !== properties.length) return { values, fits: null }
-  const output = Object.fromEntries(properties.flatMap((p, i): [string, unknown][] => {
-    const v = values[i]!
-    return 'value' in v ? [[p.name, v.value]] : 'object' in v ? [[p.name, v.object]] : []
-  }))
+  if (!values.every((v) => 'value' in v || 'absent' in v || 'object' in v) || new Set(properties.map((p) => p.name)).size !== properties.length || !('data' in example)) return { values, fits: null }
+  // The whole object, as the step's Transform version's own run makes it.
+  let output: Data
+  try {
+    output = transformData(featureOf(reading), properties, example.data)
+  } catch {
+    return { values, fits: null }
+  }
   // The one validator, through the same resolver, at every depth.
   if (checkContract(target, reading.resolve).length) return { values, fits: null }
   return { values, fits: { issues: validate(target, output, reading.resolve).map(describeIssue) } }

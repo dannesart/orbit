@@ -107,7 +107,8 @@ export interface MappingFeature extends FeatureVersion {
    * parts (MappingProblemLocation).
    */
   readonly sources: 'flat' | 'nested'
-  readonly run: (input: Data, mapping: Mapping) => Data
+  /** Pure: what it makes from the data, from the Mapping's properties alone (nothing else about the Mapping). */
+  readonly run: (input: Data, mapping: Pick<Mapping, 'properties'>) => Data
 }
 
 export type Feature = PassThroughFeature | MappingFeature
@@ -182,7 +183,7 @@ export const orbitTransformV2: MappingFeature = Object.freeze<MappingFeature>({
  * reads something absent. The very same function for both: v3 adds what it may be handed (nested
  * sources, composed inputs), checked before running, not a different way of building.
  */
-function buildPresent(input: Data, mapping: Mapping): Data {
+function buildPresent(input: Data, mapping: Pick<Mapping, 'properties'>): Data {
   return Object.fromEntries(mapping.properties.flatMap((p) => {
     const result = evaluatePresent(p.source, input)
     return result.present ? [[p.name, result.value]] : []
@@ -236,6 +237,17 @@ export function mappingCompatibility(feature: MappingFeature, mapping: Pick<Mapp
   return feature.sources === 'nested'
     ? checkNestedMapping(mapping, input, output, { absence: feature.absence, resolve }).issues
     : checkMapping(mapping, input, output, feature.absence).issues
+}
+
+/**
+ * What this Transform version's own run makes from data with these properties: exactly `run`, and
+ * nothing the boundary does around it (no resolving, no validating, no evidence). Mapping Features
+ * are pure, so this has no effects. Only meaningful for properties this version accepts
+ * (mappingCompatibility) and data valid for the input: it's how a preview shows what a run would
+ * make with the very semantics of that version, without being a run.
+ */
+export function transformData(feature: MappingFeature, properties: Mapping['properties'], data: Data): Data {
+  return feature.run(frozenCopy(data), { properties: frozenCopy(properties) })
 }
 
 /** What the boundary can resolve references against. In this experiment, plain in-memory lists. */

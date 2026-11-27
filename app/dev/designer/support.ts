@@ -8,13 +8,14 @@ import type { MappingProperty } from '#shared/features/mappings'
 import { describeMappingIssue } from '../features/experiment'
 import type { ContractSupport } from './preview'
 import { type Problem, categoryOf } from './problems'
+import { readingOf } from './reading'
 
 /** What this Transform version refuses in what it reads and makes, and how it reads sources. */
 export const transformSupport = (input: DefinitionVersion, output: DefinitionVersion, feature: MappingFeature, resolve: Resolve = () => null): ContractSupport => ({
   version: feature.version,
   reads: contractCompatibility(feature, input, 'input'),
   makes: contractCompatibility(feature, output, 'output'),
-  reading: { nested: feature.sources === 'nested', resolve },
+  reading: readingOf(feature, resolve),
 })
 
 /**

@@ -8,15 +8,26 @@ import {
   type ArgumentType, type LocatedMappingIssue, type MappingIssue, type MappingProperty, type Path, type ReadablePath,
   checkMapping, checkNestedMapping, readablePaths,
 } from '#shared/features/mappings'
+import { type MappingFeature, orbitTransformV2, orbitTransformV3 } from '#shared/features/features'
 
 export interface Reading {
   /** Whether sources may read inside local objects and referenced Definitions. */
   readonly nested: boolean
   /** How references resolve for it: exactly, among the versions runs here use. */
   readonly resolve: Resolve
+  /**
+   * The Transform version whose semantics apply: what it does with absence (its checks) and what its
+   * own run makes (the preview). When not said, the version this reading describes: v3 when nested,
+   * v2 when flat. readingOf says it.
+   */
+  readonly feature?: MappingFeature
 }
-/** Flat sources only, as Transform v1 and v2 read. */
+/** Flat sources only, as Transform v2 reads. */
 export const FLAT: Reading = Object.freeze({ nested: false, resolve: () => null })
+/** How this Transform version reads, with the resolver its references resolve through. */
+export const readingOf = (feature: MappingFeature, resolve: Resolve): Reading => ({ nested: feature.sources === 'nested', resolve, feature })
+/** The Transform version a reading follows. */
+export const featureOf = (reading: Reading): MappingFeature => reading.feature ?? (reading.nested ? orbitTransformV3 : orbitTransformV2)
 /** The page provides the reading of the Transform version the step invokes. */
 export const READING: InjectionKey<Readonly<Ref<Reading>>> = Symbol('reading')
 /**
@@ -42,12 +53,14 @@ export interface Checked {
 
 /** Checks properties as the chosen Transform version would, before running. */
 export function checkWith(reading: Reading, properties: readonly MappingProperty[], input: DefinitionVersion, output?: DefinitionVersion): Checked {
+  // What this version does with absence decides what it accepts (v1 can't read an optional value).
+  const { absence } = featureOf(reading)
   if (!reading.nested) {
-    const c = checkMapping({ properties }, input, output)
+    const c = checkMapping({ properties }, input, output, absence)
     return { issues: c.issues, types: c.types, absent: c.absent.map((names) => names.map((n) => [n])) }
   }
   // Some properties on their own: the output's own completeness is the review's (it has them all).
-  const c = checkNestedMapping({ properties }, input, output, { resolve: reading.resolve, partial: true })
+  const c = checkNestedMapping({ properties }, input, output, { absence, resolve: reading.resolve, partial: true })
   const indexOf = (name: string) => Math.max(0, properties.findIndex((p) => p.name === name))
   return {
     // [output property, ...deeper output properties, ...place in the source]: a construction has no
