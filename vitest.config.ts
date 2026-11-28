@@ -1,6 +1,12 @@
+import { fileURLToPath } from 'node:url'
+import vue from '@vitejs/plugin-vue'
 import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // Components can be compiled, so a few tests can server-render the Designer's real surfaces (test/surfaces.ts).
+  plugins: [vue()],
+  // Nuxt's alias for code shared by app and server, as app code imports it.
+  resolve: { alias: { '#shared': fileURLToPath(new URL('./shared', import.meta.url)) } },
   test: {
     // Two suites each build and start Orbit, and every suite starts an in-process Postgres;
     // in parallel that setup can exceed the 10 s default on slower machines.

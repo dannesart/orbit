@@ -1,0 +1,316 @@
+// The Feature playground's experiment, apart from its page: in-memory fixtures, the chain
+// Record A → Orbit.Console → Orbit.Transform → Orbit.Console composed right here (deliberately
+// not a reusable orchestration abstraction), and plain words for outcomes and issues.
+// Development only: the page that uses this is registered only by `nuxt dev` (nuxt.config.ts).
+import {
+  type Data, type DefinitionRef, type DefinitionVersion, type Field, type FieldType, type Issue, type Kind, type NamingIssue, type PropertyType, type DefinitionIssue, MAX_OBJECT_LEVELS,
+  deepFreeze, defineVersion, propertyPathWords, sameDefinition,
+} from '#shared/features/definitions'
+import {
+  type AnyMappingIssue, type ArgumentType, type Expression, type Mapping, type MappingIssue, type MappingProblemLocation, type MappingProperty, type Path, checkMapping,
+} from '#shared/features/mappings'
+import {
+  type Catalog, type FeatureRef, type InvocationResult, type MappingFeature, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitConsoleV2, orbitTransformV2, orbitTransformV3,
+} from '#shared/features/features'
+import { ADDRESS_V1, REALISTIC_DEFINITIONS } from './realistic'
+
+export const WORKSPACE = 'ws-playground'
+export const ELSEWHERE = 'ws-elsewhere'
+export const RECORD_ID = 'record-a'
+
+const nameFields: Field[] = [{ name: 'firstName', type: 'string' }, { name: 'lastName', type: 'string' }]
+export const A1 = defineVersion({ id: 'person-name', version: 1, name: 'Definition A', workspaceId: WORKSPACE, fields: nameFields })
+export const B1 = defineVersion({ id: 'full-name', version: 1, name: 'Definition B', workspaceId: WORKSPACE, fields: [{ name: 'fullName', type: 'string' }] })
+
+/**
+ * A composed sample (Phase 4.1): a local object, an optional local object whose properties are all
+ * optional, and a reference to another Definition version, pinned exactly. Console v2 accepts it;
+ * Console v1 and Transform v2 refuse it before running. Address · v1 is realistic.ts's, shared.
+ */
+const ADDRESS = ADDRESS_V1
+export const APPLICANT = defineVersion({ id: 'applicant', version: 1, name: 'Applicant', workspaceId: WORKSPACE, fields: [
+  ...nameFields,
+  { name: 'contact', type: 'object', optional: true, fields: [{ name: 'email', type: 'string' }, { name: 'phone', type: 'string', optional: true }] },
+  { name: 'home', type: 'reference', definition: { id: ADDRESS.id, version: ADDRESS.version } },
+  { name: 'preferences', type: 'object', optional: true, fields: [{ name: 'newsletter', type: 'boolean', optional: true }] },
+] }, (ref) => (ref.id === ADDRESS.id && ref.version === ADDRESS.version ? ADDRESS : null))
+
+export const DEFINITIONS: readonly DefinitionVersion[] = deepFreeze([
+  A1,
+  defineVersion({ id: 'person-name', version: 2, name: 'Definition A', workspaceId: WORKSPACE, fields: [...nameFields, { name: 'email', type: 'string' }] }),
+  defineVersion({ id: 'person-name-copy', version: 1, name: 'A look-alike of Definition A', workspaceId: WORKSPACE, fields: nameFields }),
+  defineVersion({ id: 'their-person-name', version: 1, name: 'Another workspace’s Definition A', workspaceId: ELSEWHERE, fields: nameFields }),
+  B1,
+  ADDRESS,
+  APPLICANT,
+  // Realistic samples (realistic.ts): Candidate, Employee, Employment, Emergency contact, Address v2.
+  ...REALISTIC_DEFINITIONS,
+])
+
+/** What Record A can be pinned to, to see how exact identity and workspace scoping behave. */
+export const PINS: readonly { key: string; ref: DefinitionRef; note: string; example?: Data }[] = [
+  { key: 'a1', ref: { id: 'person-name', version: 1 }, note: 'What the Mapping reads.' },
+  { key: 'a2', ref: { id: 'person-name', version: 2 }, note: 'A newer version of the same Definition, with an email field.' },
+  { key: 'copy', ref: { id: 'person-name-copy', version: 1 }, note: 'The same fields, but a different Definition.' },
+  { key: 'elsewhere', ref: { id: 'their-person-name', version: 1 }, note: 'Belongs to another workspace.' },
+  {
+    key: 'applicant', ref: { id: 'applicant', version: 1 },
+    note: 'Has local objects and a reference to Address · v1. Console v2 accepts it; Console v1 and the Transform don’t.',
+    example: { firstName: 'Ada', lastName: 'Lovelace', contact: { email: 'ada@example.com' }, home: { street: '12 St James’s Square', city: 'London' }, preferences: {} },
+  },
+]
+
+export const INITIAL_DATA: Data = { firstName: '  Ada  ', lastName: 'Lovelace' }
+
+const prop = (name: string): Expression => ({ kind: 'property', name })
+const text = (value: string): Expression => ({ kind: 'literal', value })
+
+/** join([trim(firstName), " ", lastName], "") → "Ada Lovelace". */
+export const INITIAL_MAPPING: Mapping = deepFreeze({
+  id: 'full-name-from-person',
+  version: 1,
+  workspaceId: WORKSPACE,
+  from: { id: A1.id, version: A1.version },
+  to: { id: B1.id, version: B1.version },
+  properties: [{
+    name: 'fullName',
+    source: { kind: 'call', fn: 'join', args: [{ kind: 'list', items: [{ kind: 'call', fn: 'trim', args: [prop('firstName')] }, text(' '), prop('lastName')] }, text('')] },
+  }],
+})
+
+/**
+ * Consoles that misbehave on purpose, to see the boundary hold. Each has its own identity, so
+ * evidence names the Feature that actually ran.
+ */
+export const CONSOLES: readonly { feature: PassThroughFeature; label: string }[] = [
+  { feature: orbitConsole, label: 'Orbit.Console v1' },
+  { feature: orbitConsoleV2, label: 'Orbit.Console v2' },
+  {
+    label: 'A Console that tries to change the value',
+    feature: { id: 'playground.console-that-edits', version: 1, contract: 'pass-through', localObjects: 'unsupported', references: 'unsupported', run(input, { inspect }) {
+      inspect(input)
+      ;(input as Record<string, unknown>).firstName = 'Grace' // the input is frozen: this throws
+      return input
+    } },
+  },
+  {
+    label: 'A Console that hands on something else',
+    feature: { id: 'playground.console-that-swaps', version: 1, contract: 'pass-through', localObjects: 'unsupported', references: 'unsupported', run(input, { inspect }) {
+      inspect(input)
+      return { ...input, firstName: 'Grace' }
+    } },
+  },
+]
+
+/**
+ * The Transform versions a step may invoke here: those the Designer can review a draft for (its
+ * review and preview follow the chosen version's reading, with v2's rules for absence), each by
+ * its exact version. v3 is provisional: still being built on this branch.
+ */
+export const TRANSFORMS: readonly { feature: MappingFeature; label: string }[] = [
+  { feature: orbitTransformV2, label: 'Orbit.Transform v2' },
+  { feature: orbitTransformV3, label: 'Orbit.Transform v3 (provisional)' },
+]
+
+/** A Feature version as one key ("orbit.console@1"): identity and version, never a "current" alias. */
+export const featureKey = (f: FeatureRef) => `${f.id}@${f.version}`
+
+/**
+ * The exact Feature version a step pins, briefly, as its inspector's header shows it ("Feature v3").
+ * Said plainly when it's provisional, or one of the playground's misbehaving Features.
+ *
+ * Choosing a step's version is a development control here (the Designer's "Feature versions"), so
+ * the experiment can exercise every version, provisional Transform v3 included. The proposed
+ * product policy, not built yet:
+ *   - adding a step, Orbit recommends a published Feature version;
+ *   - the step pins that exact version;
+ *   - existing steps never upgrade silently;
+ *   - an upgrade is an explicit decision, made only after checking compatibility.
+ */
+export function featureVersionWords(f: FeatureRef & { readonly provisional?: true }): string {
+  const words = `Feature v${f.version}`
+  if (!f.id.startsWith('orbit.')) return `${words}, misbehaving on purpose`
+  return f.provisional ? `${words} (provisional)` : words
+}
+
+/** One step of the chain: its result, or null when it was never invoked. */
+export type Step = InvocationResult | null
+
+/**
+ * Record A → Console → Transform → Console. Each step is its own invocation; a step is invoked
+ * only with the previous step's output, so nothing follows a step that didn't succeed.
+ * Every step runs within one workspace: the playground's own, unless the caller names another.
+ */
+export function runExperiment(catalog: Catalog, options: { console: PassThroughFeature; mapping: FeatureRef; workspaceId?: string }): [Step, Step, Step] {
+  const workspaceId = options.workspaceId ?? WORKSPACE
+  const first = invoke(catalog, { workspaceId, feature: options.console, input: { record: RECORD_ID } })
+  const second = first.output ? invoke(catalog, { workspaceId, feature: orbitTransformV2, input: first.output, mapping: options.mapping }) : null
+  const third = second?.output ? invoke(catalog, { workspaceId, feature: orbitConsole, input: second.output }) : null
+  return [first, second, third]
+}
+
+/** Record A's data as typed into the playground: JSON, or why it isn't. */
+export function parseRecordData(text: string): { data: unknown } | { error: string } {
+  try {
+    return { data: JSON.parse(text) }
+  } catch {
+    return { error: 'This isn’t valid JSON yet.' }
+  }
+}
+
+// --- Words ---
+
+export const definitionLabel = (ref: DefinitionRef) => {
+  const d = DEFINITIONS.find((x) => sameDefinition(x, ref))
+  return `${d?.name ?? ref.id} · v${ref.version}`
+}
+
+/** A version's structure in one line: `{ fullName: string, alias?: string }` (`?`: optional). */
+export const shapeOf = (d: DefinitionVersion) => `{ ${d.fields.map((f) => `${f.name}${f.optional === true ? '?' : ''}: ${f.type}`).join(', ')} }`
+
+const kindWords: Record<Kind | ArgumentType | 'invalid', string> = {
+  string: 'text', number: 'a number', boolean: 'yes or no', 'string[]': 'a list of text', null: 'null',
+  undefined: 'missing', array: 'an array', object: 'an object', other: 'something else', invalid: 'something invalid',
+}
+
+export function describeIssue(issue: Issue): string {
+  switch (issue.problem) {
+    case 'not_an_object': return `The data must be an object, not ${kindWords[issue.actual]}.`
+    case 'missing': return `${propertyPathWords(issue.path)} is missing (it should be ${kindWords[issue.expected]}).`
+    case 'unexpected': return `${propertyPathWords(issue.path)} isn’t part of this Definition.`
+    case 'wrong_type': return `${propertyPathWords(issue.path)} should be ${kindWords[issue.expected]}, not ${kindWords[issue.actual]}.`
+  }
+}
+
+/**
+ * The naming rule (checkPropertyNames) in words, the same in the Studio and the Designer. Deduplicated:
+ * several names with surrounding spaces make one sentence.
+ */
+export function describeNamingIssues(issues: readonly NamingIssue[]): string[] {
+  return [...new Set(issues.map((issue) => {
+    const name = issue.path.at(-1) ?? ''
+    const within = issue.path.length > 1 ? `In ${propertyPathWords(issue.path.slice(0, -1))}: ` : ''
+    switch (issue.problem) {
+      case 'empty_name': return `${within}Every property needs a name.`
+      case 'surrounding_whitespace': return `${within}Property names can’t start or end with a space.`
+      case 'duplicate_name': return `${within}Two properties are called “${name}”.`
+      case 'differs_only_by_case': return `${within}“${issue.other}” and “${name}” differ only in capital letters. Use one name, or two clearly different ones.`
+      case 'equivalent_unicode': return `${within}“${issue.other}” and “${name}” are the same name, written with different characters.`
+    }
+  }))]
+}
+
+/** Where in a property's source: "fullName › join › argument 1 › item 2 › trim". */
+export function formatPath(path: Path): string {
+  return path.map((segment, i) => {
+    if (typeof segment === 'string') return segment
+    if (i === 0) return `property ${segment + 1}`
+    return typeof path[i - 1] === 'string' ? `argument ${segment + 1}` : `item ${segment + 1}`
+  }).join(' › ')
+}
+
+/** Where a problem located in two parts is: the output property, then the place in its source. */
+export const formatLocation = (at: MappingProblemLocation): string =>
+  [propertyPathWords(at.output), ...formatPath([at.output.at(-1) ?? '', ...at.expression]).split(' › ').slice(1)].join(' › ')
+
+/** Optional properties a source depends on: names (flat versions) or full paths (nested ones). */
+const optionalWords = (optional: readonly (string | readonly string[])[]) => optional.map((o) => (typeof o === 'string' ? o : propertyPathWords(o))).join(', ')
+
+export function describeMappingIssue(issue: AnyMappingIssue): string {
+  switch (issue.problem) {
+    case 'empty_name': return 'Give this property a name.'
+    case 'duplicate_name': return 'Another property already has this name.'
+    case 'unknown_property': return `The input has no property “${issue.name}”.`
+    case 'unknown_function': return `Orbit has no function “${issue.fn}”.`
+    case 'argument_count': return `${issue.fn} takes ${issue.expected} arguments, not ${issue.actual}.`
+    case 'argument_type': return `${issue.fn} needs ${kindWords[issue.expected]} here, not ${kindWords[issue.actual]}.`
+    case 'list_item_type': return `Only strings can be joined; this is ${kindWords[issue.actual]}.`
+    case 'list_not_allowed': return 'A property can’t be a list.'
+    case 'invalid_literal': return 'That isn’t a usable number.'
+    case 'may_be_absent': return `${optionalWords(issue.optional)} may be missing, but this property is required.`
+    case 'object_property': return `${issue.name} is an object. A source can read text, numbers and yes or no, not a whole object.`
+    case 'absence_unsupported': return `${optionalWords(issue.optional)} may be missing, and this version of the Transform has no behaviour for that.`
+    case 'unsupported_source': return 'This version of the Transform doesn’t understand this kind of source.'
+    case 'malformed_path': return 'A nested source needs a path of at least two property names.'
+    case 'unknown_path_property': return `The input has no property “${issue.name}” there.`
+    case 'path_through_value': return 'This path goes on past a value, as if it were an object.'
+    case 'path_to_object': return 'This path ends at an object. A source can read text, numbers and yes or no, not a whole object.'
+    case 'unresolved_path': return 'A Definition along this path can’t be found here.'
+    case 'malformed_construction': return 'This object’s construction isn’t complete: it needs a presence and its properties.'
+    case 'construction_in_expression': return 'An object can only be built as a property’s whole value, not inside a function or a group.'
+    case 'construct_into_value': return 'This property is a value, not an object, so it can’t be built.'
+    case 'value_into_object': return 'This property is an object: build it property by property.'
+    case 'unknown_output_property': return `This object has no property “${issue.name}”.`
+    case 'missing_output_property': return `${issue.name} needs a value.`
+    case 'wrong_output_type': return `This needs ${kindWords[issue.expected]}, not ${kindWords[issue.actual]}.`
+    case 'condition_not_object': return 'An object is built when a source object is present: this names a value.'
+    case 'condition_not_chosen': return 'Choose the source object it’s built when present.'
+    case 'malformed_copy': return 'A copy needs the exact path of what it copies.'
+    case 'copy_in_expression': return 'A whole value can only be copied as a property’s whole value, not inside a function or a group.'
+    case 'copy_into_value': return 'This property is a value: only a whole value of a referenced Definition can be copied.'
+    case 'copy_into_local_object': return 'This property is a local object: build it property by property (copying a whole local object isn’t available).'
+    case 'copy_from_local_object': return 'That is a local object: it has no Definition of its own, so it can’t be copied whole.'
+    case 'copy_from_value': return 'That is a single value, not a whole value of a Definition.'
+    case 'copy_identity_mismatch': return issue.expected.id === issue.actual.id
+      ? `That is version ${issue.actual.version} of this Definition, and this property needs version ${issue.expected.version}. Only the exact version can be copied: build it instead.`
+      : 'That is a different Definition. Only exactly the same Definition and version can be copied, whatever it contains: build it instead.'
+    case 'unresolved_output': return 'The Definition this object should be can’t be found here.'
+  }
+}
+
+export const outcomeLabel = (outcome: Outcome) =>
+  ({ succeeded: 'Succeeded', failed: 'Failed', not_attempted: 'Not attempted' })[outcome.kind]
+
+export function describeOutcome(outcome: Outcome): string {
+  if (outcome.kind === 'succeeded') return ''
+  switch (outcome.reason) {
+    case 'not_found': return 'Something it refers to doesn’t exist in this workspace, so the Feature didn’t run.'
+    case 'invalid_input': return 'The input doesn’t match its own Definition, so the Feature didn’t run.'
+    case 'contract_mismatch': return `It reads ${definitionLabel(outcome.expected)}, but received ${definitionLabel(outcome.actual)}. Exact versions only, so the Feature didn’t run.`
+    case 'invalid_mapping': return 'The Mapping can’t be applied to this input, so the Feature didn’t run.'
+    case 'invalid_contract': return `${definitionLabel(outcome.definition)} doesn’t hold together here as a contract, so the Feature didn’t run.`
+    case 'unsupported_contract': return `This version of the Feature doesn’t accept ${definitionLabel(outcome.definition)}: it has objects or other Definitions inside it (${outcome.paths.map(propertyPathWords).join(', ')}). The Feature didn’t run.`
+    case 'threw': return `The Feature stopped with an error (${outcome.error}). Nothing was handed on.`
+    case 'invalid_output': return 'Its output doesn’t satisfy the target Definition, so it went no further.'
+    case 'pass_through_broken': return 'It handed on something different from what it received. The boundary stopped it there.'
+  }
+}
+
+/** A problem with a contract (checkFields, checkContract), in words. `label` names a referenced version. */
+export function describeDefinitionIssue(issue: DefinitionIssue, label: (ref: DefinitionRef) => string = definitionLabel): string {
+  const at = propertyPathWords(issue.path)
+  switch (issue.problem) {
+    case 'unresolved_reference': return `${at} refers to ${label(issue.definition)}, which can’t be found here.`
+    case 'unavailable_reference': return `${at} refers to ${label(issue.definition)}, which this Definition may not depend on.`
+    case 'cyclic_reference': return `${at} refers back to ${label(issue.definition)}, which contains it, so it never ends.`
+    case 'too_deep': return `${at} would nest ${issue.level} levels deep. At most ${MAX_OBJECT_LEVELS} are allowed.`
+    case 'malformed': return `${at} isn’t a property Orbit understands.`
+    default: return describeNamingIssues([issue])[0]!
+  }
+}
+
+export const outcomeIssues = (outcome: Outcome): string[] => {
+  if (!('issues' in outcome)) return []
+  if (outcome.reason === 'invalid_mapping') return outcome.issues.map((i) => `${'at' in i ? formatLocation(i.at) : formatPath(i.path)}: ${describeMappingIssue(i)}`)
+  if (outcome.reason === 'invalid_contract') return outcome.issues.map((i) => describeDefinitionIssue(i))
+  return outcome.issues.map(describeIssue)
+}
+
+/**
+ * Hints while editing a Mapping, before anything runs: each property's type (from its source),
+ * what the target Definition expects of it, and what the target needs that nothing produces yet.
+ * Only hints: the boundary still validates the actual output.
+ */
+export function mappingHints(properties: readonly MappingProperty[], input: DefinitionVersion, target: DefinitionVersion) {
+  const names = properties.map((p) => p.name)
+  const rows = properties.map((property) => {
+    const { issues, types } = checkMapping({ properties: [property] }, input)
+    const own = [...issues]
+    if (property.name && names.filter((n) => n === property.name).length > 1) own.push({ problem: 'duplicate_name', path: [property.name] })
+    const expected: PropertyType | null = target.fields.find((f) => f.name === property.name)?.type ?? null
+    const where = (i: MappingIssue) => (i.path.length > 1 ? `${formatPath(i.path.slice(1))}: ` : '')
+    return { type: types[0] ?? null, expected, issues: own.map((i) => where(i) + describeMappingIssue(i)) }
+  })
+  const missing = target.fields.filter((f) => !names.includes(f.name))
+  return { rows, missing }
+}

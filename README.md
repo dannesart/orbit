@@ -51,3 +51,17 @@ workspace access is decided solely by Orbit's memberships.
 Nuxt deploys without extra configuration. In Site configuration → Environment variables, set
 `NUXT_SUPABASE_URL`, `NUXT_SUPABASE_KEY` and `NUXT_DATABASE_URL`. Deploy previews share the same
 database.
+
+## Feature playground (development and Deploy Previews only)
+
+`/dev/features` runs Record A → Orbit.Console → Orbit.Transform → Orbit.Console in the browser, on
+in-memory examples: nothing is fetched, saved or logged. It requires sign-in like every page.
+
+It is included only under `npm run dev` and in Netlify Deploy Previews, decided at build time from
+Netlify's read-only `CONTEXT` variable (`deploy-preview`; see `app/dev/features/availability.ts`).
+Production builds, and any build without that exact context, never register the route, so its code
+isn't part of them. No Netlify setting or extra environment variable is needed.
+
+The workspace's Definitions experiment (`/w/:id/definitions`, reached from the preview-only Workflows
+place) follows the same rule. What is made there lives in that browser tab's memory, per workspace,
+until a reload or closing the tab; the designer can use it when opened from that workspace.

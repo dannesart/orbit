@@ -1,9 +1,40 @@
+import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
+import { playgroundAvailable } from './app/dev/features/availability'
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-11-01',
   devtools: { enabled: false },
   devServer: { port: 3100 },
+  modules: [
+    // The Feature playground (/dev/features) and its canvas experiment (/dev/designer) exist only
+    // under `nuxt dev` and in Netlify Deploy Previews (playgroundAvailable). Production builds never
+    // register their routes, so neither the pages nor anything they import (the canvas library
+    // included) is part of what ships.
+    // The workflow entry experiment follows the same decision: `import.meta.env.ORBIT_PLAYGROUND` is
+    // a build-time constant (false in production, so code behind it is dropped), and the
+    // workspace's Workflows place is a child route registered only below the same guard.
+    (_options, nuxt) => {
+      nuxt.options.vite.define = {
+        ...nuxt.options.vite.define,
+        'import.meta.env.ORBIT_PLAYGROUND': JSON.stringify(playgroundAvailable({ dev: nuxt.options.dev, context: process.env.CONTEXT })),
+      }
+      if (!playgroundAvailable({ dev: nuxt.options.dev, context: process.env.CONTEXT })) return
+      nuxt.hook('pages:extend', (pages) => {
+        pages.push({ name: 'dev-features', path: '/dev/features', file: fileURLToPath(new URL('./app/dev/features/FeaturePlayground.vue', import.meta.url)) })
+        pages.push({ name: 'dev-designer', path: '/dev/designer', file: fileURLToPath(new URL('./app/dev/designer/DesignerWorkflows.vue', import.meta.url)) })
+        const workspace = pages.find((page) => page.file?.replaceAll('\\', '/').endsWith('/pages/w/[id].vue'))
+        if (!workspace) throw new Error('The workspace layout (pages/w/[id].vue) is missing: the Workflows place has nowhere to live')
+        workspace.children = [
+          ...(workspace.children ?? []),
+          { name: 'w-id-workflows', path: 'workflows', file: fileURLToPath(new URL('./app/dev/workspace/WorkflowsPlace.vue', import.meta.url)) },
+          // Experiment #7: the workspace’s Definitions, its own place in the workspace navigation,
+          // under the same guard.
+          { name: 'w-id-definitions', path: 'definitions', file: fileURLToPath(new URL('./app/dev/definitions/DefinitionsPlace.vue', import.meta.url)) },
+        ]
+      })
+    },
+  ],
   css: ['~/assets/css/main.css'],
   vite: { plugins: [tailwindcss()] },
   runtimeConfig: {

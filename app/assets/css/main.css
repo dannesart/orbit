@@ -111,15 +111,19 @@ body {
   /*
    * Where workspace pages lay out their content, kept clear of the navigation by rule rather
    * than by measuring pages. From lg up, the rail sits in the frame's left gutter; the stage
-   * reserves that gutter (frame offset + frame padding + rail + clearance) on both sides, so
-   * content stays centred, can never reach the rail, and any page may use any width up to
-   * what remains. Below lg, it reserves the bottom pill's height and the safe area instead.
+   * reserves that gutter (frame offset + frame padding + rail + clearance) on the left only, so
+   * content can never reach the rail, and its right edge lines up with the header's content
+   * (frame offset + frame padding). Any page may use any width up to what remains; pages that
+   * read best narrow (People, Settings) keep their own centred columns. Below lg, it reserves
+   * the bottom pill's height and the safe area instead.
    */
   .workspace-stage {
-    --nav-reserve: 8.5rem; /* 2rem frame padding + 5rem rail + 1.5rem clearance */
+    --nav-reserve: 7.5rem; /* 2rem frame padding + 3.875rem rail + 1.625rem clearance */
+    --frame-reserve: 2rem; /* the frame's own padding (orbit-frame, lg:px-8) */
     padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
     @media (width >= 64rem) {
-      padding-inline: calc(max(0px, (100% - 80rem) / 2) + var(--nav-reserve));
+      padding-left: calc(max(0px, (100% - 80rem) / 2) + var(--nav-reserve));
+      padding-right: calc(max(0px, (100% - 80rem) / 2) + var(--frame-reserve));
       padding-bottom: 0;
     }
   }
