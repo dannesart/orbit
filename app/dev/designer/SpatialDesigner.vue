@@ -16,8 +16,8 @@ import {
   type EdgeChangeset, type EdgeReconnectEvent, Panel, VueFlow, type Node, type Padding, type VueFlowInstance,
 } from '@xyflow/vue'
 import '@xyflow/vue/dist/style.css'
-import { type Data, type DefinitionRef, sameDefinition } from '#shared/features/definitions'
-import type { FeatureRef } from '#shared/features/features'
+import { type Data, type DefinitionRef, sameDefinition, validate } from '#shared/features/definitions'
+import { type FeatureRef, contractCompatibility, mappingCompatibility } from '#shared/features/features'
 import {
   A1, CONSOLES, DEFINITIONS, PINS, RECORD_ID, TRANSFORMS, WORKSPACE, type Step,
   definitionLabel, featureKey, featureVersionWords, outcomeLabel, parseRecordData, shapeOf,
@@ -38,9 +38,8 @@ import StepNode, { type StepView } from './StepNode.vue'
 import { drawEdges, initialNodes, nodeLabel, resetPositions } from './graph'
 import {
   type Connection, type Contracts, type FeatureStep, type FlowRun, type StepFeatures, type StepId, checkConnection, connectionKey,
-  connectionProblems, flowOutcome, incomingTo, pathOf, runFlow, stepBadge, stepTitle,
+  connectionProblems, flowOutcome, handsOn, incomingTo, pathOf, runFlow, stepBadge, stepTitle,
 } from './flow'
-import { summarize } from './summary'
 import { READING, readingOf } from './reading'
 import { reconcile } from './switching'
 import {
@@ -117,6 +116,7 @@ const resolve = (ref: DefinitionRef) => scope.value.resolve(ref)
 /** The contracts connections are judged by: Record A's pinned Definition and the applied Mapping's. */
 const contracts = computed<Contracts>(() => ({
   record: pin.value.ref,
+  recordName: currentRecord.value.name,
   transform: { reads: appliedMapping.value.from, makes: appliedMapping.value.to },
   definitions: allDefinitions(config.value),
   label,
@@ -161,7 +161,7 @@ function undo() {
  */
 const step = computed<ApplyContext>(() => ({ feature: features.value.transform, workspaceId: runsIn }))
 /** Everything the inspector and Mapping Studio show, derived in one place (view.ts). */
-const view = computed(() => transformView(config.value, draft.value, step.value, recordText.value))
+const view = computed(() => transformView(config.value, draft.value, step.value, recordText.value, currentRecord.value.name))
 const assessment = computed(() => view.value.assessment)
 const target = computed(() => view.value.target)
 const structure = computed(() => view.value.structure)
@@ -178,7 +178,7 @@ const output = computed(() => view.value.output)
  * The applied Mapping, previewed the same way with the same Record A (Mapping Studio's Preview
  * shows it beside the draft's). A preview, never a run: runs are what made the evidence.
  */
-const applied = computed<AppliedPreview>(() => appliedPreview(config.value, step.value, recordText.value))
+const applied = computed<AppliedPreview>(() => appliedPreview(config.value, step.value, recordText.value, currentRecord.value.name))
 const plan = computed(() => view.value.plan)
 /** What the step's Transform version refuses of the complete draft (its pre-run check), in words. */
 const boundary = computed(() => view.value.boundary)
@@ -229,7 +229,7 @@ function run() {
   runNumber.value++
   const evidence = shown.value.steps.transform?.evidence
   const used = evidence?.mapping ? findMapping(applied, evidence.mapping) : null
-  runs.value = [...runs.value, Object.freeze({ number: runNumber.value, outcome: evidence?.outcome ?? null, feature: evidence?.feature ?? null, mapping: evidence?.mapping ?? null, output: used?.to ?? null, path: shown.value.path })]
+  runs.value = [...runs.value, Object.freeze({ number: runNumber.value, outcome: evidence?.outcome ?? null, feature: evidence?.feature ?? null, mapping: evidence?.mapping ?? null, output: used?.to ?? null, path: shown.value.path, recordName: currentRecord.value.name })]
 }
 
 const connectionsChanged = computed(() => connections.value.map(connectionKey).join() !== preset.connections.map(connectionKey).join())
@@ -254,13 +254,14 @@ function startOver() {
 run()
 
 // --- The canvas ---
-const nodes = ref<Node[]>(initialNodes(path.value))
+// Where this workflow's steps are first drawn (workflows.ts); moved freely after that, and kept.
+const nodes = ref<Node[]>(initialNodes(path.value, preset.layout, currentRecord.value.name))
 const flow = shallowRef<VueFlowInstance>()
 /** The arrow that's selected (to remove with Delete), kept here: the arrows are drawn from the connections. */
 const selectedEdge = ref<string | null>(null)
-const edges = computed(() => drawEdges(connections.value, shown.value, problems.value).map((e) => ({ ...e, selected: e.id === selectedEdge.value })))
+const edges = computed(() => drawEdges(connections.value, shown.value, problems.value, currentRecord.value.name).map((e) => ({ ...e, selected: e.id === selectedEdge.value })))
 // A node's name says its place on the path, which follows the connections.
-watch(path, (p) => (nodes.value = nodes.value.map((n) => ({ ...n, ariaLabel: nodeLabel(n.id as StepId, p) }))))
+watch([path, () => currentRecord.value.name], ([p, name]) => (nodes.value = nodes.value.map((n) => ({ ...n, ariaLabel: nodeLabel(n.id as StepId, p, name) }))))
 
 // Connecting, moving a connection's end, and disconnecting. Each is checked (flow.ts) before it
 // changes anything; a refusal says why, briefly, where the hint sits. Nothing else changes: no
@@ -404,17 +405,35 @@ function fit() {
   return flow.value?.fitView({ nodes: ids.map((id) => ({ id })), padding, minZoom: 0.45, maxZoom: 0.9, duration: 250 })
 }
 function resetLayout() {
-  nodes.value = resetPositions(nodes.value)
+  nodes.value = resetPositions(nodes.value, preset.layout)
   nextTick(fit)
 }
 
-/** Record A's field names as typed (names only: the node shows its shape, not its data). */
-const recordFields = computed(() => {
+/**
+ * The Record's configuration now: its data as typed against the exact version it's pinned to (the
+ * boundary's own validate, resolved as runs here resolve). Only what's worth saying on its card.
+ */
+const recordStatus = computed<StepView['config']>(() => {
   const record = parsed.value
-  if ('error' in record) return 'Its data isn’t valid JSON yet'
-  const data = record.data
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) return 'Its data isn’t an object'
-  return Object.keys(data).join(', ') || 'No fields'
+  if ('error' in record) return { label: 'Its data isn’t valid JSON', tone: 'problem' }
+  const definition = resolve(pin.value.ref)
+  if (!definition) return { label: 'Its Definition can’t be found here', tone: 'problem' }
+  if (validate(definition, record.data, resolve).length) return { label: `Its data doesn’t fit ${definitionLabel(pin.value.ref)}`, tone: 'problem' }
+  return pinKey.value === pinOf(selectedRecord.value) ? null : { label: 'Pinned to a different Definition', tone: 'info' }
+})
+/**
+ * The Transform's applied configuration now, as the version the step invokes would judge it before
+ * running (the boundary's own checks: contractCompatibility, mappingCompatibility). Apart from any
+ * run: an earlier success says nothing about this.
+ */
+const transformStatus = computed<StepView['config']>(() => {
+  const feature = features.value.transform
+  const input = resolve(appliedMapping.value.from)
+  const output = resolve(config.value.output)
+  if (!input || !output) return { label: 'A contract it uses can’t be found here', tone: 'problem' }
+  if ([...contractCompatibility(feature, input), ...contractCompatibility(feature, output, 'output')].length) return { label: `${featureWords('transform')} can’t take these contracts`, tone: 'problem' }
+  if (mappingCompatibility(feature, appliedMapping.value, input, output, resolve).length) return { label: `${featureWords('transform')} would refuse this Mapping`, tone: 'problem' }
+  return plan.value.changes ? { label: 'Unapplied changes', tone: 'info' } : null
 })
 
 /** The shown run's result for a node: null for Record A, and for a step that run didn't invoke. */
@@ -432,29 +451,41 @@ const views = computed<Record<StepId, StepView>>(() => {
     const kind = step.evidence.outcome.kind
     return { label: outcomeLabel(step.evidence.outcome), tone: kind === 'succeeded' ? 'ok' : kind === 'failed' ? 'bad' : 'warn' }
   }
-  const misbehaving = (step: FeatureStep) => !features.value[step].id.startsWith('orbit.')
-  const mapping = summarize(appliedMapping.value.properties)
   const p = path.value
+  const known = handsOn(connections.value, contracts.value)
+  const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
+  // The exact version, briefly, as the inspector's header says it; the full identity on hover.
+  const versionWords = (f: FeatureRef & { readonly provisional?: true }) => `Feature v${f.version}${f.provisional ? ' (provisional)' : ''}`
+  // A Console: what it observes (what reaches it along the path), and that it hands it on unchanged.
+  const consoleView = (step: 'console-in' | 'console-out'): StepView => {
+    const observes = p.includes(step) ? known.get(step) : undefined
+    return {
+      badge: stepBadge(step, p), icon: 'eye', title: stepTitle(step),
+      flow: { text: observes ? `Observes ${label(observes)}` : 'Nothing arrives yet' }, detail: 'Hands it on unchanged',
+      meta: versionWords(features.value[step]), metaTitle: `${featureWords(step)} · ${stepFeatures.value[step]}`,
+      config: features.value[step].id.startsWith('orbit.') ? null : { label: 'Misbehaving on purpose', tone: 'info' },
+      problem: problemInto(step), outcome: outcome(step), stale: stale.value,
+    }
+  }
+  const pinned = resolve(pin.value.ref)
+  const output = resolve(config.value.output)
+  const mapped = output ? output.fields.filter((f) => appliedMapping.value.properties.some((m) => m.name === f.name)).length : 0
   return {
     'record': {
-      badge: stepBadge('record', p), kind: 'Record · in memory', title: currentRecord.value.name,
-      lines: [definitionLabel(pin.value.ref), recordFields.value],
-      more: 0, note: pinKey.value === pinOf(selectedRecord.value) ? null : 'Pinned to a different Definition', problem: null, outcome: null, stale: false,
+      badge: stepBadge('record', p), icon: 'record', title: currentRecord.value.name,
+      flow: { text: definitionLabel(pin.value.ref) }, detail: pinned ? count(pinned.fields.length) : null,
+      meta: 'Record · in memory', config: recordStatus.value, problem: null, outcome: null, stale: false,
     },
-    'console-in': {
-      badge: stepBadge('console-in', p), kind: `Feature · ${featureWords('console-in')}`, title: stepTitle('console-in'),
-      lines: ['Shows what arrives and passes it on, unchanged'], more: 0,
-      note: misbehaving('console-in') ? 'Misbehaving on purpose' : null, problem: problemInto('console-in'), outcome: outcome('console-in'), stale: stale.value,
-    },
+    'console-in': consoleView('console-in'),
     'transform': {
-      badge: stepBadge('transform', p), kind: `Feature · ${featureWords('transform')} · Mapping v${config.value.mapping.version}`, title: stepTitle('transform'),
-      lines: [`${label(appliedMapping.value.from)} → ${label(config.value.output)}`, ...(mapping.lines.length ? mapping.lines : ['Makes nothing yet'])], more: mapping.more,
-      note: plan.value.changes ? 'Unapplied changes. Runs use the applied versions' : null, problem: problemInto('transform'), outcome: outcome('transform'), stale: stale.value,
+      badge: stepBadge('transform', p), icon: 'transform', title: stepTitle('transform'),
+      flow: { from: label(appliedMapping.value.from), to: label(config.value.output) },
+      detail: output ? `${mapped} of ${count(output.fields.length)} mapped` : null,
+      meta: `${versionWords(features.value.transform)} · Mapping v${config.value.mapping.version}`,
+      metaTitle: `${featureWords('transform')} · ${stepFeatures.value.transform} · Mapping v${config.value.mapping.version}`,
+      config: transformStatus.value, problem: problemInto('transform'), outcome: outcome('transform'), stale: stale.value,
     },
-    'console-out': {
-      badge: stepBadge('console-out', p), kind: `Feature · ${featureWords('console-out')}`, title: stepTitle('console-out'),
-      lines: ['Shows what arrives and passes it on, unchanged'], more: 0, note: misbehaving('console-out') ? 'Misbehaving on purpose' : null, problem: problemInto('console-out'), outcome: outcome('console-out'), stale: stale.value,
-    },
+    'console-out': consoleView('console-out'),
   }
 })
 
@@ -644,7 +675,8 @@ const incoming = computed<IncomingView>(() => {
   const { from, ref } = incomingTo('transform', connections.value, contracts.value)
   if (!from) return { step: null, ref }
   const badge = stepBadge(from, path.value)
-  return { step: from === 'record' || badge === '–' ? stepTitle(from) : `${stepTitle(from)} · Step ${badge}`, ref }
+  const title = stepTitle(from, currentRecord.value.name)
+  return { step: from === 'record' || badge === '–' ? title : `${title} · Step ${badge}`, ref }
 })
 const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100'
 </script>

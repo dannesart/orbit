@@ -18,7 +18,7 @@ const mappingIds = computed(() => [...new Set(props.config.mappings.map((m) => m
   <div>
     <section aria-labelledby="transform-run-heading">
       <h3 id="transform-run-heading" class="text-sm font-semibold text-slate-900">What happened in run {{ runNumber }}</h3>
-      <p v-if="runs.length" class="text-xs text-slate-500">{{ pathWords(runs.at(-1)!.path) }}</p>
+      <p v-if="runs.length" class="text-xs text-slate-500">{{ pathWords(runs.at(-1)!.path, runs.at(-1)!.recordName) }}</p>
       <RunResult :step="step" :stale="stale" :label="label" :resolve="resolve" />
     </section>
     <section v-if="runs.length > 1" aria-labelledby="runs-heading" class="mt-6">
@@ -27,7 +27,7 @@ const mappingIds = computed(() => [...new Set(props.config.mappings.map((m) => m
       <ol class="mt-2 flex flex-col gap-1 text-sm text-slate-700">
         <li v-for="r in [...runs].reverse().slice(1)" :key="r.number">
           Run {{ r.number }} · {{ r.outcome ? outcomeLabel(r.outcome) : 'Transform not invoked' }}<template v-if="r.output"> · {{ label(r.output) }}</template><template v-if="r.mapping"> · Mapping v{{ r.mapping.version }}</template><template v-if="r.feature"> · Transform v{{ r.feature.version }}</template>
-          <span class="block text-xs text-slate-500">{{ pathWords(r.path) }}</span>
+          <span class="block text-xs text-slate-500">{{ pathWords(r.path, r.recordName) }}</span>
         </li>
       </ol>
     </section>

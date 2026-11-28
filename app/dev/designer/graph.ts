@@ -5,50 +5,52 @@
 import type { Edge, EdgeMarker, Node, XYPosition } from '@xyflow/vue'
 import { type Connection, type FlowRun, STEPS, type StepId, connectionKey, stepBadge, stepTitle } from './flow'
 
-/** Left to right, as the playground starts. Only a starting picture. */
-export const INITIAL_POSITIONS: Readonly<Record<StepId, XYPosition>> = Object.freeze({
+/** Where each step is first drawn. Only a starting picture: every workflow may have its own (workflows.ts). */
+export type Layout = Readonly<Record<StepId, XYPosition>>
+/** Left to right, as the playground starts: every card is the same width (StepNode), evenly spaced. */
+export const INITIAL_POSITIONS: Layout = Object.freeze({
   'record': { x: 0, y: 0 },
   'console-in': { x: 320, y: 0 },
   'transform': { x: 640, y: 0 },
-  'console-out': { x: 1020, y: 0 },
+  'console-out': { x: 960, y: 0 },
 })
 
 /** What a node is called for assistive technology: its place on the path, or that it has none. */
-export function nodeLabel(id: StepId, path: readonly StepId[]): string {
-  if (id === 'record') return 'Record A, where the flow starts'
+export function nodeLabel(id: StepId, path: readonly StepId[], recordName?: string): string {
+  if (id === 'record') return `${stepTitle('record', recordName)}, where the flow starts`
   const badge = stepBadge(id, path)
   return badge === '–' ? `${stepTitle(id)}, not connected to the flow` : `Step ${badge}, ${stepTitle(id)}`
 }
 
 /** Nodes may be dragged, selected and connected; never deleted. */
-export function initialNodes(path: readonly StepId[]): Node[] {
+export function initialNodes(path: readonly StepId[], layout: Layout = INITIAL_POSITIONS, recordName?: string): Node[] {
   return STEPS.map((id) => ({
     id,
     type: 'step',
-    position: { ...INITIAL_POSITIONS[id] },
+    position: { ...layout[id] },
     data: {},
     deletable: false,
-    ariaLabel: nodeLabel(id, path),
+    ariaLabel: nodeLabel(id, path, recordName),
   }))
 }
 
 /** Back to the starting picture, keeping which node is selected. */
-export const resetPositions = (nodes: readonly Node[]): Node[] =>
-  nodes.map((n) => ({ ...n, position: { ...INITIAL_POSITIONS[n.id as StepId] } }))
+export const resetPositions = (nodes: readonly Node[], layout: Layout = INITIAL_POSITIONS): Node[] =>
+  nodes.map((n) => ({ ...n, position: { ...layout[n.id as StepId] } }))
 
 /**
  * The connections as arrows. One the contracts can't accept is drawn as a problem; one nothing
  * travelled along in the shown run (it wasn't on that run's path, or its target wasn't invoked)
  * is dashed. Each can be selected, deleted or moved by its end.
  */
-export function drawEdges(connections: readonly Connection[], shown: FlowRun, problems: ReadonlyMap<string, string>): Edge[] {
+export function drawEdges(connections: readonly Connection[], shown: FlowRun, problems: ReadonlyMap<string, string>, recordName?: string): Edge[] {
   const arrow = { type: 'arrowclosed', width: 18, height: 18 } as EdgeMarker
   return connections.map((c) => {
     const key = connectionKey(c)
     const at = shown.path.indexOf(c.source)
     const travelled = at >= 0 && shown.path[at + 1] === c.target && c.target !== 'record' && !!shown.steps[c.target]
     const problem = problems.get(key)
-    const said = `${stepTitle(c.source)} hands on to ${stepTitle(c.target)}`
+    const said = `${stepTitle(c.source, recordName)} hands on to ${stepTitle(c.target, recordName)}`
     return {
       id: key,
       source: c.source,

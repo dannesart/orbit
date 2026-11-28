@@ -3,7 +3,7 @@
   16×16, 1.5 stroke). Always decorative: the control they sit in carries the accessible name.
 -->
 <script setup lang="ts">
-defineProps<{ name: 'check' | 'error' | 'clock' | 'minus' | 'pencil' | 'chevron' | 'undo' | 'close' | 'code' }>()
+defineProps<{ name: 'check' | 'error' | 'clock' | 'minus' | 'pencil' | 'chevron' | 'undo' | 'close' | 'code' | 'record' | 'eye' | 'transform' }>()
 </script>
 
 <template>
@@ -28,6 +28,18 @@ defineProps<{ name: 'check' | 'error' | 'clock' | 'minus' | 'pencil' | 'chevron'
       <path d="M3 6.75h6.25a3.75 3.75 0 0 1 0 7.5H7" />
     </template>
     <path v-else-if="name === 'code'" d="M5.5 4 2.5 8l3 4M10.5 4l3 4-3 4" />
+    <template v-else-if="name === 'record'">
+      <rect x="3" y="2.5" width="10" height="11" rx="2" />
+      <path d="M5.75 6h4.5M5.75 8.5h4.5M5.75 11h2.5" />
+    </template>
+    <template v-else-if="name === 'eye'">
+      <path d="M1.75 8S4 3.75 8 3.75 14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8Z" />
+      <circle cx="8" cy="8" r="1.75" />
+    </template>
+    <template v-else-if="name === 'transform'">
+      <path d="M2.5 5h8.5M8.5 2.5 11 5 8.5 7.5" />
+      <path d="M13.5 11H5M7.5 8.5 5 11l2.5 2.5" />
+    </template>
     <path v-else d="m4 4 8 8M12 4l-8 8" />
   </svg>
 </template>

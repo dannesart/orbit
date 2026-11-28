@@ -35,7 +35,8 @@ export const INITIAL_CONNECTIONS: readonly Connection[] = Object.freeze([
 ].map((c) => Object.freeze(c as Connection)))
 
 const TITLES: Record<StepId, string> = { 'record': 'Record A', 'console-in': 'Console', 'transform': 'Transform', 'console-out': 'Console' }
-export const stepTitle = (id: StepId) => TITLES[id]
+/** A step's title. The Record's is its own name (the chosen Record's: workflows.ts); Record A's unless given. */
+export const stepTitle = (id: StepId, recordName = TITLES.record) => (id === 'record' ? recordName : TITLES[id])
 const isConsole = (id: StepId) => id === 'console-in' || id === 'console-out'
 
 /** The path that runs: Record A, then each step its predecessor hands on to. */
@@ -57,6 +58,8 @@ export function stepBadge(id: StepId, path: readonly StepId[]): string {
 /** What the contracts are right now: Record A's pinned Definition and the applied Mapping's. */
 export interface Contracts {
   readonly record: DefinitionRef
+  /** The chosen Record's name, for words; Record A's unless given. */
+  readonly recordName?: string
   readonly transform: { readonly reads: DefinitionRef; readonly makes: DefinitionRef }
   /** Definition versions by name, for words (and to recognise a look-alike). */
   readonly definitions: readonly DefinitionVersion[]
@@ -91,9 +94,11 @@ function contractProblem(source: StepId, target: StepId, ref: DefinitionRef | un
   const definition = find(ref)
   const refused = definition ? contractCompatibility(contracts.features[target], definition) : []
   if (!refused.length) return null
-  const what = `it has objects or other Definitions inside it (${refused.map(propertyPathWords).join(', ')})`
+  // The first few places, then how many more: a large Definition can have many (the inspector and the run say each).
+  const places = refused.map(propertyPathWords)
+  const what = `it has objects or other Definitions inside it (${places.length > 3 ? `${places.slice(0, 3).join(', ')} and ${places.length - 3} more` : places.join(', ')})`
   return attempt
-    ? `${contracts.featureLabel(target)} doesn’t accept ${contracts.label(ref)}, which ${subject(source).replace(/^This/, 'this')} hands on: ${what}.`
+    ? `${contracts.featureLabel(target)} doesn’t accept ${contracts.label(ref)}, which ${subject(source, contracts).replace(/^This/, 'this')} hands on: ${what}.`
     : `${contracts.featureLabel(target)} doesn’t accept ${contracts.label(ref)}: ${what}.`
 }
 
@@ -107,12 +112,12 @@ function readsProblem(source: StepId, ref: DefinitionRef, contracts: Contracts, 
   const lookalike = a && b && a.id !== b.id && sameFields(a.fields, b.fields) ? ' Same properties, but a different Definition.' : ''
   // Trying to connect: what each side has. Already connected: what Transform gets.
   return attempt
-    ? `Transform reads ${contracts.label(reads)}. ${subject(source)} hands on ${contracts.label(ref)}.${lookalike}`
+    ? `Transform reads ${contracts.label(reads)}. ${subject(source, contracts)} hands on ${contracts.label(ref)}.${lookalike}`
     : `Transform reads ${contracts.label(reads)}, but receives ${contracts.label(ref)}.${lookalike}`
 }
 
-const subject = (id: StepId) => (isConsole(id) ? 'This Console' : stepTitle(id))
-const object = (id: StepId) => (isConsole(id) ? 'a Console' : stepTitle(id))
+const subject = (id: StepId, c: Pick<Contracts, 'recordName'>) => (isConsole(id) ? 'This Console' : stepTitle(id, c.recordName))
+const object = (id: StepId, c: Pick<Contracts, 'recordName'>) => (isConsole(id) ? 'a Console' : stepTitle(id, c.recordName))
 
 export type Verdict = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
@@ -126,15 +131,16 @@ export function checkConnection(connections: readonly Connection[], candidate: C
   const { source, target } = candidate
   const no = (reason: string): Verdict => ({ ok: false, reason })
   if (source === target) return no('A step can’t hand on to itself.')
-  if (target === 'record') return no('Record A is where the flow starts. Nothing hands on to it.')
+  const record = stepTitle('record', contracts.recordName)
+  if (target === 'record') return no(`${record} is where the flow starts. Nothing hands on to it.`)
   if (others.some((c) => c.source === source && c.target === target)) return no('They’re already connected.')
   const out = others.find((c) => c.source === source)
-  if (out) return no(`${subject(source)} already hands on to ${object(out.target)}. One path only: disconnect that first.`)
+  if (out) return no(`${subject(source, contracts)} already hands on to ${object(out.target, contracts)}. One path only: disconnect that first.`)
   const into = others.find((c) => c.target === target)
-  if (into) return no(`${isConsole(target) ? 'That Console' : stepTitle(target)} already receives from ${object(into.source)}. A step takes one input.`)
+  if (into) return no(`${isConsole(target) ? 'That Console' : stepTitle(target)} already receives from ${object(into.source, contracts)}. A step takes one input.`)
   // A loop: the target already leads back to the source.
   for (let at: StepId | undefined = target, seen = 0; at && seen < STEPS.length; at = others.find((c) => c.source === at)?.target, seen++) {
-    if (at === source) return no('That would make a loop. The flow runs one way, from Record A.')
+    if (at === source) return no(`That would make a loop. The flow runs one way, from ${record}.`)
   }
   const problem = contractProblem(source, target, handsOn(others, contracts).get(source), contracts, true)
   return problem ? no(problem) : { ok: true }
@@ -207,7 +213,7 @@ export function flowOutcome(run: FlowRun): { kind: 'nothing' } | { kind: 'stoppe
 }
 
 /** A path in words: "Record A → Console → Transform". */
-export const pathWords = (path: readonly StepId[]) => path.map(stepTitle).join(' → ')
+export const pathWords = (path: readonly StepId[], recordName?: string) => path.map((id) => stepTitle(id, recordName)).join(' → ')
 
 
 /**

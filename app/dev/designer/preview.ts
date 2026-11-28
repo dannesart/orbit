@@ -15,14 +15,14 @@ import { definitionLabel, describeIssue, describeMappingIssue, parseRecordData }
 
 export type Example = { readonly data: Data } | { readonly problem: string; readonly details: readonly string[] }
 
-/** Record A's data as typed, if it fits the Definition the Mapping reads. A frozen copy. */
-export function exampleFrom(recordText: string, input: DefinitionVersion, resolve?: Resolve): Example {
+/** The chosen Record's data as typed (Record A's unless named), if it fits the Definition the Mapping reads. A frozen copy. */
+export function exampleFrom(recordText: string, input: DefinitionVersion, resolve?: Resolve, recordName = 'Record A'): Example {
   const parsed = parseRecordData(recordText)
-  if ('error' in parsed) return { problem: 'Record A’s data isn’t valid JSON, so there’s no example to preview with.', details: [] }
+  if ('error' in parsed) return { problem: `${recordName}’s data isn’t valid JSON, so there’s no example to preview with.`, details: [] }
   // The input's whole contract must resolve before its data can be judged (as at the boundary).
   if (checkContract(input, resolve).length) return { problem: `${definitionLabel(input)} can’t be resolved here, so there’s no example to preview with.`, details: [] }
   const issues = validate(input, parsed.data, resolve)
-  if (issues.length) return { problem: `Record A’s data doesn’t fit ${definitionLabel(input)}, which this Mapping reads.`, details: issues.map(describeIssue) }
+  if (issues.length) return { problem: `${recordName}’s data doesn’t fit ${definitionLabel(input)}, which this Mapping reads.`, details: issues.map(describeIssue) }
   return { data: frozenCopy(parsed.data as Data) }
 }
 

@@ -27,7 +27,7 @@ export interface TransformView {
 }
 
 /** Everything the Transform's surfaces show for this draft, for the step's Transform version and workspace. */
-export function transformView(config: Configuration, draft: TransformDraft, step: ApplyContext, recordText: string): TransformView {
+export function transformView(config: Configuration, draft: TransformDraft, step: ApplyContext, recordText: string, recordName?: string): TransformView {
   const { resolve } = scopeOf(config, step.workspaceId)
   const assessment = assessApply(config, draft, step)
   const { target, input, from, review, plan } = assessment
@@ -37,7 +37,7 @@ export function transformView(config: Configuration, draft: TransformDraft, step
   // contract on either side makes the preview an illustration, never checked against anything.
   const example: Example = from.kind === 'unresolved'
     ? { problem: 'The input Definition version can’t be found here, so there’s no example to preview with.', details: [] }
-    : exampleFrom(recordText, input, resolve)
+    : exampleFrom(recordText, input, resolve, recordName)
   const output = from.kind === 'unresolved' || target.kind === 'unresolved'
     ? unresolvedPreview(properties, from.kind === 'unresolved' ? null : input, example, reading)
     : previewOutput(properties, input, target.definition, example, reading)
@@ -63,14 +63,14 @@ export function applyDraft(config: Configuration, draft: TransformDraft, step: A
  * The applied Mapping, previewed the same way with the same Record A (Mapping Studio's Preview shows
  * it beside the draft's). A preview, never a run: runs are what made the evidence.
  */
-export function appliedPreview(config: Configuration, step: ApplyContext, recordText: string): AppliedPreview {
+export function appliedPreview(config: Configuration, step: ApplyContext, recordText: string, recordName?: string): AppliedPreview {
   const scope = scopeOf(config, step.workspaceId)
   const mapping = findMapping(config, config.mapping)!
   // The applied versions, as this workspace resolves them; never stand-ins for what it can't.
   const from = contractIn(mapping.from, scope)
   const to = contractIn(mapping.to, scope)
   const reading = readingOf(step.feature, scope.resolve)
-  const example: Example = from.kind === 'unresolved' ? { problem: 'The input Definition version can’t be found here, so there’s no example to preview with.', details: [] } : exampleFrom(recordText, from.definition, scope.resolve)
+  const example: Example = from.kind === 'unresolved' ? { problem: 'The input Definition version can’t be found here, so there’s no example to preview with.', details: [] } : exampleFrom(recordText, from.definition, scope.resolve, recordName)
   const preview = from.kind === 'unresolved' || to.kind === 'unresolved'
     ? unresolvedPreview(mapping.properties, from.kind === 'unresolved' ? null : from.definition, example, reading)
     : previewOutput(mapping.properties, from.definition, to.definition, example, reading)

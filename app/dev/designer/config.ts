@@ -38,6 +38,8 @@ export interface RunRecord {
    * Connecting differently afterwards changes the design, never this.
    */
   readonly path: readonly StepId[]
+  /** The Record that run started from, by name, as it was then (absent in runs made before Records had names). */
+  readonly recordName?: string
 }
 import { A1, B1, DEFINITIONS, INITIAL_MAPPING, WORKSPACE, definitionLabel, describeDefinitionIssue, describeNamingIssues } from '../features/experiment'
 import { type DraftProperty, fromDraft, toDraft } from './parts'

@@ -18,7 +18,7 @@ describe('Preview names what it shows', () => {
   it('shows the applied Mapping from what’s applied, and runs from their evidence, each named apart', () => {
     const page = read('app/dev/designer/SpatialDesigner.vue')
     // The page's applied preview is view.ts's: the applied Mapping, never the draft.
-    expect(page).toContain('const applied = computed<AppliedPreview>(() => appliedPreview(config.value, step.value, recordText.value))')
+    expect(page).toContain('const applied = computed<AppliedPreview>(() => appliedPreview(config.value, step.value, recordText.value, currentRecord.value.name))')
     const config = initialConfiguration()
     const shown = appliedPreview(config, { feature: orbitTransformV2, workspaceId: WORKSPACE }, JSON.stringify({ firstName: 'Ada', lastName: 'Lovelace' }))
     expect([shown.version, shown.properties]).toEqual([config.mapping.version, config.mappings[0]!.properties])

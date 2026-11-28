@@ -187,7 +187,7 @@ describe('Design, applied versions and evidence stay apart', () => {
   const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
 
   it('never changes a contract, Mapping or draft by connecting, moving or disconnecting', () => {
-    const handling = page.slice(page.indexOf('// Connecting, moving a connection\'s end, and disconnecting.'), page.indexOf('/** Record A\'s field names as typed'))
+    const handling = page.slice(page.indexOf('// Connecting, moving a connection\'s end, and disconnecting.'), page.indexOf(' * The Record\'s configuration now'))
     expect(handling).toMatch(/connections\.value = /)
     expect(handling).not.toMatch(/config\.value =|setDraft|draft\.value =|pinKey\.value =|consoleId\.value =/)
     // The Mappings a run uses are untouched by it: the catalogue is frozen, and still equal after.
@@ -211,7 +211,7 @@ describe('Design, applied versions and evidence stay apart', () => {
     expect(Object.isFrozen(first.steps)).toBe(true)
     expect(Object.isFrozen(first.steps.transform!.evidence)).toBe(true)
     // The designer stores each run's own path, frozen, with its Mapping version.
-    expect(page).toMatch(/runs\.value = \[\.\.\.runs\.value, Object\.freeze\(\{ number: runNumber\.value, outcome: [^}]*mapping: evidence\?\.mapping \?\? null, [^}]*path: shown\.value\.path \}\)\]/)
+    expect(page).toMatch(/runs\.value = \[\.\.\.runs\.value, Object\.freeze\(\{ number: runNumber\.value, outcome: [^}]*mapping: evidence\?\.mapping \?\? null, [^}]*path: shown\.value\.path, recordName: currentRecord\.value\.name \}\)\]/)
     // A change of connections makes the shown run "earlier": it's part of what a run depends on.
     expect(page).toMatch(/const snapshot = computed\(\(\) => JSON\.stringify\(\[[^\]]*connections\.value\.map\(connectionKey\)\]\)\)/)
   })
