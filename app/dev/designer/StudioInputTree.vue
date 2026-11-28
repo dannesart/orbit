@@ -10,12 +10,13 @@ import DefinitionsIcon from '../definitions/DefinitionsIcon.vue'
 import StudioInputTree from './StudioInputTree.vue'
 import type { InputNode } from './studio'
 
-const props = withDefaults(defineProps<{ nodes: readonly InputNode[]; label: (ref: DefinitionRef) => string; highlight?: ReadonlySet<string>; level?: number; plain?: boolean }>(), { highlight: () => new Set(), level: 1, plain: false })
+const props = withDefaults(defineProps<{ nodes: readonly InputNode[]; label: (ref: DefinitionRef) => string; highlight?: ReadonlySet<string>; level?: number; plain?: boolean; collapsed?: boolean; openAll?: boolean }>(), { highlight: () => new Set(), level: 1, plain: false, collapsed: false, openAll: false })
 
 const key = (n: InputNode) => JSON.stringify(n.path)
-// Local objects start open, references folded: each opens on its own.
+// Local objects start open, references folded: each opens on its own. `collapsed`: everything starts
+// folded (General's overviews); `openAll`: everything shown is open (a search's results).
 const flipped = ref<ReadonlySet<string>>(new Set())
-const isOpen = (n: InputNode) => (n.type === 'object') !== flipped.value.has(n.name)
+const isOpen = (n: InputNode) => props.openAll || ((!props.collapsed && n.type === 'object') !== flipped.value.has(n.name))
 function flip(name: string) {
   const next = new Set(flipped.value)
   if (!next.delete(name)) next.add(name)
@@ -57,7 +58,7 @@ const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
         </span>
       </div>
       <div v-if="n.children.length && isOpen(n)" class="ml-2.5 border-l-2 pl-3" :class="n.type === 'reference' ? 'border-dashed border-slate-200' : 'border-slate-100'">
-        <StudioInputTree :nodes="n.children" :label="label" :highlight="highlight" :level="level + 1" :plain="plain" />
+        <StudioInputTree :nodes="n.children" :label="label" :highlight="highlight" :level="level + 1" :plain="plain" :collapsed="collapsed" :open-all="openAll" />
       </div>
     </li>
   </ul>

@@ -303,3 +303,34 @@ export function unappliedWords(status: StudioStatus, unsupported = false): { rea
     default: return { words: n(status.problems.length, 'problem to fix', 'problems to fix'), tone: 'problem' }
   }
 }
+
+// --- Large contracts: a summary, and finding a property by name ---
+
+/** How much a contract holds, at every depth: properties, local objects and references. */
+export function contractSize(nodes: readonly InputNode[]): { readonly properties: number; readonly objects: number; readonly references: number } {
+  let properties = 0
+  let objects = 0
+  let references = 0
+  const walk = (ns: readonly InputNode[]) => ns.forEach((n) => {
+    properties++
+    if (n.type === 'object') objects++
+    if (n.type === 'reference') references++
+    walk(n.children)
+  })
+  walk(nodes)
+  return { properties, objects, references }
+}
+
+/**
+ * The places whose name contains `query` (ignoring case), with the objects that lead to them: a
+ * search through a contract, never a change to it. An empty query keeps everything.
+ */
+export function findInTree(nodes: readonly InputNode[], query: string): InputNode[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return [...nodes]
+  return nodes.flatMap((n) => {
+    if (n.name.toLowerCase().includes(q)) return [n]
+    const children = findInTree(n.children, q)
+    return children.length ? [{ ...n, children }] : []
+  })
+}

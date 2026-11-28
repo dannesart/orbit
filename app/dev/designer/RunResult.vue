@@ -32,6 +32,9 @@ const observedAs = computed(() => {
   return ref ? props.resolve(ref) : null
 })
 const raw = ref(false)
+// A large observation can be searched by property name (ObservedTree's query).
+const query = ref('')
+const large = (seen: unknown) => typeof seen === 'object' && seen !== null && Object.keys(seen).length > 12
 </script>
 
 <template>
@@ -51,9 +54,16 @@ const raw = ref(false)
           <button type="button" class="ml-auto rounded-md px-1.5 text-xs text-slate-500 transition hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" :aria-pressed="raw" data-observation-json @click="raw = !raw">JSON</button>
         </div>
         <pre v-if="raw" class="mt-1 overflow-x-auto rounded-xl bg-slate-900 px-4 py-3 font-mono text-sm text-slate-100">{{ json(seen) }}</pre>
-        <div v-else class="mt-1 rounded-xl bg-white px-3 py-1 ring-1 ring-slate-200/80">
-          <ObservedTree :data="seen" :fields="observedAs?.fields ?? null" :resolve="resolve" :label="label" />
-        </div>
+        <template v-else>
+          <label v-if="large(seen)" class="relative mt-1.5 block">
+            <span class="sr-only">Find a property in what was observed</span>
+            <input v-model="query" type="search" autocomplete="off" spellcheck="false" placeholder="Find a property" class="w-full rounded-xl border border-slate-200 bg-white py-1.5 pr-3 pl-8 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100" data-observation-search>
+            <svg class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.25" /><path d="m10.25 10.25 3 3" stroke-linecap="round" /></svg>
+          </label>
+          <div class="mt-1 rounded-xl bg-white px-3 py-1 ring-1 ring-slate-200/80">
+            <ObservedTree :data="seen" :fields="observedAs?.fields ?? null" :resolve="resolve" :label="label" :query="query" />
+          </div>
+        </template>
       </div>
       <p v-if="step.output && passThrough" class="mt-3 text-xs font-medium text-slate-500">
         Handed on unchanged, still a Value of <span class="text-slate-800">{{ label(step.output.definition) }}</span>

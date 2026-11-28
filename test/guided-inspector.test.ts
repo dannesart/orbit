@@ -78,11 +78,14 @@ describe('The minimal inspector: a tool, not a report', () => {
   it('lists every property the same way: one row opening Mapping Studio, with nothing to edit inline', () => {
     const rows = source('PropertyRows.vue')
     // One kind of row whatever makes the value, with its example value beside it: no inline controls.
-    // Besides the rows, only the two toggles (where the values come from, and the JSON view).
-    expect(rows.match(/<button/g)).toHaveLength(3)
+    // Besides the rows, only the two toggles (where the values come from, and the JSON view), and a
+    // built object's own disclosure, apart from the row.
+    expect(rows.match(/<button/g)).toHaveLength(4)
     expect(rows).toMatch(/<button\s*type="button"\s*:data-property-row="r\.name"[\s\S]*?:aria-label="r\.label"\s*@click="emit\('open', r\.opens\)"\s*>/)
     expect(rows).toMatch(/\{\{ r\.name \|\| '\(no name\)' \}\}<\/span>\s*<span[^>]*>\{\{ r\.type \}\}<\/span>[\s\S]*?data-row-example[\s\S]*?\{\{ r\.summary \}\}[\s\S]*?\{\{ r\.problem \}\}[\s\S]*?<DesignerIcon name="chevron"/)
-    expect(rows).not.toMatch(/<select|<input|update:draft/)
+    expect(rows).not.toMatch(/<select|update:draft/)
+    // The one input finds a property by name; it edits nothing.
+    expect(rows.match(/<input\b[^>]*>/g)).toEqual([expect.stringMatching(/type="search"[\s\S]*data-output-search/)])
     expect(inspector).toMatch(/<PropertyRows class="mt-5" :draft="draft" :review="review" :output="output" :example="example" :target="target" :problems="problems\.length" @open="emit\('studio', \$event\)" \/>/)
     expect(inspector).not.toMatch(/'update:draft'/)
     expect(source('SpatialDesigner.vue').match(/<TransformInspector[\s\S]*?\/>/)![0]).not.toMatch(/@update:draft/)

@@ -5,12 +5,13 @@
 // what to create, and the output's structure inside that choice: an existing Definition version,
 // used as it is, or the Transform's own output, whose properties are added, renamed, retyped and
 // removed here. Changing the output changes a contract (Apply freezes a new Definition version and
-// gives it a new Mapping).
+// gives it a new Mapping). Read-only contracts are compact overviews (ContractOverview): a large one
+// shows what it holds first and its structure on demand, so the output stays close at any size.
 import { type DefinitionRef, type DefinitionVersion, type FieldType, sameDefinition } from '#shared/features/definitions'
 import { DEFINITIONS, WORKSPACE, definitionLabel } from '../features/experiment'
 import { type Configuration, type TransformDraft, catalogue, inputIn, inputOf, labelOf, outputOf, scopeOf } from './config'
 import DesignerIcon from './DesignerIcon.vue'
-import StudioInputTree from './StudioInputTree.vue'
+import ContractOverview from './ContractOverview.vue'
 import { FLAT, READING } from './reading'
 import { asideReason, reconcile } from './switching'
 import { DESIGNER_WORKSPACE, definitionsPath, runsIn } from '../definitions/designer'
@@ -149,7 +150,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       <p v-if="relation === 'differs'" class="mt-2 text-xs text-amber-900" data-input-differs>{{ incoming.step }} hands on {{ labelOf(config, incoming.ref!) }}. This Mapping reads {{ readsLabel }} and stays as it is.</p>
       <p v-else-if="relation === 'unknown'" class="mt-2 text-xs text-slate-500">Nothing known reaches {{ incoming.step }} yet.</p>
       <div class="mt-4 border-t border-slate-100 pt-3">
-        <StudioInputTree v-if="inputs.length" :nodes="inputs" :label="versionWords" />
+        <ContractOverview v-if="inputs.length" :nodes="inputs" :label="versionWords" :name="readsLabel" />
         <p v-else class="text-sm" :class="inputUnresolved ? 'text-red-700' : 'text-slate-500'">{{ inputUnresolved ? 'It can’t be found here.' : 'It has no properties.' }}</p>
       </div>
     </section>
@@ -192,7 +193,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           <template v-if="workspace && chosenSource !== 'workspace'"> Definitions are made in <NuxtLink :to="definitionsPath(workspace.id)" class="link">{{ workspace.name }}’s Definitions</NuxtLink>.</template>
         </p>
         <div class="mt-3 border-t border-slate-100 pt-3" data-output-properties>
-          <StudioInputTree v-if="outputs.length" :nodes="outputs" :label="versionWords" plain />
+          <ContractOverview v-if="outputs.length" :nodes="outputs" :label="versionWords" :name="target.label" plain />
           <p v-else class="text-sm text-slate-500">{{ target.label }} has no properties.</p>
         </div>
       </div>

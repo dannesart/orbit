@@ -163,7 +163,7 @@ describe('Console v2 in the Designer', () => {
   it('shows the actual observation as a tree, with raw JSON one click away', () => {
     const result = read('app/dev/designer/RunResult.vue')
     expect(result).toContain('const raw = ref(false)')
-    expect(result).toMatch(/<pre v-if="raw"[^>]*>\{\{ json\(seen\) \}\}<\/pre>\s*<div v-else[^>]*>\s*<ObservedTree :data="seen"/)
+    expect(result).toMatch(/<pre v-if="raw"[^>]*>\{\{ json\(seen\) \}\}<\/pre>\s*<template v-else>[\s\S]*?<ObservedTree :data="seen"/)
     const tree = read('app/dev/designer/ObservedTree.vue')
     // Folded until opened; absent and empty said as they are, never filled in.
     expect(tree).toContain('const open = ref(new Set<string>())')

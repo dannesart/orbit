@@ -35,6 +35,7 @@ import MappingStudio from './MappingStudio.vue'
 import type { AppliedPreview, IncomingView, StudioOpening } from './studio'
 import TransformInspector from './TransformInspector.vue'
 import StepNode, { type StepView } from './StepNode.vue'
+import ObservedTree from './ObservedTree.vue'
 import { drawEdges, initialNodes, nodeLabel, resetPositions } from './graph'
 import {
   type Connection, type Contracts, type FeatureStep, type FlowRun, type StepFeatures, type StepId, checkConnection, connectionKey,
@@ -103,6 +104,14 @@ const ranWith = ref('')
 const runNumber = ref(0)
 
 /** What the chosen Record is pinned to: Record A's chosen pin, or a Candidate's own Definition version. */
+/** The Record's data, readable in its inspector when it's an object; otherwise only as JSON, to fix. */
+const recordData = computed(() => {
+  const record = parseRecordData(recordText.value)
+  return 'data' in record && typeof record.data === 'object' && record.data !== null && !Array.isArray(record.data) ? record.data as Record<string, unknown> : null
+})
+const editJson = ref(false)
+const pinnedShape = computed(() => DEFINITIONS.find((d) => d.id === pin.value.ref.id && d.version === pin.value.ref.version) ?? null)
+const recordQuery = ref('')
 const pin = computed(() => PINS.find((p) => p.key === pinKey.value) ?? { key: currentRecord.value.id, ref: currentRecord.value.definition, note: currentRecord.value.note, example: undefined })
 const parsed = computed(() => parseRecordData(recordText.value))
 const appliedMapping = computed(() => findMapping(config.value, config.value.mapping)!)
@@ -826,15 +835,34 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
             <p v-else id="pin" class="mt-1 text-sm font-medium text-slate-800" data-record-definition>{{ definitionLabel(pin.ref) }}</p>
             <p class="mt-1.5 text-xs text-slate-500">
               {{ pin.note }}
-              <span class="font-mono text-slate-600">{{ shapeOf(DEFINITIONS.find((d) => d.id === pin.ref.id && d.version === pin.ref.version)!) }}</span>
+              <!-- A small Definition's shape in one line; a large one by its size (its data, readable, is just below) -->
+              <span v-if="pinnedShape && pinnedShape.fields.length <= 8" class="font-mono text-slate-600">{{ shapeOf(pinnedShape) }}</span>
+              <span v-else-if="pinnedShape" class="text-slate-600">{{ pinnedShape.fields.length }} properties.</span>
             </p>
             <!-- Data only changes on purpose: an example is offered, never swapped in. -->
             <button v-if="pin.example && recordText !== JSON.stringify(pin.example, null, 2)" type="button" class="link mt-1.5 text-xs" data-use-example @click="recordText = JSON.stringify(pin.example, null, 2)">Use example data for {{ definitionLabel(pin.ref) }}</button>
-            <label for="record-data" class="mt-4 block text-xs font-medium text-slate-600">Data</label>
-            <textarea id="record-data" v-model="recordText" rows="5" spellcheck="false" autocomplete="off" :aria-invalid="'error' in parsed" aria-describedby="record-data-hint" class="field font-mono text-sm" />
-            <p id="record-data-hint" class="mt-2 text-xs" :class="'error' in parsed ? 'text-red-700' : 'text-slate-500'" aria-live="polite">
-              {{ 'error' in parsed ? parsed.error : 'Edit freely, even into something its Definition wouldn’t allow, to see what the boundary does.' }}
-            </p>
+            <!-- Its data, readable (every name and value whole, nested values opening on their own); as JSON to edit -->
+            <div class="mt-4 flex items-center gap-2">
+              <h4 class="text-xs font-medium text-slate-600">Data</h4>
+              <button v-if="recordData" type="button" class="ml-auto rounded-md px-1.5 text-xs text-slate-500 transition hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" :aria-pressed="editJson" data-record-json @click="editJson = !editJson">{{ editJson ? 'Show as properties' : 'Edit as JSON' }}</button>
+            </div>
+            <template v-if="recordData && !editJson">
+              <label v-if="Object.keys(recordData).length > 12" class="relative mt-1.5 block">
+                <span class="sr-only">Find a property in {{ currentRecord.name }}</span>
+                <input v-model="recordQuery" type="search" autocomplete="off" spellcheck="false" placeholder="Find a property" :class="[control, 'w-full pl-8']" data-record-search>
+                <svg class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.25" /><path d="m10.25 10.25 3 3" stroke-linecap="round" /></svg>
+              </label>
+              <div class="mt-1.5 rounded-xl bg-white px-3 py-1 ring-1 ring-slate-200/80" data-record-tree>
+                <ObservedTree :data="recordData" :fields="resolve(pin.ref)?.fields ?? null" :resolve="resolve" :label="label" :query="recordQuery" />
+              </div>
+            </template>
+            <template v-else>
+              <label for="record-data" class="sr-only">Data as JSON</label>
+              <textarea id="record-data" v-model="recordText" rows="5" spellcheck="false" autocomplete="off" :aria-invalid="'error' in parsed" aria-describedby="record-data-hint" class="field mt-1.5 font-mono text-sm" />
+              <p id="record-data-hint" class="mt-2 text-xs" :class="'error' in parsed ? 'text-red-700' : 'text-slate-500'" aria-live="polite">
+                {{ 'error' in parsed ? parsed.error : 'Edit freely, even into something its Definition wouldn’t allow, to see what the boundary does.' }}
+              </p>
+            </template>
           </div>
 
         </section>

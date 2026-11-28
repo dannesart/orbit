@@ -19,7 +19,7 @@ export type RowState = DraftReview['fields'][number]['state']
  */
 export type RowExample =
   | { readonly kind: 'value'; readonly value: Scalar }
-  | { readonly kind: 'object'; readonly entries: readonly { readonly name: string; readonly value: Scalar | null; readonly size: number }[] }
+  | { readonly kind: 'object'; readonly entries: readonly { readonly name: string; readonly value: Scalar | null; readonly size: number }[]; readonly data: Data }
   | { readonly kind: 'cannot'; readonly why: string }
   | { readonly kind: 'absent'; readonly what: string }
 
@@ -47,7 +47,7 @@ const isData = (v: Scalar | Data): v is Data => typeof v === 'object' && v !== n
 function exampleOf(value: OutputPreview['values'][number] | undefined): RowExample | null {
   if (!value) return null
   if ('value' in value) return { kind: 'value', value: value.value }
-  if ('object' in value) return { kind: 'object', entries: Object.entries(value.object).map(([name, v]) => (isData(v) ? { name, value: null, size: Object.keys(v).length } : { name, value: v, size: 0 })) }
+  if ('object' in value) return { kind: 'object', data: value.object, entries: Object.entries(value.object).map(([name, v]) => (isData(v) ? { name, value: null, size: Object.keys(v).length } : { name, value: v, size: 0 })) }
   if ('problems' in value) return { kind: 'cannot', why: value.problems[0] ?? '' }
   if ('absent' in value) return { kind: 'absent', what: value.absent.join(', ') }
   return null
