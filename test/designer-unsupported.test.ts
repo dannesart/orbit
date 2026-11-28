@@ -67,12 +67,13 @@ describe('A composed output in the Designer', () => {
 
   it('neither previews such a property as “not mapped” nor asks to fix it before applying', () => {
     const root = join(import.meta.dirname, '..')
-    const preview = readFileSync(join(root, 'app/dev/designer/PreviewObject.vue'), 'utf8')
-    const bar = readFileSync(join(root, 'app/dev/designer/ApplyBar.vue'), 'utf8')
-    expect(preview).toMatch(/<span v-if="r\.unsupported"[^>]*>Not supported by this Transform version<\/span>\s*<ShownText v-else-if/)
-    expect(bar).toMatch(/<span v-if="unsupported"[^>]*>Apply isn’t available: this Transform version doesn’t support these contracts\.<\/span>\s*<span v-else-if="errors\.length"/)
-    // The bar reads it from the assessment's structured problems (kind unsupported_contract), never from words.
-    expect(bar).toContain("const unsupported = computed(() => props.assessment.problems.some((p) => p.kind === 'unsupported_contract'))")
-    for (const f of ['TransformInspector.vue', 'SpatialDesigner.vue']) expect(readFileSync(join(root, 'app/dev/designer', f), 'utf8')).toContain(':assessment="assessment"')
+    const rows = readFileSync(join(root, 'app/dev/designer/rows.ts'), 'utf8')
+    const inspector = readFileSync(join(root, 'app/dev/designer/TransformInspector.vue'), 'utf8')
+    // No example for what this version can't make: it says so instead of a value or "Not mapped".
+    expect(rows).toContain("const example = hasExample && piece && f.state !== 'unsupported' ? exampleOf(")
+    expect(rows).toContain("unsupported: 'Not supported by this Transform version'")
+    // Unapplied changes say the version can't take the contracts, from the structured problems, never from words.
+    expect(inspector).toContain("unappliedWords(studioStatus(props.assessment), props.assessment.problems.some((p) => p.kind === 'unsupported_contract'))")
+    for (const f of ['SpatialDesigner.vue']) expect(readFileSync(join(root, 'app/dev/designer', f), 'utf8')).toContain(':assessment="assessment"')
   })
 })

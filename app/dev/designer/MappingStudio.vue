@@ -3,8 +3,8 @@
 // Definition Studio gives a Definition one. The Designer shows what happens; this shows how
 // information changes. One editor in three segments, moved between freely:
 //
-//   General  the Mapping's exact contracts (what it reads and makes), and the Feature version the
-//            step invokes it with, shown apart: the Mapping doesn't belong to a Feature version
+//   General  top to bottom: the input the Mapping reads (read-only, beside what reaches the step),
+//            what to create, and the output's structure; the Feature version in a line below
 //   Mapping  the input contract and the output contract side by side, staying where they are; an
 //            output property opens the existing editor for it in a floating inspector beside them
 //            (Phase 4.5B). On narrow screens, one contract at a time, Output first
@@ -26,7 +26,7 @@ import UnsupportedNotice from './UnsupportedNotice.vue'
 import { type ApplyAssessment, type Configuration, type Plan, type RunRecord, type TransformDraft, canApply, inputOf, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
 import { FLAT, READING } from './reading'
-import { type AppliedPreview, type StudioItem, type StudioOpening, connections, inputTree, isWithin, outputTree, studioStatus } from './studio'
+import { type AppliedPreview, type IncomingView, type StudioItem, type StudioOpening, connections, inputTree, isWithin, outputTree, studioStatus } from './studio'
 import { fromPiece } from './parts'
 import { describeSource } from './summary'
 
@@ -51,6 +51,8 @@ const props = defineProps<{
   stale: boolean
   runNumber: number
   runs: readonly RunRecord[]
+  /** What reaches the Transform along its connections, beside what the Mapping reads (General). */
+  incoming: IncomingView
   /** Where it opens (the Designer's inspector asks for a segment, or a property's editor); Mapping otherwise. */
   start?: StudioOpening | null
 }>()
@@ -170,28 +172,20 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
     <div id="studio-panel" role="tabpanel" :aria-labelledby="`studio-segment-${segment}`" class="flex-1 bg-slate-50/60 px-4 py-6 sm:px-6">
       <UnsupportedNotice v-if="review.unsupported" class="mb-5" :text="review.unsupported" />
 
-      <!-- General: the contracts, and the Feature version that invokes the Mapping -->
-      <div v-if="segment === 'general'" class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div :class="panel">
-          <StructureEditor :draft="draft" :config="config" :target="target" :structure="structure" :review="review" :input="input" @update:draft="emit('update:draft', $event)" />
-        </div>
-        <div class="flex flex-col gap-4 lg:self-start">
-          <section :class="panel" aria-labelledby="invoked-heading" data-studio-feature>
-            <h2 id="invoked-heading" class="text-sm font-semibold text-slate-900">Invoked by</h2>
-            <p class="mt-2 text-sm font-medium text-slate-800">{{ feature }}</p>
-            <p class="mt-1 text-xs" :class="review.unsupported || boundary.length ? 'text-red-700' : 'text-slate-500'">
-              <template v-if="review.unsupported">Can’t take these contracts.</template>
-              <template v-else-if="boundary.length">Wouldn’t accept this Mapping: {{ boundary[0] }}</template>
-              <template v-else>Takes these contracts.</template>
-            </p>
-            <p class="mt-3 text-xs text-slate-500">The exact version the Transform step pins. The Mapping doesn’t belong to it: any version that accepts the Mapping can invoke it.</p>
-          </section>
-          <section :class="panel" aria-labelledby="applied-heading">
-            <h2 id="applied-heading" class="text-sm font-semibold text-slate-900">Applied</h2>
-            <p class="mt-2 text-sm text-slate-700">Mapping v{{ config.mapping.version }} · {{ label(config.output) }}</p>
-            <p class="mt-1 text-xs text-slate-500">What runs use now. It stays exactly as it is until Apply succeeds.</p>
-          </section>
-        </div>
+      <!-- General: Input, then what to create and its structure; the Feature version and what's applied, in a line -->
+      <div v-if="segment === 'general'" class="mx-auto flex max-w-3xl flex-col">
+        <StructureEditor :draft="draft" :config="config" :target="target" :structure="structure" :review="review" :input="input" :incoming="incoming" :input-unresolved="assessment.from.kind === 'unresolved'" @update:draft="emit('update:draft', $event)" />
+        <p class="mt-4 flex flex-wrap justify-center gap-x-2 gap-y-1 text-xs text-slate-500" data-studio-feature>
+          <span :title="'The exact version the Transform step pins. Any version that accepts the Mapping can invoke it.'">Invoked by {{ feature }}</span>
+          <span aria-hidden="true">·</span>
+          <span :class="review.unsupported || boundary.length ? 'text-red-700' : ''">
+            <template v-if="review.unsupported">can’t take these contracts</template>
+            <template v-else-if="boundary.length">wouldn’t accept this Mapping: {{ boundary[0] }}</template>
+            <template v-else>takes these contracts</template>
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>Applied: Mapping v{{ config.mapping.version }} · {{ label(config.output) }}</span>
+        </p>
       </div>
 
       <!-- Mapping: the input and the output, side by side, and the selected property beside them -->

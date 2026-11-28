@@ -77,13 +77,13 @@ describe('The minimal inspector: a tool, not a report', () => {
 
   it('lists every property the same way: one row opening Mapping Studio, with nothing to edit inline', () => {
     const rows = source('PropertyRows.vue')
-    // One kind of row whatever makes the value: no inline controls, and no per-property value
-    // (the Preview shows the values).
-    expect(rows.match(/<button/g)).toHaveLength(1)
+    // One kind of row whatever makes the value, with its example value beside it: no inline controls.
+    // Besides the rows, only the two toggles (where the values come from, and the JSON view).
+    expect(rows.match(/<button/g)).toHaveLength(3)
     expect(rows).toMatch(/<button\s*type="button"\s*:data-property-row="r\.name"[\s\S]*?:aria-label="r\.label"\s*@click="emit\('open', r\.opens\)"\s*>/)
-    expect(rows).toMatch(/\{\{ r\.name \|\| '\(no name\)' \}\}<\/span>\s*<span[^>]*>\{\{ r\.type \}\}<\/span>[\s\S]*?\{\{ r\.summary \}\}[\s\S]*?\{\{ r\.problem \}\}[\s\S]*?<DesignerIcon name="chevron"/)
-    expect(rows).not.toMatch(/<select|<input|ShownText|update:draft/)
-    expect(inspector).toMatch(/<PropertyRows :draft="draft" :review="review" @open="emit\('studio', \$event\)" \/>/)
+    expect(rows).toMatch(/\{\{ r\.name \|\| '\(no name\)' \}\}<\/span>\s*<span[^>]*>\{\{ r\.type \}\}<\/span>[\s\S]*?data-row-example[\s\S]*?\{\{ r\.summary \}\}[\s\S]*?\{\{ r\.problem \}\}[\s\S]*?<DesignerIcon name="chevron"/)
+    expect(rows).not.toMatch(/<select|<input|update:draft/)
+    expect(inspector).toMatch(/<PropertyRows class="mt-5" :draft="draft" :review="review" :output="output" :example="example" :target="target" :problems="problems\.length" @open="emit\('studio', \$event\)" \/>/)
     expect(inspector).not.toMatch(/'update:draft'/)
     expect(source('SpatialDesigner.vue').match(/<TransformInspector[\s\S]*?\/>/)![0]).not.toMatch(/@update:draft/)
   })
@@ -147,19 +147,19 @@ describe('The minimal inspector: a tool, not a report', () => {
     expect(editors).toMatch(/role="radiogroup" :aria-label="`\$\{label\}: yes or no`"/)
   })
 
-  it('heads the preview “Preview · Not executed”, says the rest on demand, and keeps a real mismatch in view', () => {
-    const preview = source('PreviewObject.vue')
-    expect(preview).toMatch(/>Preview<\/h3>[\s\S]*?:aria-expanded="about" aria-controls="preview-about" @click="about = !about">Not executed<\/button>/)
-    expect(preview).toMatch(/<p v-if="about" id="preview-about"[^>]*>\s*This draft, with Record A’s data\. Nothing has run\./)
-    expect(preview).toMatch(/<p v-if="fit === false" class="mt-1\.5 text-xs text-red-700">/)
-    expect(preview).not.toMatch(/uppercase|Latest run/)
+  it('says the example values aren’t executed, says the rest on demand, and keeps a real mismatch in view', () => {
+    const output = source('PropertyRows.vue')
+    expect(output).toMatch(/>Output<\/h3>[\s\S]*?:aria-expanded="about" aria-controls="preview-about" data-preview-about @click="about = !about">Not executed<\/button>/)
+    expect(output).toMatch(/<p v-if="about" id="preview-about"[^>]*>\s*Example values: this draft, with Record A’s data\. Nothing has run\./)
+    expect(output).toMatch(/<p v-if="fit === false" class="mt-1\.5 text-xs text-red-700">/)
+    expect(output).not.toMatch(/uppercase|Latest run/)
   })
 
-  it('keeps Undo as an icon button and says what Apply does only when there is something to apply', () => {
-    const bar = source('ApplyBar.vue')
-    expect(bar).toMatch(/aria-label="Undo"\s*title="Undo"\s*:disabled="!canUndo"\s*@click="emit\('undo'\)"\s*>\s*<DesignerIcon name="undo"/)
-    // ...and not when this Transform version can't take the contracts: then nothing can be applied.
-    expect(bar).toMatch(/:class="plan\.changes && !unsupported \? 'font-medium text-amber-800' : 'sr-only'"/)
-    expect(bar).toMatch(/to fix before applying/)
+  it('keeps Undo, Cancel and Apply in Mapping Studio only; the inspector says unapplied changes and leads there', () => {
+    const bar = source('StudioStatusBar.vue')
+    expect(bar).toMatch(/aria-label="Undo" title="Undo" :disabled="!canUndo" @click="emit\('undo'\)"/)
+    expect(bar).toMatch(/data-cancel @click="emit\('cancel'\)"/)
+    expect(inspector).not.toMatch(/emit\('(apply|discard|undo)'\)|data-apply|aria-label="Undo"/)
+    expect(inspector).toMatch(/<div v-if="plan\.changes"[^>]*data-unapplied[\s\S]*?data-review-changes @click="emit\('studio', null\)">Review in Mapping Studio<\/button>/)
   })
 })

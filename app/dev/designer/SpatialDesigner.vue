@@ -16,7 +16,7 @@ import {
   type EdgeChangeset, type EdgeReconnectEvent, Panel, VueFlow, type Node, type Padding, type VueFlowInstance,
 } from '@xyflow/vue'
 import '@xyflow/vue/dist/style.css'
-import type { Data, DefinitionRef } from '#shared/features/definitions'
+import { type Data, type DefinitionRef, sameDefinition } from '#shared/features/definitions'
 import type { FeatureRef } from '#shared/features/features'
 import {
   A1, CONSOLES, DEFINITIONS, INITIAL_DATA, PINS, RECORD_ID, TRANSFORMS, WORKSPACE, type Step,
@@ -31,19 +31,19 @@ import { lastWorkspace, shelfOf } from '../definitions/store'
 import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput, runsIn as workspaceIn } from '../definitions/designer'
 import FeatureVersions, { type VersionChoice } from './FeatureVersions.vue'
 import MappingStudio from './MappingStudio.vue'
-import type { AppliedPreview, StudioOpening } from './studio'
+import type { AppliedPreview, IncomingView, StudioOpening } from './studio'
 import TransformInspector from './TransformInspector.vue'
 import StepNode, { type StepView } from './StepNode.vue'
 import { drawEdges, initialNodes, nodeLabel, resetPositions } from './graph'
 import {
   type Connection, type Contracts, type FeatureStep, type FlowRun, INITIAL_CONNECTIONS, INITIAL_STEP_FEATURES, type StepFeatures, type StepId, checkConnection, connectionKey,
-  connectionProblems, flowOutcome, pathOf, runFlow, stepBadge, stepTitle,
+  connectionProblems, flowOutcome, incomingTo, pathOf, runFlow, stepBadge, stepTitle,
 } from './flow'
 import { summarize } from './summary'
 import { READING, readingOf } from './reading'
 import { reconcile } from './switching'
 import {
-  type ApplyContext, type Configuration, type RunRecord, type TransformDraft, allDefinitions, draftFrom, findMapping, inputIn, scopeOf,
+  type ApplyContext, type Configuration, type RunRecord, type TransformDraft, allDefinitions, catalogue, draftFrom, findMapping, inputIn, scopeOf,
   initialConfiguration, labelOf, outputOf,
 } from './config'
 
@@ -182,14 +182,6 @@ function confirmReset() {
   resetting.value = null
   act?.()
 }
-function discard() {
-  const to = draftFrom(config.value)
-  resetAfterAsking({
-    title: 'Discard your changes?', intro: 'The Transform goes back to what’s applied. Discarding forgets:', confirm: 'Discard',
-    losing: draftLoses(draft.value, to, config.value.mappings), act: () => setDraft(to, false),
-  })
-}
-
 /** A run needs something to run: Record A has to hand on to a step. */
 const canRun = computed(() => !('error' in parsed.value) && path.value.length > 1)
 function run() {
@@ -599,6 +591,28 @@ const versionChoices = computed<VersionChoice[]>(() => (['console-in', 'transfor
 function pinVersion(step: string, key: string) {
   stepFeatures.value = { ...stepFeatures.value, [step as FeatureStep]: key }
 }
+// Also development only: the Definition version the Transform's Mapping reads, chosen directly, so
+// the experiment can still exercise composed inputs. In the product a Transform doesn't choose its
+// input (General shows it read-only, beside what reaches the step); how a Mapping comes to read
+// what a connection brings is a decision not made yet, so nothing here reconciles the two. Choosing
+// changes the draft only, like any edit: undoable, and applied only by Apply.
+const keyOfRef = (ref: DefinitionRef) => `${ref.id}@${ref.version}`
+const inputChoices = computed(() => catalogue(config.value.offered).filter((d) => resolve(d) !== null).map((d) => ({ key: keyOfRef(d), label: label(d) })))
+const readsKey = computed(() => keyOfRef(inputIn(draft.value, scope.value).ref))
+function chooseInput(key: string) {
+  const d = catalogue(config.value.offered).find((x) => keyOfRef(x) === key)
+  if (!d || key === readsKey.value) return
+  const next: TransformDraft = { ...draft.value, input: sameDefinition(d, A1) ? undefined : { id: d.id, version: d.version } }
+  setDraft(reconcile(next, inputIn(next, scope.value).definition, outputOf(config.value, next, scope.value).definition, view.value.reading), false)
+}
+
+// --- What reaches the Transform along its connections, for General's Input (flow.ts) ---
+const incoming = computed<IncomingView>(() => {
+  const { from, ref } = incomingTo('transform', connections.value, contracts.value)
+  if (!from) return { step: null, ref }
+  const badge = stepBadge(from, path.value)
+  return { step: from === 'record' || badge === '–' ? stepTitle(from) : `${stepTitle(from)} · Step ${badge}`, ref }
+})
 const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100'
 </script>
 
@@ -715,7 +729,6 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :output="output"
         :example="example"
         :input="input"
-        :can-undo="history.length > 0"
         :assessment="assessment"
         :step="stepOf('transform')"
         :stale="stale"
@@ -723,9 +736,6 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
         :runs="runs"
         :feature="featureVersionWords(features.transform)"
         :feature-key="stepFeatures.transform"
-        @apply="apply"
-        @discard="discard"
-        @undo="undo"
         @studio="openStudio"
         @close="closeInspector"
       />
@@ -792,6 +802,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           :run-number="runNumber"
           :runs="runs"
           :start="studioStart"
+          :incoming="incoming"
           @update:draft="setDraft"
           @apply="apply"
           @cancel="cancelStudio"
@@ -801,7 +812,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       </main>
     </div>
 
-    <FeatureVersions :open="versionsOpen" :choices="versionChoices" :pinned="stepFeatures" @pin="pinVersion" @close="versionsOpen = false" />
+    <FeatureVersions :open="versionsOpen" :choices="versionChoices" :pinned="stepFeatures" :inputs="inputChoices" :reads="readsKey" @pin="pinVersion" @input="chooseInput" @close="versionsOpen = false" />
     <LeaveDialog :losing="leaving ? atRisk : null" @stay="stay" @leave="leave" />
     <LeaveDialog
       :losing="resetting?.losing ?? null"

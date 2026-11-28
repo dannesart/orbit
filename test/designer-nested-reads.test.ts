@@ -141,9 +141,10 @@ describe('The Transform’s input, chosen on purpose', () => {
     expect(planApply(applied, draftFrom(applied), WORKSPACE).changes).toBe(false)
   })
 
-  it('offers the input choice in Structure, never changing it by itself', () => {
-    const structure = read('app/dev/designer/StructureEditor.vue')
-    expect(structure).toMatch(/<select id="input-definition"[^>]*data-input-definition @change="setInput/)
+  it('shows the input in General, read-only; choosing it is development only, and changes the draft only', () => {
+    expect(read('app/dev/designer/StructureEditor.vue')).not.toMatch(/<select id="input-definition"|data-input-definition/)
+    expect(read('app/dev/designer/FeatureVersions.vue')).toMatch(/<select :value="reads"[^>]*data-input-definition @change="emit\('input'/)
+    expect(read('app/dev/designer/SpatialDesigner.vue')).toMatch(/function chooseInput\(key: string\) \{[\s\S]*?setDraft\(reconcile\(next,/)
     expect(read('app/dev/designer/ValuePicker.vue')).toContain('· {{ absenceWords(r.optional) }}')
   })
 })

@@ -13,7 +13,7 @@ import { placeIn } from '../app/dev/definitions/designer'
 import { applyDraft, transformView } from '../app/dev/designer/view'
 import { studioStatus } from '../app/dev/designer/studio'
 import { type Case, corpus } from './corpus'
-import { SURFACES, applyButtons, renderSurface } from './surfaces'
+import { APPLY_SURFACES, SURFACES, applyButtons, renderSurface, unappliedState } from './surfaces'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -87,15 +87,21 @@ describe('Every Apply entry point agrees with the operation', () => {
     })
   })()
 
-  it('the inspector and Mapping Studio render Apply enabled exactly when Apply applies', async () => {
+  it('Mapping Studio renders Apply enabled exactly when Apply applies; the inspector says ready exactly then, and applies nothing', async () => {
     expect(new Set(sample.map((c) => assessApply(c.config, c.draft, step(c)).state)).size).toBe(6)
     for (const c of sample) {
       const applies = applyDraft(c.config, c.draft, step(c)) !== null
-      for (const surface of SURFACES) {
+      for (const surface of APPLY_SURFACES) {
         const buttons = applyButtons(await renderSurface(surface, c.config, c.draft, step(c), recordText(c)))
         expect(buttons.length, `${surface}: ${c.name}`).toBeGreaterThan(0)
         expect(buttons, `${surface}: ${c.name}`).toEqual(buttons.map(() => applies))
       }
+      const inspector = await renderSurface('inspector', c.config, c.draft, step(c), recordText(c))
+      expect(applyButtons(inspector), c.name).toEqual([])
+      const said = unappliedState(inspector)
+      const state = assessApply(c.config, c.draft, step(c)).state
+      expect(said?.state ?? 'unchanged', c.name).toBe(state)
+      if (said) expect(said.ready, c.name).toBe(applies)
     }
   })
 
@@ -105,7 +111,7 @@ describe('Every Apply entry point agrees with the operation', () => {
 
   it('wires every surface’s Apply to the one operation (the page, which can’t be rendered here)', () => {
     const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
-    expect(page.match(/@apply="[^"]*"/g)).toEqual(['@apply="apply"', '@apply="apply"'])
+    expect(page.match(/@apply="[^"]*"/g)).toEqual(['@apply="apply"'])
     expect(page).toMatch(/function apply\(\) \{\s+const next = applyDraft\(config\.value, draft\.value, step\.value\)/)
     expect(page).not.toMatch(/applyConfiguration\(|commit\(|defineVersion\(|reviseMapping\(/)
   })

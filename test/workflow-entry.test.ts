@@ -116,7 +116,7 @@ describe('Leaving the designer never silently discards work', async () => {
   })
 
   it('never implies that Apply saves anything', () => {
-    expect(source('app/dev/designer/ApplyBar.vue')).toMatch(/Applied in this session:/)
+    for (const f of ['StudioStatusBar.vue', 'TransformInspector.vue', 'MappingStudio.vue', 'PropertyRows.vue']) expect(source(`app/dev/designer/${f}`)).not.toMatch(/\bsav(e|ed|es|ing)\b/i)
   })
 })
 

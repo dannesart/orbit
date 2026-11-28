@@ -1,22 +1,21 @@
 <script setup lang="ts">
 // The Transform in the inspector: what the step does, how it's configured, whether it's ready, and
-// what actually ran. Nothing is edited here: Mapping Studio is the one place to edit. Its header
-// carries the step's identity (the pinned Feature version and the applied Mapping version) and its
-// three actions: edit in Mapping Studio, the latest run's status and evidence, and Close. Below:
-// what it reads and makes, its output's properties (each row opens Mapping Studio at that
-// property), the preview, and Apply.
+// what actually ran. Nothing is edited or applied here: Mapping Studio is the one place to edit,
+// undo, cancel and Apply. Its header carries the step's identity (the pinned Feature version and the
+// applied Mapping version) and its three actions: edit in Mapping Studio, the latest run's status and
+// evidence, and Close. Below: what it reads and makes, and its output, each property once with its
+// example value (each row opens Mapping Studio at that property). Unapplied changes are said at the
+// foot, with the way to Mapping Studio, where they're reviewed and applied.
 import type { DefinitionRef, DefinitionVersion } from '#shared/features/definitions'
 import type { Step } from '../features/experiment'
-import ApplyBar from './ApplyBar.vue'
 import DesignerIcon from './DesignerIcon.vue'
-import PreviewObject from './PreviewObject.vue'
 import PropertyRows from './PropertyRows.vue'
 import RunHistory from './RunHistory.vue'
 import RunStatus from './RunStatus.vue'
 import UnsupportedNotice from './UnsupportedNotice.vue'
 import { type ApplyAssessment, type Configuration, type Plan, type RunRecord, type TransformDraft, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
-import type { StudioOpening } from './studio'
+import { type StudioOpening, studioStatus, unappliedWords } from './studio'
 
 const props = defineProps<{
   badge: string
@@ -29,7 +28,6 @@ const props = defineProps<{
   output: OutputPreview
   example: Example
   input: DefinitionVersion
-  canUndo: boolean
   /** Whether the draft may be applied, and why not: the authoritative assessment. */
   assessment: ApplyAssessment
   step: Step
@@ -41,9 +39,6 @@ const props = defineProps<{
   featureKey: string
 }>()
 const emit = defineEmits<{
-  apply: []
-  discard: []
-  undo: []
   close: []
   /** Mapping Studio, where everything about the Mapping is edited: at a segment or property, or as it opens. */
   studio: [at: StudioOpening | null]
@@ -52,11 +47,8 @@ const emit = defineEmits<{
 const details = ref(false)
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
 const problems = computed(() => [...props.structure, ...props.review.problems])
-const mapped = computed(() => props.review.fields.filter((f) => f.state === 'set').length)
-// Optional properties left out aren't unfinished work: the count is of the properties that need a value.
-// Nor is what this Transform version can't make: no value would do.
-const leftOut = computed(() => props.review.fields.filter((f) => f.state === 'left_out').length)
-const needed = computed(() => props.review.fields.filter((f) => f.state !== 'left_out' && f.state !== 'unsupported').length)
+/** Where unapplied changes stand, from the authoritative assessment (the Studio's own status). */
+const unapplied = computed(() => unappliedWords(studioStatus(props.assessment), props.assessment.problems.some((p) => p.kind === 'unsupported_contract')))
 const back = ref<HTMLButtonElement>()
 function showEvidence() {
   details.value = true
@@ -105,24 +97,22 @@ const iconButton = 'grid size-9 shrink-0 place-items-center rounded-xl transitio
 
         <UnsupportedNotice v-if="review.unsupported" class="mt-4" :text="review.unsupported" />
 
-        <section aria-labelledby="output-heading" class="mt-5">
-          <div class="mb-1 flex items-center gap-2">
-            <h3 id="output-heading" class="text-sm font-semibold text-slate-900">Output</h3>
-            <span class="text-xs text-slate-500" :aria-label="`${mapped} of ${needed} mapped${leftOut ? `, ${leftOut} optional left out` : ''}`">{{ mapped }}/{{ needed }}</span>
-          </div>
-          <PropertyRows :draft="draft" :review="review" @open="emit('studio', $event)" />
-          <p v-if="review.extras.length" class="mt-2 text-xs text-amber-800">
-            {{ review.extras.length === 1 ? 'One mapping has' : `${review.extras.length} mappings have` }} no property to fill.
-            <button type="button" class="link text-xs" data-review-extras @click="emit('studio', { segment: 'general' })">Review</button>
-          </p>
-        </section>
-
-        <PreviewObject class="mt-6" :draft="draft" :target="target" :review="review" :output="output" :example="example" :problems="problems.length" />
+        <PropertyRows class="mt-5" :draft="draft" :review="review" :output="output" :example="example" :target="target" :problems="problems.length" @open="emit('studio', $event)" />
+        <p v-if="review.extras.length" class="mt-2 text-xs text-amber-800">
+          {{ review.extras.length === 1 ? 'One mapping has' : `${review.extras.length} mappings have` }} no property to fill.
+          <button type="button" class="link text-xs" data-review-extras @click="emit('studio', { segment: 'general' })">Review</button>
+        </p>
       </template>
     </div>
 
-    <div class="border-t border-slate-100 px-5 pt-3 pb-4">
-      <ApplyBar :plan="plan" :config="config" :draft="draft" :assessment="assessment" :can-undo="canUndo" @apply="emit('apply')" @discard="emit('discard')" @undo="emit('undo')" />
+    <!-- Unapplied changes: said, with the way to where they're reviewed and applied -->
+    <div v-if="plan.changes" class="flex items-center gap-2.5 border-t border-slate-100 px-5 py-3" data-unapplied :data-state="assessment.state">
+      <span class="size-2 shrink-0 rounded-full" :class="unapplied.tone === 'ready' ? 'bg-accent-500' : unapplied.tone === 'todo' ? 'bg-amber-500' : 'bg-red-500'" aria-hidden="true" />
+      <p class="min-w-0 flex-1 text-xs" aria-live="polite">
+        <span class="font-medium text-slate-900">Unapplied changes</span>
+        <span class="text-slate-500"> · {{ unapplied.words }}</span>
+      </p>
+      <button type="button" class="link shrink-0 text-xs font-medium" data-review-changes @click="emit('studio', null)">Review in Mapping Studio</button>
     </div>
   </div>
 </template>

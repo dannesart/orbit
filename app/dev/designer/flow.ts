@@ -209,3 +209,32 @@ export function flowOutcome(run: FlowRun): { kind: 'nothing' } | { kind: 'stoppe
 /** A path in words: "Record A → Console → Transform". */
 export const pathWords = (path: readonly StepId[]) => path.map(stepTitle).join(' → ')
 
+
+/**
+ * What reaches a step along the connections, as far as it's known: the step connected into it, and
+ * the Definition version that step hands on (handsOn). Nothing connected: none. Connected from a
+ * step whose hand-on isn't known (a Console that receives nothing): the step, with no Definition.
+ * Only what the connections already say; nothing here changes a contract or a Mapping.
+ */
+export interface Incoming {
+  readonly from: StepId | null
+  readonly ref: DefinitionRef | null
+}
+export function incomingTo(step: StepId, connections: readonly Connection[], contracts: Contracts): Incoming {
+  const from = connections.find((c) => c.target === step)?.source ?? null
+  return { from, ref: from ? handsOn(connections, contracts).get(from) ?? null : null }
+}
+
+/**
+ * How what a Transform reads relates to what reaches it:
+ *   matches   what reaches it is exactly the Definition version it reads
+ *   differs   something else reaches it: shown, never reconciled
+ *   unknown   it's connected, but what reaches it isn't known
+ *   none      nothing is connected into it; its Mapping is kept as it is
+ */
+export type InputRelation = 'matches' | 'differs' | 'unknown' | 'none'
+export function inputRelation(incoming: Incoming, reads: DefinitionRef): InputRelation {
+  if (!incoming.from) return 'none'
+  if (!incoming.ref) return 'unknown'
+  return sameDefinition(incoming.ref, reads) ? 'matches' : 'differs'
+}

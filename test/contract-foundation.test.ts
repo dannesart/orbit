@@ -337,7 +337,7 @@ describe('The Designer marks optional properties', () => {
 
 describe('The Designer’s Output count', () => {
   it('counts the properties that need a value, not optional ones left out', () => {
-    const inspector = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/TransformInspector.vue'), 'utf8')
+    const inspector = readFileSync(join(import.meta.dirname, '..', 'app/dev/designer/PropertyRows.vue'), 'utf8')
     expect(inspector).toMatch(/const needed = computed\(\(\) => props\.review\.fields\.filter\(\(f\) => f\.state !== 'left_out' && f\.state !== 'unsupported'\)\.length\)/)
     expect(inspector).toMatch(/\{\{ mapped \}\}\/\{\{ needed \}\}/)
   })

@@ -4,6 +4,9 @@
   apart from the inspectors, which only show the pinned version. Choosing one changes that step's
   pin and nothing else: no step ever changes version on its own, and no Mapping is touched.
   The product policy this stands in for is recorded with featureVersionWords (experiment.ts).
+  Also here, as development only: the Definition version the Transform's Mapping reads. In the
+  product a Transform doesn't choose its input (General shows it, read-only); choosing one here
+  changes the draft only, applied by Apply like any edit.
 -->
 <script setup lang="ts">
 export interface VersionChoice {
@@ -11,8 +14,15 @@ export interface VersionChoice {
   readonly name: string
   readonly groups: readonly { readonly label: string; readonly options: readonly { readonly key: string; readonly label: string }[] }[]
 }
-const props = defineProps<{ open: boolean; choices: readonly VersionChoice[]; pinned: Readonly<Record<string, string>> }>()
-const emit = defineEmits<{ pin: [step: string, key: string]; close: [] }>()
+const props = defineProps<{
+  open: boolean
+  choices: readonly VersionChoice[]
+  pinned: Readonly<Record<string, string>>
+  /** The Definition versions the Transform's Mapping may read, and the one its draft reads. */
+  inputs: readonly { readonly key: string; readonly label: string }[]
+  reads: string
+}>()
+const emit = defineEmits<{ pin: [step: string, key: string]; input: [key: string]; close: [] }>()
 const dialog = useTemplateRef<HTMLDialogElement>('dialog')
 watch(() => props.open, (open) => (open ? dialog.value?.showModal() : dialog.value?.close()))
 const control = 'mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100'
@@ -28,7 +38,7 @@ const control = 'mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py
   >
     <div v-if="open" class="animate-rise p-6">
       <div class="flex items-center gap-2">
-        <h2 id="versions-title" class="text-lg font-semibold tracking-tight text-slate-900">Feature versions</h2>
+        <h2 id="versions-title" class="text-lg font-semibold tracking-tight text-slate-900">Versions and input</h2>
         <span class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-amber-800 uppercase ring-1 ring-amber-200/70">Development only</span>
       </div>
       <p class="mt-2 text-sm text-pretty text-slate-600">Each step pins the exact version chosen here, and keeps it: nothing upgrades on its own.</p>
@@ -40,6 +50,13 @@ const control = 'mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py
               <option v-for="o in g.options" :key="o.key" :value="o.key">{{ o.label }}</option>
             </optgroup>
           </select>
+        </label>
+        <label class="block border-t border-slate-100 pt-4 text-xs font-medium text-slate-600">
+          Transform input
+          <select :value="reads" :class="control" data-input-definition @change="emit('input', ($event.target as HTMLSelectElement).value)">
+            <option v-for="d in inputs" :key="d.key" :value="d.key">{{ d.label }}</option>
+          </select>
+          <span class="mt-1 block font-normal text-slate-500">Changes the draft only. A different input is a different Mapping.</span>
         </label>
       </div>
       <div class="mt-6 flex justify-end">

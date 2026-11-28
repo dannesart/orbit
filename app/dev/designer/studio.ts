@@ -271,3 +271,35 @@ export interface AppliedPreview {
   readonly example: Example
   readonly preview: OutputPreview
 }
+
+// --- What reaches the Transform ---
+
+/**
+ * What reaches the Transform along the connections, for General's Input (flow.ts: incomingTo):
+ * the step connected into it, in words ("Console · Step 1"), and the Definition version that step
+ * hands on, where known. Shown beside what the Mapping reads; never used to change it.
+ */
+export interface IncomingView {
+  readonly step: string | null
+  readonly ref: DefinitionRef | null
+}
+
+// --- Unapplied changes, in the Designer's inspector ---
+
+/**
+ * Where an unapplied draft stands, in a few words, for the inspector (which shows it and leads to
+ * Mapping Studio, where it's applied): the same states as the Studio's status, from the same
+ * authoritative assessment. Never says it can be applied unless Apply would apply it. `unsupported`:
+ * the step's Transform version can't take these contracts at all, which isn't something to fix in
+ * the Mapping (read from the problems' kinds by the caller, never from words).
+ */
+export function unappliedWords(status: StudioStatus, unsupported = false): { readonly words: string; readonly tone: 'ready' | 'todo' | 'problem' } {
+  if (unsupported) return { words: 'This Transform version can’t take these contracts', tone: 'problem' }
+  const n = (count: number, one: string, many: string) => (count === 1 ? `1 ${one}` : `${count} ${many}`)
+  switch (status.state) {
+    case 'compatible': return { words: 'Ready to apply', tone: 'ready' }
+    case 'incomplete': return { words: `${n(status.todo.length || 1, 'property needs', 'properties need')} a value`, tone: 'todo' }
+    case 'unchanged': return { words: 'Nothing to apply', tone: 'ready' }
+    default: return { words: n(status.problems.length, 'problem to fix', 'problems to fix'), tone: 'problem' }
+  }
+}

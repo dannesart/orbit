@@ -12,7 +12,7 @@ import { applyDraft } from '../app/dev/designer/view'
 import type { Piece } from '../app/dev/designer/parts'
 import { studioStatus } from '../app/dev/designer/studio'
 import { stepOf } from './apply'
-import { SURFACES, applyButtons, renderSurface } from './surfaces'
+import { APPLY_SURFACES, applyButtons, renderSurface, unappliedState } from './surfaces'
 
 // These render real components many times over: under a full, parallel run that can take longer than the 5 s default.
 vi.setConfig({ testTimeout: 60_000 })
@@ -98,11 +98,18 @@ describe('Every Apply surface agrees with the authoritative operation', () => {
   // against what the Apply action every surface calls actually does.
   it.each(CASES)('$name', async ({ draft, feature }) => {
     const applies = applyDraft(start, draft, stepOf(start, feature)) !== null
-    for (const surface of SURFACES) {
-      const buttons = applyButtons(await renderSurface(surface, start, draft, stepOf(start, feature), JSON.stringify({ firstName: 'Ada', lastName: 'Lovelace' })))
+    const record = JSON.stringify({ firstName: 'Ada', lastName: 'Lovelace' })
+    for (const surface of APPLY_SURFACES) {
+      const buttons = applyButtons(await renderSurface(surface, start, draft, stepOf(start, feature), record))
       expect(buttons.length, surface).toBeGreaterThan(0)
       expect(buttons, surface).toEqual(buttons.map(() => applies))
     }
+    // The inspector applies nothing: it says where unapplied changes stand, ready exactly when Apply applies.
+    const inspector = await renderSurface('inspector', start, draft, stepOf(start, feature), record)
+    expect(applyButtons(inspector)).toEqual([])
+    const said = unappliedState(inspector)
+    expect(said === null).toBe(assessApply(start, draft, stepOf(start, feature)).state === 'unchanged')
+    if (said) expect(said.ready).toBe(applies)
     // The Studio's word for it: Compatible exactly when Apply applies.
     expect(studioStatus(assessApply(start, draft, stepOf(start, feature))).state === 'compatible').toBe(applies)
   })

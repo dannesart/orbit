@@ -275,7 +275,8 @@ describe('In the page: only Apply makes versions, and runs record their own', ()
   })
 
   it('Discard returns to the applied configuration', () => {
-    expect(page).toMatch(/function discard\(\) \{\s*const to = draftFrom\(config\.value\)/)
-    expect(page).toMatch(/act: \(\) => setDraft\(to, false\)/)
+    // Discarding is Mapping Studio's Cancel: the inspector applies and discards nothing.
+    expect(page).toMatch(/function cancelStudio\(\) \{\s*const to = draftFrom\(config\.value\)/)
+    expect(page).toMatch(/act: \(\) => \{ setDraft\(to, false\); closeStudio\(\) \}/)
   })
 })

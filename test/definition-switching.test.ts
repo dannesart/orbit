@@ -179,7 +179,7 @@ describe('The calm editor', () => {
   const read = (file: string) => readFileSync(join(designer, file), 'utf8')
 
   it('has no way to apply a draft that is incomplete or wrong', () => {
-    expect(read('ApplyBar.vue')).not.toMatch(/anyway/i)
+    for (const f of ['StudioStatusBar.vue', 'TransformInspector.vue']) expect(read(f)).not.toMatch(/anyway/i)
     // Behaviour: Apply itself refuses, whoever calls it (apply-authority.test.ts has every case).
     const config = initialConfiguration(offered)
     const incomplete = { ...draftFrom(config), catalogue: refOf(CONTACT), properties: [{ name: 'fullName', piece: piece(prop('firstName')) }] }

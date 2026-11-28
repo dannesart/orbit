@@ -101,7 +101,8 @@ describe('The Designer shows and edits it calmly, with the domain’s rules', ()
     expect(editor).toContain("provide(GUARANTEED, computed(() => (built.value?.presence.when === 'present' ? [...inherited.value, built.value.presence.source] : inherited.value)))")
     for (const picker of ['ValuePicker.vue', 'ScalarEditor.vue']) expect(read(`app/dev/designer/${picker}`)).toContain('notGuaranteed(r.optional, guaranteed.value)')
     expect(read('app/dev/designer/PropertyEditor.vue')).toContain('<ConstructionEditor')
-    expect(read('app/dev/designer/PreviewObject.vue')).toContain('<ObservedTree :data="r.value.object"')
+    // A built object's example shows its first level in the inspector's row; the whole of it in JSON.
+    expect(read('app/dev/designer/PropertyRows.vue')).toContain(`v-if="r.example?.kind === 'object' && r.example.entries.length"`)
   })
 
   it('never offers the advanced editor for a built object', () => {

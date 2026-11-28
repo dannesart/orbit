@@ -9,9 +9,14 @@ import type { ApplyContext, Configuration, TransformDraft } from '../app/dev/des
 const AUTO_IMPORTED = ['computed', 'ref', 'shallowRef', 'reactive', 'readonly', 'toRef', 'inject', 'provide', 'watch', 'watchEffect', 'nextTick', 'onMounted', 'onBeforeUnmount', 'onUnmounted', 'useId', 'useTemplateRef'] as const
 for (const name of AUTO_IMPORTED) (globalThis as Record<string, unknown>)[name] ??= vue[name]
 
-/** Each place the page shows the Transform's draft: the two with Apply, and Mapping Studio's Preview (shown on its own segment). */
+/**
+ * Each place the page shows the Transform's draft: the inspector and Mapping Studio, and Mapping
+ * Studio's Preview (shown on its own segment). Only Mapping Studio applies; the inspector says where
+ * unapplied changes stand (unappliedState) and leads there.
+ */
 export type SurfaceName = 'inspector' | 'Mapping Studio' | 'Studio preview'
 export const SURFACES: readonly SurfaceName[] = ['inspector', 'Mapping Studio']
+export const APPLY_SURFACES: readonly SurfaceName[] = ['Mapping Studio']
 
 /** The surface, rendered as the page renders it for this configuration, draft and step. */
 export async function renderSurface(surface: SurfaceName, config: Configuration, draft: TransformDraft, step: ApplyContext, recordText: string, extra: Record<string, unknown> = {}): Promise<string> {
@@ -22,12 +27,12 @@ export async function renderSurface(surface: SurfaceName, config: Configuration,
   // The props the page passes (SpatialDesigner.vue), from the same derivation.
   const common = {
     draft, config, target: view.target, plan: view.plan, structure: view.structure, review: view.review, output: view.output,
-    example: view.example, input: view.input, canUndo: false, assessment: view.assessment,
+    example: view.example, input: view.input, assessment: view.assessment,
   }
   const [component, props] = surface === 'inspector'
     ? [(await import('../app/dev/designer/TransformInspector.vue')).default, { ...common, badge: 'Step 2', step: null, stale: false, runNumber: 0, runs: [], feature: featureVersionWords(step.feature), featureKey: featureKey(step.feature) }]
       : surface === 'Mapping Studio'
-        ? [(await import('../app/dev/designer/MappingStudio.vue')).default, { ...common, boundary: view.boundary, feature: `Transform v${step.feature.version}`, applied: appliedPreview(config, step, recordText), step: null, stale: false, runNumber: 0, runs: [] }]
+        ? [(await import('../app/dev/designer/MappingStudio.vue')).default, { ...common, canUndo: false, incoming: { step: 'Console · Step 1', ref: view.assessment.from.ref }, boundary: view.boundary, feature: `Transform v${step.feature.version}`, applied: appliedPreview(config, step, recordText), step: null, stale: false, runNumber: 0, runs: [] }]
         // As MappingStudio passes it its props.
         : [(await import('../app/dev/designer/StudioPreview.vue')).default, { draft, config, target: view.target, review: view.review, output: view.output, example: view.example, input: view.input, inputLabel: view.assessment.from.label, applied: appliedPreview(config, step, recordText), step: null, stale: false, runNumber: 0, runs: [] }]
   const app = vue.createSSRApp(component, { ...props, ...extra })
@@ -38,6 +43,12 @@ export async function renderSurface(surface: SurfaceName, config: Configuration,
   const html = await renderToString(app)
   if (problems.length) throw new Error(`${surface} rendered with warnings: ${problems.join(' | ')}`)
   return html
+}
+
+/** The inspector's word for unapplied changes: its state, and whether it says they're ready to apply; null when it says there are none. */
+export function unappliedState(html: string): { state: string; ready: boolean } | null {
+  const m = html.match(/<div\b[^>]*\bdata-unapplied\b[^>]*data-state="(\w+)"[^>]*>([\s\S]*?)<\/div>/)
+  return m ? { state: m[1]!, ready: m[2]!.includes('Ready to apply') } : null
 }
 
 /** Every Apply button the HTML has: whether each is enabled. */
