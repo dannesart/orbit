@@ -205,6 +205,35 @@ export function outputTree(target: DefinitionVersion, properties: readonly Draft
   })
 }
 
+/** Each output state as a quiet mark, its tone and its words: the same wherever an output place is listed. */
+export const OUTPUT_MARK: Record<OutputStatus, { mark: string; tone: string; words: string }> = {
+  mapped: { mark: '✓', tone: 'text-accent-600', words: 'Mapped' },
+  not_mapped: { mark: '○', tone: 'text-amber-600', words: 'Not mapped' },
+  left_out: { mark: '–', tone: 'text-slate-400', words: 'Left out' },
+  incomplete: { mark: '◐', tone: 'text-amber-600', words: 'Incomplete' },
+  problem: { mark: '!', tone: 'text-red-600', words: 'Needs attention' },
+  unsupported: { mark: '×', tone: 'text-slate-400', words: 'Not supported by this Transform version' },
+}
+
+/** How an output place is made, in words (or why nothing makes it). */
+export function howWords(n: OutputNode): string {
+  if (n.status === 'unsupported') return 'This Transform version can’t make it'
+  if (n.how.kind !== 'none') return n.how.words
+  return n.optional ? 'Left out' : 'Not mapped yet'
+}
+
+/** The output place at exactly `path`, if the output has it (inside a built object only). */
+export function findNode(nodes: readonly OutputNode[], path: PropertyPath): OutputNode | null {
+  let level = nodes
+  let found: OutputNode | null = null
+  for (const name of path) {
+    found = level.find((n) => n.name === name) ?? null
+    if (!found) return null
+    level = found.children
+  }
+  return found
+}
+
 // --- Where the draft stands, in one word ---
 
 /**

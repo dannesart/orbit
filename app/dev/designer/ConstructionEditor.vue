@@ -9,21 +9,22 @@
 // A local object has no identity to match, so it is only ever built.
 //
 // Building: its presence is explicit (required: always built; optional: left out, always built, or
-// built when a chosen source object is present), then its own properties, each a value (the focused
-// editor's own value editor) or, deeper, another object made the same way.
+// built when a chosen source object is present), then its own properties, as compact rows: each says
+// how it's made (the output tree's own words) and selects it (select), so its own editor opens in
+// this one's place. One place is edited at a time, with the same width at any depth: nothing nests.
 //
-// Whether it all fits is the domain's check (the review's issues, at their exact paths); inside an
-// object built when a source object is present, the value pickers apply that guarantee with the
-// domain's own rule (GUARANTEED). What may be copied, and whether it may be absent, comes from the
+// Whether it all fits is the domain's check (the review's issues, at their exact paths). Inside an
+// object built when a source object is present, that source is known to be there: the guarantees of
+// the objects around this one are given (GUARANTEED, from scopeAt), and the value pickers apply them
+// with the domain's own rule. What may be copied, and whether it may be absent, comes from the
 // contract (objectPaths, notGuaranteed). Nothing here decides compatibility or availability.
-import { type DefinitionRef, type DefinitionVersion, type Field, type PropertyPath, isScalarField, propertyPathWords, refOf, sameDefinition } from '#shared/features/definitions'
+import { type DefinitionRef, type DefinitionVersion, type Field, type PropertyPath, propertyPathWords, refOf, sameDefinition } from '#shared/features/definitions'
 import { type Path, type Presence, notGuaranteed, objectPaths } from '#shared/features/mappings'
-import DefinitionsIcon from '../definitions/DefinitionsIcon.vue'
-import ConstructionEditor from './ConstructionEditor.vue'
-import ValueSlot from './ValueSlot.vue'
+import NameText from './NameText.vue'
 import type { DraftProperty, Piece } from './parts'
 import { type Example, friendlyIssue } from './preview'
 import { FLAT, GUARANTEED, READING, type ReviewIssue, absenceWords } from './reading'
+import { type OutputNode, type OutputStatus, OUTPUT_MARK, howWords } from './studio'
 
 type Construct = Extract<Piece, { kind: 'construct' }>
 type Copy = Extract<Piece, { kind: 'copy' }>
@@ -37,8 +38,10 @@ const props = defineProps<{
   issues: readonly ReviewIssue[]
   input: DefinitionVersion
   example: Example
+  /** Its own properties as the output tree has them (state, how each is made), for their rows. */
+  rows?: readonly OutputNode[]
 }>()
-const emit = defineEmits<{ set: [Piece | null] }>()
+const emit = defineEmits<{ set: [Piece | null]; select: [path: PropertyPath] }>()
 
 const reading = inject(READING, ref(FLAT))
 const inherited = inject(GUARANTEED, ref<readonly PropertyPath[]>([]))
@@ -97,7 +100,18 @@ const copyFrom = (key: string) => emit('set', { kind: 'copy', from: JSON.parse(k
 
 // --- Its properties (building) ---
 const childOf = (name: string) => built.value?.properties.find((p) => p.name === name)?.piece ?? null
-const objectChild = (name: string) => { const c = childOf(name); return c?.kind === 'construct' || c?.kind === 'copy' ? c : null }
+/** A property's row: as the output tree has it, or (deeper than the tree goes) whether something makes it. */
+function rowOf(f: Field) {
+  const n = props.rows?.find((r) => r.name === f.name)
+  if (n) return { mark: OUTPUT_MARK[n.status], how: howWords(n), problem: n.problem, waiting: n.status === 'not_mapped' }
+  const made = !!childOf(f.name)
+  const status: OutputStatus = made ? 'mapped' : f.optional === true ? 'left_out' : 'not_mapped'
+  return { mark: OUTPUT_MARK[status], how: made ? 'Made' : f.optional === true ? 'Left out' : 'Not mapped yet', problem: '', waiting: status === 'not_mapped' }
+}
+const rowWords = (f: Field) => {
+  const r = rowOf(f)
+  return `${[...props.path, f.name].join(' › ')}, ${r.mark.words}: ${r.how}.${r.problem ? ` ${r.problem}` : ''} Edit`
+}
 function setChild(name: string, next: Piece | null) {
   const piece = built.value
   if (!piece) return
@@ -118,26 +132,19 @@ const control = 'rounded-lg border border-slate-200 bg-white py-1 pr-7 pl-2 font
 
 <template>
   <div class="min-w-0" :data-construction="path.join(' › ')">
-    <!-- What it is, and whether it's made -->
-    <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-      <DefinitionsIcon :name="target.type === 'reference' ? 'reference' : 'object'" class="size-3.5 text-accent-500" />
-      <span v-if="target.type === 'reference'" class="font-medium text-slate-700">{{ versionWords(target.definition) }}</span>
-      <span v-else>A local object</span>
-      <span class="rounded-full px-2 py-0.5 ring-1" :class="optional ? 'text-slate-500 ring-slate-200' : 'text-accent-700 ring-accent-200'">{{ optional ? 'Optional' : 'Required' }}</span>
-    </div>
-
+    <!-- What it is (its type, exact version, and whether it's required) is the inspector's heading -->
     <!-- A referenced value: built, or copied whole. Two different operations, chosen on purpose. -->
-    <div v-if="isReference" class="mt-3 flex rounded-full bg-slate-100 p-0.5 w-fit" role="radiogroup" :aria-label="`How ${propertyPathWords(path.map(String))} is made`" data-way>
+    <div v-if="isReference" class="mb-3 flex w-fit rounded-full bg-slate-100 p-0.5" role="radiogroup" :aria-label="`How ${propertyPathWords(path.map(String))} is made`" data-way>
       <button v-for="w in (optional ? ['out', 'construct', 'copy'] as const : ['construct', 'copy'] as const)" :key="w" type="button" role="radio" :aria-checked="way === w" :class="[segment, way === w ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900']" :data-way-mode="w" @click="useWay(w)">
         {{ w === 'out' ? 'Leave out' : w === 'construct' ? 'Build it' : 'Copy a whole value' }}
       </button>
     </div>
 
     <!-- Copying: what, by its exact version; anything else is shown and can't be chosen -->
-    <div v-if="copied" class="mt-3" data-copy>
+    <div v-if="copied" data-copy>
       <label class="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
         Copy
-        <select :value="copied.from ? keyOf(copied.from) : ''" :class="control" data-copy-source @change="copyFrom(($event.target as HTMLSelectElement).value)">
+        <select :value="copied.from ? keyOf(copied.from) : ''" class="min-w-0 max-w-full flex-1 basis-40" :class="control" data-copy-source @change="copyFrom(($event.target as HTMLSelectElement).value)">
           <option value="" disabled>Choose a value to copy…</option>
           <option v-for="c in candidates" :key="keyOf(c.path)" :value="keyOf(c.path)" :disabled="!c.fits">{{ candidateWords(c) }}{{ c.fits ? (c.absence ? ` · ${c.absence}` : '') : ` · ${c.why}, can’t be copied` }}</option>
         </select>
@@ -152,7 +159,7 @@ const control = 'rounded-lg border border-slate-200 bg-white py-1 pr-7 pl-2 font
     </div>
 
     <p v-else-if="isReference && !piece && !optional" class="mt-1.5 text-xs text-amber-700">Required: build it, or copy a whole value.</p>
-    <div v-else-if="!isReference || built" class="mt-3">
+    <div v-else-if="!isReference || built">
       <p v-if="!optional" class="text-sm text-slate-700">
         Always built<span class="text-slate-500">: it’s required.</span>
         <button v-if="!piece" type="button" class="btn-primary ml-2 w-auto rounded-full px-3 py-1 text-xs" data-build @click="build({ when: 'always' })">Build it</button>
@@ -179,35 +186,37 @@ const control = 'rounded-lg border border-slate-200 bg-white py-1 pr-7 pl-2 font
     </div>
     <p v-if="optional && !piece" class="mt-1.5 text-xs text-slate-500">Left out: the output won’t have it.</p>
 
-    <!-- Its properties, as its contract has them -->
-    <ul v-if="built && fields" class="mt-3 flex flex-col gap-3 border-l-2 pl-4" :class="target.type === 'reference' ? 'border-dashed border-slate-200' : 'border-slate-100'">
+    <!-- Its properties, as its contract has them: a row each; selecting one opens its own editor here -->
+    <div v-if="built && fields" class="mt-5">
+    <p class="mb-2 text-xs font-medium text-slate-500">Its properties</p>
+    <ul class="flex flex-col divide-y divide-slate-100 overflow-hidden rounded-2xl ring-1 ring-slate-200/80" data-construction-rows>
       <li v-for="f in fields" :key="f.name" :data-construction-property="[...path, f.name].join(' › ')">
-        <div class="mb-1.5 flex flex-wrap items-baseline gap-2">
-          <span class="font-mono text-sm font-semibold text-slate-900">{{ f.name }}</span>
-          <span class="text-xs text-slate-500">{{ typeWords[f.type] }}</span>
-          <span class="text-xs" :class="f.optional === true ? 'text-slate-400' : 'text-slate-500'">{{ f.optional === true ? 'optional' : 'required' }}</span>
-          <button v-if="isScalarField(f) && childOf(f.name)" type="button" class="link ml-auto text-xs text-slate-500" :aria-label="`Clear ${f.name}’s value`" @click="setChild(f.name, null)">Clear</button>
-        </div>
-        <ConstructionEditor
-          v-if="!isScalarField(f)"
-          :piece="objectChild(f.name)"
-          :target="f"
-          :path="[...path, f.name]"
-          :issues="issues"
-          :input="input"
-          :example="example"
-          @set="setChild(f.name, $event)"
-        />
-        <ValueSlot v-else :piece="childOf(f.name)" :type="f.type" :path="[...path, f.name]" :issues="issues" :input="input" :example="example" :label="[...path, f.name].join(' › ')" @set="setChild(f.name, $event)" />
-        <ul v-if="isScalarField(f) && !childOf(f.name) && here([...path, f.name]).length" class="mt-1 flex flex-col gap-0.5 text-sm" :class="f.optional === true ? 'text-slate-500' : 'text-amber-700'">
-          <li v-for="p in here([...path, f.name])" :key="p">{{ p }}</li>
-        </ul>
+        <button
+          type="button"
+          class="group flex w-full min-w-0 items-start gap-2.5 px-3 py-2.5 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-inset"
+          :aria-label="rowWords(f)"
+          :data-construction-row="[...path, f.name].join(' › ')"
+          @click="emit('select', [...path.map(String), f.name])"
+        >
+          <span aria-hidden="true" class="mt-0.5 w-3 shrink-0 text-center text-xs font-semibold" :class="rowOf(f).mark.tone">{{ rowOf(f).mark.mark }}</span>
+          <span class="min-w-0 flex-1">
+            <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span class="max-w-full shrink-0 font-mono text-sm font-semibold [overflow-wrap:anywhere] text-slate-900"><NameText :name="f.name" /></span>
+              <span class="text-xs text-slate-400">{{ f.type === 'reference' ? versionWords(f.definition) : typeWords[f.type] }}</span>
+              <span v-if="f.optional === true" class="shrink-0 rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">Optional</span>
+            </span>
+            <span class="mt-0.5 block text-xs [overflow-wrap:anywhere]" :class="rowOf(f).waiting ? 'text-amber-700' : 'text-slate-500'" data-row-how>{{ rowOf(f).how }}</span>
+            <span v-if="rowOf(f).problem" class="mt-0.5 block text-xs text-red-700">{{ rowOf(f).problem }}</span>
+          </span>
+          <svg class="mt-1 size-4 shrink-0 text-slate-300 transition group-hover:text-slate-500" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m6 4 4 4-4 4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
       </li>
-      <li v-for="x in extras" :key="`extra-${x.name}`" class="text-sm text-amber-800">
+      <li v-for="x in extras" :key="`extra-${x.name}`" class="px-3 py-2.5 text-sm text-amber-800">
         {{ x.name }}: {{ here([...path, x.name])[0] ?? 'not part of this object' }}
         <button type="button" class="link ml-2 text-xs" @click="setChild(x.name, null)">Remove</button>
       </li>
     </ul>
+    </div>
     <p v-else-if="built && !fields" class="mt-2 text-sm text-amber-800">{{ target.type === 'reference' ? `${versionWords(target.definition)} can’t be found here.` : '' }}</p>
     <p v-if="built && !built.properties.length && fields?.every((f) => f.optional === true)" class="mt-2 text-xs text-slate-500">Nothing in it yet: it’s made empty, which its contract allows.</p>
   </div>

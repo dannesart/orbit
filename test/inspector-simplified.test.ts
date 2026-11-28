@@ -126,7 +126,7 @@ describe('Mapping Studio opens at the place asked for, and opening changes nothi
     const html = await studio({ segment: 'mapping', property: 'fullName' })
     expect(selectedSegment(html)).toBe('mapping')
     expect(html).toMatch(/data-studio-inspector/)
-    expect(html).toMatch(/<h2[^>]*data-inspector-title>fullName<\/h2>/)
+    expect(html.replace(/<!--[^]*?-->|<wbr>/g, '')).toMatch(/<h2[^>]*data-inspector-title>fullName<\/h2>/)
   })
 
   it('at General, for the contracts; on Mapping with nothing open otherwise, or for a property that isn’t there', async () => {

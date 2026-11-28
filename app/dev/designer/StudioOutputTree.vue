@@ -14,7 +14,7 @@ import DefinitionsIcon from '../definitions/DefinitionsIcon.vue'
 import DesignerIcon from './DesignerIcon.vue'
 import NameText from './NameText.vue'
 import StudioOutputTree from './StudioOutputTree.vue'
-import type { OutputNode, OutputStatus } from './studio'
+import { type OutputNode, OUTPUT_MARK, howWords } from './studio'
 
 const props = withDefaults(defineProps<{
   nodes: readonly OutputNode[]
@@ -28,21 +28,9 @@ const emit = defineEmits<{ open: [path: PropertyPath]; fold: [key: string] }>()
 const pathKey = (n: OutputNode) => n.path.join(' › ')
 const isOpen = (n: OutputNode) => props.openAll || props.expanded === null || props.expanded.has(pathKey(n))
 
-const MARK: Record<OutputStatus, { mark: string; tone: string; words: string }> = {
-  mapped: { mark: '✓', tone: 'text-accent-600', words: 'Mapped' },
-  not_mapped: { mark: '○', tone: 'text-amber-600', words: 'Not mapped' },
-  left_out: { mark: '–', tone: 'text-slate-400', words: 'Left out' },
-  incomplete: { mark: '◐', tone: 'text-amber-600', words: 'Incomplete' },
-  problem: { mark: '!', tone: 'text-red-600', words: 'Needs attention' },
-  unsupported: { mark: '×', tone: 'text-slate-400', words: 'Not supported by this Transform version' },
-}
+const MARK = OUTPUT_MARK
 const typeWords: Record<string, string> = { string: 'text', number: 'number', boolean: 'yes or no', object: 'object' }
 const isSelected = (n: OutputNode) => !!props.selected && props.selected.join(' › ') === n.path.join(' › ')
-const howWords = (n: OutputNode) => {
-  if (n.status === 'unsupported') return 'This Transform version can’t make it'
-  if (n.how.kind !== 'none') return n.how.words
-  return n.optional ? 'Left out' : 'Not mapped yet'
-}
 </script>
 
 <template>

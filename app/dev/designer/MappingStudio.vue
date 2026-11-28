@@ -6,8 +6,9 @@
 //   General  top to bottom: the input the Mapping reads (read-only, beside what reaches the step),
 //            what to create, and the output's structure; the Feature version in a line below
 //   Mapping  the input contract and the output contract side by side, staying where they are; an
-//            output property opens the existing editor for it in a floating inspector beside them
-//            (Phase 4.5B). On narrow screens, one contract at a time, Output first. At any size:
+//            output property opens the editor for exactly that place, at any depth, in a floating
+//            inspector beside them (Phase 4.5B): the objects it's inside as a breadcrumb, a built
+//            object's own properties as rows that select them; the tree follows the selection. On narrow screens, one contract at a time, Output first. At any size:
 //            nested objects and references start folded (a selected property opens the input it
 //            reads); a large model can be searched by name or path; and the lines are calm until a
 //            property is selected (its own lit, the rest quieter, none hidden; all on demand)
@@ -30,7 +31,7 @@ import { type ApplyAssessment, type Configuration, type Plan, type RunRecord, ty
 import type { DraftReview, Example, OutputPreview } from './preview'
 import { FLAT, READING } from './reading'
 import DesignerIcon from './DesignerIcon.vue'
-import { type AppliedPreview, type IncomingView, type StudioItem, type StudioOpening, ancestorsOf, connections, findInOutput, findInTree, inputTree, isWithin, outputTree, revealFor, studioStatus } from './studio'
+import { type AppliedPreview, type IncomingView, type StudioItem, type StudioOpening, ancestorsOf, connections, findInOutput, findInTree, findNode, inputTree, isWithin, outputTree, revealFor, studioStatus } from './studio'
 import { fromPiece } from './parts'
 import { describeSource } from './summary'
 
@@ -77,7 +78,7 @@ const needed = computed(() => props.review.fields.filter((f) => f.state !== 'lef
 
 // --- The selected output property, in the inspector ---
 // The trees never change shape while a property is edited: the inspector floats beside them. Its
-// editor is the top-level property's (a built object is edited whole), opened at the place chosen.
+// editor is exactly the selected place's, at any depth, always as part of its top-level property.
 // Opened at a property (from a row in the Designer's inspector): its editor is open from the start.
 const startAt = props.start?.segment === 'mapping' ? props.start.property : undefined
 const selected = ref<PropertyPath | null>(startAt && outputs.value.some((o) => o.name === startAt) ? [startAt] : null)
@@ -106,8 +107,10 @@ const shownOutputs = computed(() => findInOutput(outputs.value, query.value))
 /** Every line at full strength, instead of calm (presentation only). */
 const allLines = ref(false)
 const editing = computed(() => selected.value?.[0] ?? null)
+/** The top-level property the selected place is in, as the review has it. */
 const field = computed(() => props.review.fields.find((f) => f.name === editing.value) ?? null)
-const node = computed(() => outputs.value.find((o) => o.name === editing.value) ?? null)
+/** The selected place itself, as the output tree has it. */
+const node = computed(() => (selected.value ? findNode(outputs.value, selected.value) : null))
 const samePath = (a: PropertyPath | null, b: PropertyPath) => !!a && a.join(' › ') === b.join(' › ')
 /** Selecting a row: the inspector, at that place. Selecting it again closes it. */
 function open(path: PropertyPath) {
@@ -115,12 +118,22 @@ function open(path: PropertyPath) {
   selected.value = path
   nextTick(() => focusAt(path))
 }
-/** The inspector's first control at a place: where editing a property starts. */
-function focusAt(path: PropertyPath) {
-  const inspector = document.querySelector<HTMLElement>('[data-studio-inspector]')
-  const place = path.length > 1 ? inspector?.querySelector<HTMLElement>(`[data-construction-property="${CSS.escape(path.join(' › '))}"]`) : null
-  place?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  ;(place ?? inspector?.querySelector<HTMLElement>('[data-inspector-body]'))?.querySelector<HTMLElement>('button, select, input')?.focus({ preventScroll: true })
+/** Moving to another place from within the inspector (a breadcrumb, a property's row): the same selection as the tree's. */
+function select(path: PropertyPath) {
+  if (samePath(selected.value, path)) return
+  selected.value = path
+  nextTick(() => {
+    focusAt(path)
+    // Beside the trees, the selected row is brought into view (on phones the editor covers them)
+    if (window.matchMedia('(min-width: 64rem)').matches) document.querySelector<HTMLElement>(`[data-output-row="${CSS.escape(path.join(' › '))}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+}
+/** The inspector's first control at a place: where editing it starts, from the top. */
+function focusAt(_path: PropertyPath) {
+  const body = document.querySelector<HTMLElement>('[data-studio-inspector] [data-inspector-body]')
+  if (!body) return
+  body.scrollTop = 0
+  body.querySelector<HTMLElement>('button, select, input')?.focus({ preventScroll: true })
 }
 /** Closing the inspector: focus goes back to the row it was opened from. */
 function close() {
@@ -128,8 +141,15 @@ function close() {
   selected.value = null
   if (at) nextTick(() => document.querySelector<HTMLElement>(`[data-output-row="${CSS.escape(at.join(' › '))}"]`)?.focus())
 }
-// A property that's no longer part of the output (the output changed in General) closes.
-watch(outputs, (nodes) => { if (editing.value && !nodes.some((n) => n.name === editing.value)) selected.value = null })
+// A place that's no longer part of the output (the output changed in General, or the object it was
+// in isn't built any more) gives way to the nearest object around it that still is, or closes.
+watch(outputs, (nodes) => {
+  const at = selected.value
+  if (!at || findNode(nodes, at)) return
+  let up = at.slice(0, -1)
+  while (up.length && !findNode(nodes, up)) up = up.slice(0, -1)
+  selected.value = up.length ? up : null
+})
 
 /** Every dependency the draft has; those of the selected property (and inside it) are lit. */
 const links = computed(() => connections(outputs.value, inputs.value))
@@ -313,6 +333,7 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
           :label="versionWords"
           @update:draft="emit('update:draft', $event)"
           @close="close"
+          @select="select"
         />
         <p v-else class="sticky top-4 hidden w-[26rem] shrink-0 rounded-3xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500 xl:block" data-inspector-placeholder>Select an output property to choose how it’s made.</p>
       </div>
