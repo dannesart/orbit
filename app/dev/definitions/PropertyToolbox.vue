@@ -130,7 +130,7 @@ const heading = 'text-[11px] font-medium tracking-wide text-slate-400 uppercase'
               :value="versionOf(b)"
               :aria-label="`Version of ${b.name} to add`"
               data-block-version
-              class="w-14 shrink-0 rounded-lg border-0 bg-slate-100 py-1 pr-5 pl-2 text-xs font-medium text-slate-600 outline-none focus:ring-2 focus:ring-accent-500"
+              class="min-w-[3.75rem] shrink-0 rounded-lg border-0 bg-slate-100 py-1 pr-6 pl-2 text-xs font-medium text-slate-600 outline-none focus:ring-2 focus:ring-accent-500"
               @change="chosen = { ...chosen, [b.id]: Number(($event.target as HTMLSelectElement).value) }"
             >
               <option v-for="v in [...b.versions].reverse()" :key="v.version" :value="v.version">v{{ v.version }}</option>

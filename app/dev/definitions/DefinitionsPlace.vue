@@ -91,7 +91,7 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
 </script>
 
 <template>
-  <main v-if="mode !== 'catalogue'" class="px-4 pt-8 pb-20 sm:px-6 sm:pt-10 lg:px-0">
+  <main v-if="mode !== 'catalogue'" class="definitions-editor px-4 pt-8 pb-28 sm:px-6 sm:pt-10 lg:px-0 lg:pb-20">
     <ClientOnly>
       <DefinitionEditor :key="`${selected}-${mode}`" :workspace="context" :id="selected" :part="mode" :version="version" @created="created = $event" />
       <template #fallback>
@@ -171,6 +171,13 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
 </template>
 
 <style>
+/* Phones: the workspace's navigation floats over the bottom of the page. Whatever gets focus (a row's
+   name, a control) is scrolled clear of it, not behind it. */
+@media (width < 64rem) {
+  html:has(.definitions-editor) {
+    scroll-padding-bottom: 7rem;
+  }
+}
 /* With the inspector open on wide screens, the catalogue makes room for it rather than hiding
    under it: the stage already keeps the frame's padding (and any centring gutter) on the right. */
 @media (width >= 64rem) {

@@ -9,6 +9,11 @@
 // here. Its own name and requiredness are this Definition's, and editable. Another version is
 // only ever chosen on purpose (Use version N), and the Definition can be opened in the catalogue
 // without losing this draft (drafts stay on the shelf).
+//
+// Searching (the builder's query) shows the rows whose name matches, with the objects that lead to
+// them opened; inside a row whose own name matches, everything is shown. Moving waits while a search
+// is on (only some rows are shown, so where a row would land isn't what it looks like). Long names
+// wrap in their row, never cut short, so similar names stay distinguishable.
 import { type FieldType, type PropertyPath } from '#shared/features/definitions'
 import { BUILDER } from './builder'
 import { type DraftField, placesFor, typeWords, updateField } from './model'
@@ -16,10 +21,17 @@ import ContractTree from './ContractTree.vue'
 import DefinitionTile from './DefinitionTile.vue'
 import DefinitionsIcon from './DefinitionsIcon.vue'
 import PropertyTree from './PropertyTree.vue'
+import NameText from '../designer/NameText.vue'
 
 const props = defineProps<{ fields: readonly DraftField[]; parent: number | null; path: PropertyPath }>()
 const b = inject(BUILDER)!
 const { open, dragging, dropAt, idPrefix } = b
+const q = computed(() => b.query.value.trim().toLowerCase())
+/** Inside a row whose own name matches the search, everything shows. */
+const within = computed(() => props.path.some((n) => n.toLowerCase().includes(q.value)))
+const shown = computed(() => (!b.searching.value || within.value ? props.fields : props.fields.filter((f) => b.matches(f))))
+/** Open because what was searched for is inside it. */
+const found = (f: DraftField) => b.searching.value && !within.value && f.type === 'object' && (f.fields ?? []).some((c) => b.matches(c))
 
 const SCALARS: FieldType[] = ['string', 'number', 'boolean']
 const label = (f: DraftField, i: number) => f.name.trim() || `Property ${i + 1}`
@@ -32,7 +44,7 @@ const set = (key: number, change: Parameters<typeof updateField>[2]) => b.update
 const blockOf = (f: DraftField) => (f.definition ? b.catalogue.value.find(f.definition.id) : null)
 const resolved = (f: DraftField) => (f.definition ? b.catalogue.value.resolve(f.definition) : null)
 const foldable = (f: DraftField) => f.type === 'object' || (f.type === 'reference' && !!resolved(f))
-const isOpen = (f: DraftField) => (f.type === 'object' ? !b.folded.value.has(f.key) : b.unfolded.value.has(f.key))
+const isOpen = (f: DraftField) => found(f) || (f.type === 'object' ? !b.folded.value.has(f.key) : b.unfolded.value.has(f.key))
 const flipOpen = (f: DraftField) => (f.type === 'object' ? b.fold(f.key) : b.unfold(f.key))
 /** Another version, chosen in the row's editor but not used until "Use version N". */
 const pending = ref<Record<number, number>>({})
@@ -57,15 +69,17 @@ const small = 'grid size-8 place-items-center rounded-lg text-slate-500 transiti
     @drop="b.drop($event, parent)"
   >
     <ul v-if="fields.length" class="flex flex-col gap-1.5">
-      <li v-for="(f, i) in fields" :key="f.key" :data-row="f.key" class="relative">
-        <div v-if="here && dropAt?.index === i" class="absolute inset-x-2 -top-1 z-10 h-0.5 rounded-full bg-accent-500" aria-hidden="true" />
+      <li v-for="f in shown" :key="f.key" :data-row="f.key" class="relative">
+        <div v-if="here && dropAt?.index === fields.indexOf(f)" class="absolute inset-x-2 -top-1 z-10 h-0.5 rounded-full bg-accent-500" aria-hidden="true" />
         <div data-row-card class="rounded-xl border bg-white transition" :class="open === f.key ? 'border-accent-200 shadow-sm' : 'border-slate-200/80 hover:border-slate-300'">
           <div class="flex items-center gap-1 pr-2">
             <button
               type="button"
               data-handle
-              draggable="true"
-              :aria-label="`Move ${label(f, i)}: arrow keys`"
+              :draggable="!b.searching.value"
+              :aria-disabled="b.searching.value || undefined"
+              :title="b.searching.value ? 'Clear the search to move properties' : undefined"
+              :aria-label="`Move ${label(f, fields.indexOf(f))}: arrow keys${b.searching.value ? ' (clear the search first)' : ''}`"
               class="grid h-11 w-7 shrink-0 cursor-grab place-items-center rounded-l-xl text-slate-300 transition hover:text-slate-500 focus-visible:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 active:cursor-grabbing"
               @dragstart="b.startRow($event, f.key)"
               @dragend="b.end"
@@ -79,7 +93,7 @@ const small = 'grid size-8 place-items-center rounded-lg text-slate-500 transiti
               type="button"
               data-fold
               :aria-expanded="isOpen(f)"
-              :aria-label="`${isOpen(f) ? 'Hide' : 'Show'} what ${label(f, i)} contains`"
+              :aria-label="`${isOpen(f) ? 'Hide' : 'Show'} what ${label(f, fields.indexOf(f))} contains`"
               class="grid size-6 shrink-0 place-items-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
               @click="flipOpen(f)"
             >
@@ -98,7 +112,7 @@ const small = 'grid size-8 place-items-center rounded-lg text-slate-500 transiti
               <span v-else class="grid size-7 shrink-0 place-items-center rounded-lg" :class="f.type === 'object' ? 'bg-accent-50 text-accent-600' : 'bg-slate-100 text-slate-600'">
                 <DefinitionsIcon :name="f.type" class="size-4" />
               </span>
-              <span class="min-w-0 flex-1 truncate font-mono text-sm" :class="f.name.trim() ? 'text-slate-900' : 'text-slate-400 italic'">{{ f.name.trim() || 'unnamed' }}</span>
+              <span class="min-w-0 flex-1 font-mono text-sm [overflow-wrap:anywhere]" :class="f.name.trim() ? 'text-slate-900' : 'text-slate-400 italic'" data-row-name><NameText v-if="f.name.trim()" :name="f.name.trim()" /><template v-else>unnamed</template></span>
               <span v-if="f.type === 'reference' && !resolved(f)" class="shrink-0 text-xs font-medium text-red-700" data-unresolved>{{ typeLabel(f) }} can’t be found</span>
               <span v-else class="hidden min-w-0 shrink items-center gap-1 truncate text-xs text-slate-500 sm:flex">
                 <DefinitionsIcon v-if="f.type === 'reference'" name="reference" class="size-3 shrink-0 text-slate-400" />
@@ -133,7 +147,7 @@ const small = 'grid size-8 place-items-center rounded-lg text-slate-500 transiti
               <select
                 v-if="blockOf(f) && blockOf(f)!.versions.length > 1"
                 :value="pendingFor(f)"
-                :aria-label="`Version of ${blockOf(f)!.name} for ${label(f, i)}`"
+                :aria-label="`Version of ${blockOf(f)!.name} for ${label(f, fields.indexOf(f))}`"
                 class="rounded-lg border border-slate-200 bg-white py-1 pr-7 pl-2 text-xs font-medium text-slate-700 outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-100"
                 @change="pending = { ...pending, [f.key]: Number(($event.target as HTMLSelectElement).value) }"
               >
@@ -148,13 +162,13 @@ const small = 'grid size-8 place-items-center rounded-lg text-slate-500 transiti
               </NuxtLink>
             </div>
             <div class="flex flex-wrap gap-3">
-              <div v-if="SCALARS.includes(f.type as FieldType)" role="radiogroup" :aria-label="`What ${label(f, i)} holds`" class="flex min-w-56 flex-1 rounded-full bg-slate-100 p-0.5">
+              <div v-if="SCALARS.includes(f.type as FieldType)" role="radiogroup" :aria-label="`What ${label(f, fields.indexOf(f))} holds`" class="flex min-w-56 flex-1 rounded-full bg-slate-100 p-0.5">
                 <label v-for="t in SCALARS" :key="t" :class="[segment, 'flex cursor-pointer items-center justify-center gap-1.5', f.type === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
                   <input type="radio" class="sr-only" :name="`${idPrefix}-type-${f.key}`" :checked="f.type === t" @change="set(f.key, { type: t })">
                   <DefinitionsIcon :name="t" class="size-3.5" />{{ typeWords[t] }}
                 </label>
               </div>
-              <div role="radiogroup" :aria-label="`Whether ${label(f, i)} is required`" class="flex min-w-44 flex-1 rounded-full bg-slate-100 p-0.5">
+              <div role="radiogroup" :aria-label="`Whether ${label(f, fields.indexOf(f))} is required`" class="flex min-w-44 flex-1 rounded-full bg-slate-100 p-0.5">
                 <label v-for="o in [false, true]" :key="String(o)" :class="[segment, 'flex cursor-pointer items-center justify-center', f.optional === o ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
                   <input type="radio" class="sr-only" :name="`${idPrefix}-optional-${f.key}`" :checked="f.optional === o" @change="set(f.key, { optional: o })">
                   {{ o ? 'Optional' : 'Required' }}
@@ -162,10 +176,10 @@ const small = 'grid size-8 place-items-center rounded-lg text-slate-500 transiti
               </div>
             </div>
             <div class="flex flex-wrap items-center gap-1">
-              <button type="button" data-move="up" :class="small" :disabled="i === 0" :aria-label="`Move ${label(f, i)} up`" title="Move up" @click="b.move(f.key, -1)">
+              <button type="button" data-move="up" :class="small" :disabled="b.searching.value || fields.indexOf(f) === 0" :aria-label="`Move ${label(f, fields.indexOf(f))} up`" title="Move up" @click="b.move(f.key, -1)">
                 <DefinitionsIcon name="up" class="size-4" />
               </button>
-              <button type="button" data-move="down" :class="small" :disabled="i === fields.length - 1" :aria-label="`Move ${label(f, i)} down`" title="Move down" @click="b.move(f.key, 1)">
+              <button type="button" data-move="down" :class="small" :disabled="b.searching.value || fields.indexOf(f) === fields.length - 1" :aria-label="`Move ${label(f, fields.indexOf(f))} down`" title="Move down" @click="b.move(f.key, 1)">
                 <DefinitionsIcon name="down" class="size-4" />
               </button>
               <!-- Into another object (or out to the top level), without dragging. -->
@@ -175,21 +189,21 @@ const small = 'grid size-8 place-items-center rounded-lg text-slate-500 transiti
                   :value="parent ?? ''"
                   data-move-into
                   class="max-w-44 rounded-lg border border-slate-200 bg-white py-1 pr-7 pl-2 text-xs text-slate-700 outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-100"
-                  :aria-label="`Move ${label(f, i)} into`"
+                  :aria-label="`Move ${label(f, fields.indexOf(f))} into`"
                   @change="b.moveInto(f.key, ($event.target as HTMLSelectElement).value === '' ? null : Number(($event.target as HTMLSelectElement).value))"
                 >
                   <option v-for="p in placesFor(b.draft.value, f.key)" :key="p.key ?? 'top'" :value="p.key ?? ''">{{ b.where(p.path) }}</option>
                 </select>
               </label>
               <button type="button" class="ml-auto rounded-full px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500" @click="b.remove(f.key)">
-                Remove {{ label(f, i) }}
+                Remove {{ label(f, fields.indexOf(f)) }}
               </button>
             </div>
           </div>
         </div>
 
         <!-- A local object's own properties: the next level, indented under it -->
-        <div v-if="f.type === 'object' && !b.folded.value.has(f.key)" class="mt-1.5 ml-3.5 border-l-2 border-slate-100 pl-3" :data-children="f.key">
+        <div v-if="f.type === 'object' && isOpen(f)" class="mt-1.5 ml-3.5 border-l-2 border-slate-100 pl-3" :data-children="f.key">
           <PropertyTree :fields="f.fields ?? []" :parent="f.key" :path="[...path, f.name]" />
         </div>
         <!-- What a referenced version contains: another Definition's, read-only -->

@@ -163,13 +163,14 @@ const control = 'rounded-lg border border-slate-200 bg-white py-1 pr-7 pl-2 font
             {{ m === 'out' ? 'Leave out' : m === 'always' ? 'Always' : 'When present' }}
           </button>
         </div>
-        <label v-if="built?.presence.when === 'present'" class="flex items-center gap-1.5 text-xs text-slate-600">
+        <!-- Wraps as one sentence when narrow: never clipped (the select takes the room left, the words keep theirs) -->
+        <label v-if="built?.presence.when === 'present'" class="flex w-full min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-600" data-presence-sentence>
           built when
-          <select :value="built.presence.source.length ? keyOf(built.presence.source) : ''" :class="control" data-presence-source @change="build({ when: 'present', source: JSON.parse(($event.target as HTMLSelectElement).value) })">
+          <select :value="built.presence.source.length ? keyOf(built.presence.source) : ''" class="min-w-0 flex-1 basis-32" :class="control" data-presence-source @change="build({ when: 'present', source: JSON.parse(($event.target as HTMLSelectElement).value) })">
             <option value="" disabled>Choose a source object…</option>
             <option v-for="s in sources" :key="keyOf(s.path)" :value="keyOf(s.path)">{{ propertyPathWords(s.path) }}{{ s.optional.length ? '' : ' (always there)' }}</option>
           </select>
-          is present
+          <span class="shrink-0">is present</span>
         </label>
       </div>
       <ul v-if="own.length" class="mt-1.5 flex flex-col gap-0.5 text-sm text-red-700">

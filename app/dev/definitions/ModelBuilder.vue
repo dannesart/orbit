@@ -15,7 +15,7 @@ import type { DefinitionRef, PropertyPath, PropertyType } from '#shared/features
 import { propertyPathWords } from '#shared/features/definitions'
 import { type Builder, BUILDER, type DropPlace } from './builder'
 import type { StudioCatalogue } from './catalogue'
-import { type Draft, addField, childrenOf, findField, isWithin, moveField, removeField } from './model'
+import { type Draft, addField, childrenOf, findField, isWithin, moveField, removeField, matchesQuery, type DraftField } from './model'
 import PropertyToolbox from './PropertyToolbox.vue'
 import PropertyTree from './PropertyTree.vue'
 
@@ -34,7 +34,16 @@ const ROW_MIME = 'application/x-orbit-property-row'
 const draft = computed(() => props.draft)
 const catalogue = computed(() => props.catalogue)
 const open = ref<number | null>(null)
-const folded = ref<ReadonlySet<number>>(new Set())
+/** From how many top-level properties a model is large: its local objects start folded, and it can be searched. */
+const LARGE = 12
+const large = computed(() => props.draft.fields.length > LARGE)
+const objectKeys = (fields: readonly DraftField[]): number[] => fields.flatMap((f) => (f.type === 'object' ? [f.key, ...objectKeys(f.fields ?? [])] : []))
+// A large model opens folded (overview first); a small one as it always did. Only where it starts.
+const folded = ref<ReadonlySet<number>>(new Set(props.draft.fields.length > LARGE ? objectKeys(props.draft.fields) : []))
+// --- Searching: by property name, keeping the objects that lead to a match ---
+const query = ref('')
+const searching = computed(() => query.value.trim().length > 0)
+const matches = (f: DraftField) => matchesQuery(f, query.value)
 const unfolded = ref<ReadonlySet<number>>(new Set())
 const target = ref<number | null>(null)
 const dragging = ref<'block' | 'row' | null>(null)
@@ -103,6 +112,7 @@ function startBlock(event: DragEvent, block: Block) {
   dragging.value = 'block'
 }
 function startRow(event: DragEvent, key: number) {
+  if (searching.value) return event.preventDefault()
   event.dataTransfer?.setData(ROW_MIME, String(key))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
   const card = (event.target as HTMLElement).closest('[data-row]')?.querySelector('[data-row-card]')
@@ -125,7 +135,8 @@ function indexAt(event: DragEvent) {
 /** A row can't go into itself or anything inside it. */
 const refused = (parent: number | null) => dragging.value === 'row' && dragged.value !== null && parent !== null && isWithin(draft.value, parent, dragged.value)
 function over(event: DragEvent, parent: number | null) {
-  if (!ours(event) || refused(parent)) return
+  // While searching, only some rows are shown: where a drop would land isn't what it looks like.
+  if (searching.value || !ours(event) || refused(parent)) return
   event.preventDefault()
   event.stopPropagation()
   if (event.dataTransfer) event.dataTransfer.dropEffect = dragging.value === 'row' ? 'move' : 'copy'
@@ -135,7 +146,7 @@ function leave(event: DragEvent) {
   if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) dropAt.value = null
 }
 function drop(event: DragEvent, parent: number | null) {
-  if (!ours(event) || refused(parent)) return
+  if (searching.value || !ours(event) || refused(parent)) return
   event.preventDefault()
   event.stopPropagation()
   const index = indexAt(event)
@@ -156,12 +167,13 @@ function end() {
   dragged.value = null
 }
 function handleKey(event: KeyboardEvent, key: number) {
+  if (searching.value) return
   if (event.key === 'ArrowUp') { event.preventDefault(); move(key, -1, 'handle') }
   if (event.key === 'ArrowDown') { event.preventDefault(); move(key, 1, 'handle') }
 }
 
 const builder: Builder = {
-  draft, idPrefix: props.idPrefix, catalogue, open, folded, unfolded, target, dragging, dropAt, update, where,
+  draft, idPrefix: props.idPrefix, catalogue, open, folded, unfolded, target, dragging, dropAt, query, searching, matches, update, where,
   // Opening a row is to edit it, so its name has focus; folding or unfolding contents never moves it.
   toggle: (key) => {
     open.value = open.value === key ? null : key
@@ -198,6 +210,13 @@ provide(BUILDER, builder)
         <h2 id="model-heading" class="text-xs font-medium text-slate-500">Properties</h2>
         <span class="text-xs text-slate-400">{{ draft.fields.length }}</span>
       </div>
+      <!-- A large model: find a property by name, with the objects that lead to it -->
+      <label v-if="large" class="relative mt-2 block">
+        <span class="sr-only">Find a property</span>
+        <input v-model="query" type="search" autocomplete="off" spellcheck="false" placeholder="Find a property" class="w-full rounded-xl border border-slate-200 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100" data-model-search>
+        <svg class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.25" /><path d="m10.25 10.25 3 3" stroke-linecap="round" /></svg>
+      </label>
+      <p v-if="searching && !draft.fields.some(matches)" class="mt-3 text-sm text-slate-500" aria-live="polite">No property called “{{ query.trim() }}”.</p>
       <PropertyTree class="mt-2" data-model-drop :fields="draft.fields" :parent="null" :path="[]" />
     </section>
   </div>

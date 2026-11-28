@@ -429,3 +429,13 @@ export function changeWords(change: Change, label: (ref: DefinitionRef) => strin
     case 'repointed': return `Changes ${at(change.path)} from ${label(change.from)} to ${label(change.to)}`
   }
 }
+
+/**
+ * Whether a row is shown while searching the model by property name (ignoring case): its own name
+ * matches, or something inside it does (so the objects that lead to a match stay in view).
+ * Presentation only: a search never changes a draft. An empty query shows everything.
+ */
+export function matchesQuery(field: DraftField, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  return !q || field.name.toLowerCase().includes(q) || (field.fields ?? []).some((f) => matchesQuery(f, q))
+}

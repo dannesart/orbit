@@ -366,8 +366,9 @@ describe('Refinements (Phase 3.1)', () => {
   const toolbox = read('PropertyToolbox.vue')
   const builder = read('ModelBuilder.vue')
 
-  it('keeps the toolbox’s version picker compact: a fixed width, short labels', () => {
-    expect(toolbox).toMatch(/data-block-version\s+class="w-14 /)
+  it('keeps the toolbox’s version picker compact and readable: wide enough for its label, short labels', () => {
+    // A minimum width that fits "v2" beside the select's own arrow, never squeezed to "v." (Related to #53).
+    expect(toolbox).toMatch(/data-block-version\s+class="min-w-\[3\.75rem\] shrink-0 [^"]*pr-6/)
     expect(toolbox).toContain(':value="v.version">v{{ v.version }}</option>')
   })
 

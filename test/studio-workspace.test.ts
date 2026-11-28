@@ -86,12 +86,15 @@ describe('The workspace keeps its shape while a property is edited', () => {
     expect(tree).not.toMatch(/<slot/)
     expect(studio).toContain('<StudioInspector')
     expect(read('app/dev/designer/StudioInspector.vue')).toContain('<PropertyEditor')
-    // Children are always shown: selecting a row never adds or removes rows.
-    expect(tree).toContain('<div v-if="n.children.length"')
+    // Selecting a row never adds or removes rows: a built object's properties show while it's open,
+    // which only its own fold control (or opening a place inside it) changes, never selecting it.
+    expect(tree).toContain('<div v-if="n.children.length && isOpen(n)"')
+    expect(tree).toContain('const isOpen = (n: OutputNode) => props.openAll || props.expanded === null || props.expanded.has(pathKey(n))')
+    expect(tree).toMatch(/data-output-fold\s*@click="emit\('fold', pathKey\(n\)\)"/)
   })
 
   it('returns focus to the row the inspector was opened from', () => {
-    expect(studio).toMatch(/function close\(\)[\s\S]*?\[data-output-node=[\s\S]*?> button`\)\?\.focus\(\)/)
+    expect(studio).toMatch(/function close\(\)[\s\S]*?\[data-output-row=[\s\S]*?`\)\?\.focus\(\)/)
   })
 
   it('shows one contract at a time on narrow screens, Output first', () => {

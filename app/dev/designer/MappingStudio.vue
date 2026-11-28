@@ -7,7 +7,10 @@
 //            what to create, and the output's structure; the Feature version in a line below
 //   Mapping  the input contract and the output contract side by side, staying where they are; an
 //            output property opens the existing editor for it in a floating inspector beside them
-//            (Phase 4.5B). On narrow screens, one contract at a time, Output first
+//            (Phase 4.5B). On narrow screens, one contract at a time, Output first. At any size:
+//            nested objects and references start folded (a selected property opens the input it
+//            reads); a large model can be searched by name or path; and the lines are calm until a
+//            property is selected (its own lit, the rest quieter, none hidden; all on demand)
 //   Preview  the example input and what the draft would make from it (not executed), beside the
 //            applied Mapping's preview and what actually ran (evidence)
 //
@@ -26,7 +29,8 @@ import UnsupportedNotice from './UnsupportedNotice.vue'
 import { type ApplyAssessment, type Configuration, type Plan, type RunRecord, type TransformDraft, canApply, inputOf, labelOf } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
 import { FLAT, READING } from './reading'
-import { type AppliedPreview, type IncomingView, type StudioItem, type StudioOpening, connections, inputTree, isWithin, outputTree, studioStatus } from './studio'
+import DesignerIcon from './DesignerIcon.vue'
+import { type AppliedPreview, type IncomingView, type StudioItem, type StudioOpening, ancestorsOf, connections, findInOutput, findInTree, inputTree, isWithin, outputTree, revealFor, studioStatus } from './studio'
 import { fromPiece } from './parts'
 import { describeSource } from './summary'
 
@@ -77,6 +81,30 @@ const needed = computed(() => props.review.fields.filter((f) => f.state !== 'lef
 // Opened at a property (from a row in the Designer's inspector): its editor is open from the start.
 const startAt = props.start?.segment === 'mapping' ? props.start.property : undefined
 const selected = ref<PropertyPath | null>(startAt && outputs.value.some((o) => o.name === startAt) ? [startAt] : null)
+
+// --- Looking at a large model: folding, searching, and how loudly lines are drawn ---
+// All presentation state, kept while properties are selected and edited: none of it is the draft.
+/** The output's built objects shown open, by path (they start folded). */
+const expandedOut = ref<ReadonlySet<string>>(new Set())
+function foldOut(key: string) {
+  const next = new Set(expandedOut.value)
+  if (!next.delete(key)) next.add(key)
+  expandedOut.value = next
+}
+/** Selecting a place inside a folded object opens what leads to it. */
+watch(selected, (path) => {
+  if (!path || path.length < 2) return
+  const missing = ancestorsOf(path).filter((k) => !expandedOut.value.has(k))
+  if (missing.length) expandedOut.value = new Set([...expandedOut.value, ...missing])
+}, { immediate: true })
+const query = ref('')
+const searching = computed(() => query.value.trim().length > 0)
+/** A model large enough to need finding things in. */
+const large = computed(() => inputs.value.length > 12 || outputs.value.length > 12)
+const shownInputs = computed(() => findInTree(inputs.value, query.value))
+const shownOutputs = computed(() => findInOutput(outputs.value, query.value))
+/** Every line at full strength, instead of calm (presentation only). */
+const allLines = ref(false)
 const editing = computed(() => selected.value?.[0] ?? null)
 const field = computed(() => props.review.fields.find((f) => f.name === editing.value) ?? null)
 const node = computed(() => outputs.value.find((o) => o.name === editing.value) ?? null)
@@ -98,7 +126,7 @@ function focusAt(path: PropertyPath) {
 function close() {
   const at = selected.value
   selected.value = null
-  if (at) nextTick(() => document.querySelector<HTMLElement>(`[data-output-node="${CSS.escape(at.join(' › '))}"] > button`)?.focus())
+  if (at) nextTick(() => document.querySelector<HTMLElement>(`[data-output-row="${CSS.escape(at.join(' › '))}"]`)?.focus())
 }
 // A property that's no longer part of the output (the output changed in General) closes.
 watch(outputs, (nodes) => { if (editing.value && !nodes.some((n) => n.name === editing.value)) selected.value = null })
@@ -106,8 +134,9 @@ watch(outputs, (nodes) => { if (editing.value && !nodes.some((n) => n.name === e
 /** Every dependency the draft has; those of the selected property (and inside it) are lit. */
 const links = computed(() => connections(outputs.value, inputs.value))
 const lit = computed(() => (selected.value ? links.value.filter((c) => isWithin(c.to, selected.value!)) : []))
-/** What the selected property reads, pointed out in the input. */
+/** What the selected property reads, pointed out in the input, and the objects to open so it can be seen. */
 const reads = computed(() => new Set(lit.value.map((c) => JSON.stringify(c.from))))
+const reveal = computed(() => revealFor(lit.value))
 
 // --- Narrow screens: one tree at a time, Output first (it's where editing happens) ---
 type Pane = 'output' | 'input'
@@ -190,7 +219,13 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
 
       <!-- Mapping: the input and the output, side by side, and the selected property beside them -->
       <div v-else-if="segment === 'mapping'" class="flex items-start gap-6">
-        <div class="min-w-0 flex-1">
+        <div class="min-w-0 flex-1" data-studio-trees>
+          <!-- A large model: find a property by name or path, in both contracts -->
+          <label v-if="large" class="relative mb-4 block">
+            <span class="sr-only">Find a property in the input or the output</span>
+            <input v-model="query" type="search" autocomplete="off" spellcheck="false" placeholder="Find a property (name or path)" class="w-full rounded-2xl border border-slate-200 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 shadow-xs outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100" data-mapping-search>
+            <svg class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.25" /><path d="m10.25 10.25 3 3" stroke-linecap="round" /></svg>
+          </label>
           <!-- Narrow screens: one tree at a time, Output first -->
           <div class="mb-4 flex rounded-full bg-slate-200/60 p-1 lg:hidden" role="tablist" aria-label="Which contract" data-studio-pane-switch>
             <button
@@ -212,7 +247,8 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
                 <h2 id="studio-input-heading" class="text-sm font-semibold text-slate-900">Input</h2>
                 <span class="text-xs text-slate-500">{{ assessment.from.label }}</span>
               </div>
-              <StudioInputTree :nodes="inputs" :label="versionWords" :highlight="reads" />
+              <StudioInputTree :key="searching ? 'found' : 'all'" :nodes="shownInputs" :label="versionWords" :highlight="reads" collapsed :open-all="searching" :reveal="reveal" />
+              <p v-if="searching && !shownInputs.length" class="text-sm text-slate-500">Nothing in the input by that name.</p>
               <p v-if="!inputs.length" class="text-sm text-slate-500">{{ assessment.from.kind === 'unresolved' ? 'It can’t be found here.' : 'It has no properties.' }}</p>
             </section>
 
@@ -222,7 +258,8 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
                 <span class="text-xs text-slate-500">{{ target.label }}</span>
                 <span class="ml-auto shrink-0 text-xs text-slate-500" :aria-label="`${mapped} of ${needed} mapped`">{{ mapped }}/{{ needed }}</span>
               </div>
-              <StudioOutputTree :nodes="outputs" :label="versionWords" :selected="selected" class="-mx-2" @open="open" />
+              <StudioOutputTree :nodes="shownOutputs" :label="versionWords" :selected="selected" :expanded="expandedOut" :open-all="searching" class="-mx-2" @open="open" @fold="foldOut" />
+              <p v-if="searching && !shownOutputs.length" class="text-sm text-slate-500">Nothing in the output by that name.</p>
               <p v-if="!outputs.length" class="text-sm text-slate-500">{{ assessment.target.kind === 'unresolved' ? 'The output Definition version can’t be found here.' : 'The output has no properties yet. Add some in General.' }}</p>
           <div v-if="review.extras.length" class="mt-4 rounded-2xl bg-amber-50/70 p-3 text-sm ring-1 ring-amber-200" data-studio-extras>
             <p class="font-medium text-slate-900">{{ review.extras.length === 1 ? 'One mapping has' : `${review.extras.length} mappings have` }} no property to fill</p>
@@ -237,13 +274,27 @@ const panel = 'rounded-3xl bg-white p-5 ring-1 ring-slate-200/80 sm:p-6'
             <ul class="mt-1"><li v-for="(p, i) in draft.aside" :key="i" class="font-mono">{{ p.name || 'Unnamed' }} ← {{ describeSource(fromPiece(p.piece)) }}</li></ul>
           </details>
             </section>
-            <StudioConnections :connections="links" :selected="selected" />
+            <StudioConnections :connections="links" :selected="selected" :all="allLines" />
           </div>
           <!-- What the lines mean: only where they're drawn -->
-          <p v-if="links.length" class="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs text-slate-400 max-lg:hidden" data-connections-legend>
+          <p v-if="links.length" class="mt-3 flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-xs text-slate-400 max-lg:hidden" data-connections-legend>
             <span class="flex items-center gap-1.5"><svg width="22" height="6" aria-hidden="true"><path d="M1 3h20" stroke="currentColor" stroke-width="1.5" /></svg>Value</span>
             <span class="flex items-center gap-1.5"><svg width="22" height="6" aria-hidden="true"><path d="M1 3h20" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>Copied whole</span>
             <span class="flex items-center gap-1.5"><svg width="22" height="6" aria-hidden="true"><path d="M1 3h20" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" /></svg>Built when present</span>
+            <!-- Many lines: calm until a property is selected; every line at full strength on demand -->
+            <button
+              v-if="links.length > 12"
+              type="button"
+              class="grid size-7 place-items-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+              :class="allLines ? 'bg-accent-50 text-accent-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'"
+              :aria-pressed="allLines"
+              :aria-label="`Show all ${links.length} connections at full strength`"
+              :title="`Show all ${links.length} connections`"
+              data-all-connections
+              @click="allLines = !allLines"
+            >
+              <DesignerIcon name="eye" class="size-4" />
+            </button>
           </p>
         </div>
 

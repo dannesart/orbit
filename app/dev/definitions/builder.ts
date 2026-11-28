@@ -4,7 +4,7 @@
 import type { InjectionKey, Ref } from 'vue'
 import type { PropertyPath } from '#shared/features/definitions'
 import type { StudioCatalogue } from './catalogue'
-import type { Draft } from './model'
+import type { Draft, DraftField } from './model'
 
 /** Where a drop would land: among `parent`'s properties (null: the top level), before `index`. */
 export interface DropPlace {
@@ -26,6 +26,11 @@ export interface Builder {
   readonly target: Ref<number | null>
   readonly dragging: Ref<'block' | 'row' | null>
   readonly dropAt: Ref<DropPlace | null>
+  /** A search through the model by property name: only presentation, never a change. Moving waits while it's on. */
+  readonly query: Ref<string>
+  readonly searching: Ref<boolean>
+  /** Whether a row is shown while searching: its name matches, or something inside it does. */
+  matches: (field: DraftField) => boolean
   update: (draft: Draft) => void
   toggle: (key: number) => void
   fold: (key: number) => void

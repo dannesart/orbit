@@ -5,16 +5,32 @@
 // property says so; what's inside one says it may be absent, and why, on demand. What the step's
 // Transform version can't read is shown, quieter, never hidden. Plain: a contract shown for what it
 // contains (an output), where what a Transform version reads doesn't apply.
+//
+// A row keeps its icons in one column: the fold and the type icon stay beside the name, and a long
+// name wraps within its own space, with its type and optionality after it (beneath, when there's no
+// room). `reveal`: places to open because the selected output property reads something inside them;
+// they open once, and can be closed again.
 import type { DefinitionRef } from '#shared/features/definitions'
 import DefinitionsIcon from '../definitions/DefinitionsIcon.vue'
+import NameText from './NameText.vue'
 import StudioInputTree from './StudioInputTree.vue'
 import type { InputNode } from './studio'
 
-const props = withDefaults(defineProps<{ nodes: readonly InputNode[]; label: (ref: DefinitionRef) => string; highlight?: ReadonlySet<string>; level?: number; plain?: boolean; collapsed?: boolean; openAll?: boolean }>(), { highlight: () => new Set(), level: 1, plain: false, collapsed: false, openAll: false })
+const props = withDefaults(defineProps<{
+  nodes: readonly InputNode[]
+  label: (ref: DefinitionRef) => string
+  highlight?: ReadonlySet<string>
+  level?: number
+  plain?: boolean
+  collapsed?: boolean
+  openAll?: boolean
+  /** Places to open, by key (JSON of the path): what the selected property reads is inside them. */
+  reveal?: ReadonlySet<string>
+}>(), { highlight: () => new Set(), level: 1, plain: false, collapsed: false, openAll: false, reveal: () => new Set() })
 
 const key = (n: InputNode) => JSON.stringify(n.path)
 // Local objects start open, references folded: each opens on its own. `collapsed`: everything starts
-// folded (General's overviews); `openAll`: everything shown is open (a search's results).
+// folded; `openAll`: everything shown is open (a search's results).
 const flipped = ref<ReadonlySet<string>>(new Set())
 const isOpen = (n: InputNode) => props.openAll || ((!props.collapsed && n.type === 'object') !== flipped.value.has(n.name))
 function flip(name: string) {
@@ -22,6 +38,10 @@ function flip(name: string) {
   if (!next.delete(name)) next.add(name)
   flipped.value = next
 }
+// Revealing: open what the selected property reads inside of, once, without closing anything.
+watch(() => props.reveal, (reveal) => {
+  for (const n of props.nodes) if (n.children.length && reveal.has(key(n)) && !isOpen(n)) flip(n.name)
+}, { immediate: true })
 /** An input place the selected output property reads (itself, or something inside it). */
 const lit = (n: InputNode) => props.highlight.has(key(n))
 const typeWords: Record<string, string> = { string: 'Text', number: 'Number', boolean: 'Yes or no' }
@@ -31,13 +51,13 @@ const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
 <template>
   <ul class="flex flex-col" :data-input-level="level">
     <li v-for="n in nodes" :key="n.name" :data-input-node="n.path.join(' › ')">
-      <div class="flex min-h-9 flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-lg py-1 pr-1 text-sm transition" :class="lit(n) ? 'bg-accent-50 ring-1 ring-accent-200' : ''" :data-reads="lit(n) || undefined" :data-input-row="n.path.join(' › ')">
+      <div class="flex min-h-9 items-start gap-x-2.5 rounded-lg py-1 pr-1 text-sm transition" :class="lit(n) ? 'bg-accent-50 ring-1 ring-accent-200' : ''" :data-reads="lit(n) || undefined" :data-input-row="n.path.join(' › ')">
         <button
           v-if="n.children.length"
           type="button"
           :aria-expanded="isOpen(n)"
           :aria-label="`${isOpen(n) ? 'Hide' : 'Show'} what ${n.name} contains`"
-          class="grid size-5 shrink-0 place-items-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+          class="mt-0.5 grid size-5 shrink-0 place-items-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
           @click="flip(n.name)"
         >
           <DefinitionsIcon name="chevron" class="size-3 transition-transform" :class="{ 'rotate-90': isOpen(n) }" />
@@ -46,19 +66,22 @@ const count = (n: number) => (n === 1 ? '1 property' : `${n} properties`)
         <span class="grid size-6 shrink-0 place-items-center rounded-md" :class="n.type === 'object' || n.type === 'reference' ? 'bg-accent-50 text-accent-600' : 'bg-slate-100 text-slate-500'">
           <DefinitionsIcon :name="n.type" class="size-3.5" />
         </span>
-        <span class="min-w-0 font-mono [overflow-wrap:anywhere]" :class="plain || n.readable || n.type === 'object' || n.type === 'reference' ? 'text-slate-900' : 'text-slate-400'">{{ n.name }}</span>
-        <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-xs text-slate-500">
-          <span v-if="n.type === 'reference' && n.unresolved" class="font-medium text-red-700">{{ label(n.definition!) }} can’t be found here</span>
-          <span v-else-if="n.type === 'reference'" class="font-medium [overflow-wrap:anywhere] text-slate-700" data-input-version>{{ label(n.definition!) }}</span>
-          <span v-else-if="n.type === 'object'">Object<span class="max-sm:hidden"> · {{ count(n.children.length) }}</span></span>
-          <span v-else-if="!plain && !n.readable" :title="`This Transform version reads only top-level values`">{{ typeWords[n.type] }} · not readable here</span>
-          <span v-else>{{ typeWords[n.type] }}</span>
-          <span v-if="n.optional" class="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">Optional</span>
-          <span v-else-if="n.absence" class="text-[11px] text-slate-400" :title="n.absence" :aria-label="n.absence">may be absent</span>
+        <!-- The name, then what it is: the name wraps in its own space; what it is follows, or goes beneath -->
+        <span class="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-0.5">
+          <span class="max-w-full shrink-0 font-mono [overflow-wrap:anywhere]" :class="plain || n.readable || n.type === 'object' || n.type === 'reference' ? 'text-slate-900' : 'text-slate-400'" data-input-name><NameText :name="n.name" /></span>
+          <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-xs text-slate-500">
+            <span v-if="n.type === 'reference' && n.unresolved" class="font-medium text-red-700">{{ label(n.definition!) }} can’t be found here</span>
+            <span v-else-if="n.type === 'reference'" class="font-medium whitespace-nowrap text-slate-700" data-input-version>{{ label(n.definition!) }}</span>
+            <span v-else-if="n.type === 'object'" class="whitespace-nowrap">Object<span class="max-sm:hidden"> · {{ count(n.children.length) }}</span></span>
+            <span v-else-if="!plain && !n.readable" :title="`This Transform version reads only top-level values`">{{ typeWords[n.type] }} · not readable here</span>
+            <span v-else class="whitespace-nowrap">{{ typeWords[n.type] }}</span>
+            <span v-if="n.optional" class="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">Optional</span>
+            <span v-else-if="n.absence" class="text-[11px] text-slate-400" :title="n.absence" :aria-label="n.absence">may be absent</span>
+          </span>
         </span>
       </div>
       <div v-if="n.children.length && isOpen(n)" class="ml-2.5 border-l-2 pl-3" :class="n.type === 'reference' ? 'border-dashed border-slate-200' : 'border-slate-100'">
-        <StudioInputTree :nodes="n.children" :label="label" :highlight="highlight" :level="level + 1" :plain="plain" :collapsed="collapsed" :open-all="openAll" />
+        <StudioInputTree :nodes="n.children" :label="label" :highlight="highlight" :level="level + 1" :plain="plain" :collapsed="collapsed" :open-all="openAll" :reveal="reveal" />
       </div>
     </li>
   </ul>

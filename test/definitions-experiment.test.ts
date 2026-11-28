@@ -473,7 +473,8 @@ describe('The model builder: a toolbox, a tree of compact rows, and editing in p
   it('shows each property as a row: type icon, name, type, required or optional, and a chevron; the row opens its editor', () => {
     const row = tree.slice(tree.indexOf('data-row-toggle'), tree.indexOf('<!-- The row\'s own editor -->'))
     expect(row).toMatch(/:aria-expanded="open === f\.key"[\s\S]*@click="b\.toggle\(f\.key\)"/)
-    expect(row).toMatch(/<DefinitionsIcon :name="f\.type"[\s\S]*f\.name\.trim\(\) \|\| 'unnamed'[\s\S]*typeLabel\(f\)[\s\S]*'Optional' : 'Required'[\s\S]*name="chevron"/)
+    // The name wraps where its words meet (NameText), and says "unnamed" while it has none.
+    expect(row).toMatch(/<DefinitionsIcon :name="f\.type"[\s\S]*<NameText v-if="f\.name\.trim\(\)" :name="f\.name\.trim\(\)" \/><template v-else>unnamed<\/template>[\s\S]*typeLabel\(f\)[\s\S]*'Optional' : 'Required'[\s\S]*name="chevron"/)
     // No type selector, requiredness switch or remove button on a closed row.
     expect(row).not.toMatch(/type="radio"|Remove/)
     const editor = tree.slice(tree.indexOf('<!-- The row\'s own editor -->'))
@@ -482,7 +483,9 @@ describe('The model builder: a toolbox, a tree of compact rows, and editing in p
   })
 
   it('reorders with a handle (drag or arrow keys) or Move up and down, never by accident changing the contract', () => {
-    expect(tree).toMatch(/data-handle\s+draggable="true"[\s\S]*@dragstart="b\.startRow\(\$event, f\.key\)"[\s\S]*@keydown="b\.handleKey\(\$event, f\.key\)"/)
+    // Draggable except while a search shows only some rows (then moving waits: ModelBuilder guards each way in).
+    expect(tree).toMatch(/data-handle\s+:draggable="!b\.searching\.value"[\s\S]*@dragstart="b\.startRow\(\$event, f\.key\)"[\s\S]*@keydown="b\.handleKey\(\$event, f\.key\)"/)
+    expect(builder).toMatch(/function handleKey\(event: KeyboardEvent, key: number\) \{\s*if \(searching\.value\) return/)
     expect(builder).toMatch(/if \(event\.key === 'ArrowUp'\) \{ event\.preventDefault\(\); move\(key, -1, 'handle'\) \}/)
     expect(tree).toMatch(/data-move="up"[\s\S]*data-move="down"/)
     // Order is presentation: a reordered draft is the same version (test/optional-properties.test.ts).

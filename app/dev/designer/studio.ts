@@ -321,16 +321,44 @@ export function contractSize(nodes: readonly InputNode[]): { readonly properties
   return { properties, objects, references }
 }
 
+/** Whether a place matches a search: its name, or its path written with › or dots ("offer › jobTitle", "offer.jobTitle"). */
+const nameOrPath = (path: PropertyPath, q: string) =>
+  path.at(-1)!.toLowerCase().includes(q) || path.join(' › ').toLowerCase().includes(q) || path.join('.').toLowerCase().includes(q)
+
 /**
- * The places whose name contains `query` (ignoring case), with the objects that lead to them: a
- * search through a contract, never a change to it. An empty query keeps everything.
+ * The places whose name (or path) contains `query` (ignoring case), with the objects that lead to
+ * them: a search through a contract, never a change to it. An empty query keeps everything.
  */
 export function findInTree(nodes: readonly InputNode[], query: string): InputNode[] {
   const q = query.trim().toLowerCase()
   if (!q) return [...nodes]
   return nodes.flatMap((n) => {
-    if (n.name.toLowerCase().includes(q)) return [n]
+    if (nameOrPath(n.path, q)) return [n]
     const children = findInTree(n.children, q)
     return children.length ? [{ ...n, children }] : []
   })
 }
+
+/** The same search through the output: the places that match, with the built objects that lead to them. */
+export function findInOutput(nodes: readonly OutputNode[], query: string): OutputNode[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return [...nodes]
+  return nodes.flatMap((n) => {
+    if (nameOrPath(n.path, q)) return [n]
+    const children = findInOutput(n.children, q)
+    return children.length ? [{ ...n, children }] : []
+  })
+}
+
+/**
+ * What to open in the input so a selected property's sources can be seen: every object that holds
+ * one of them (each source's ancestors, by key). Only presentation: nothing is read or changed.
+ */
+export function revealFor(lit: readonly Connection[]): Set<string> {
+  const keys = new Set<string>()
+  for (const c of lit) for (let at = 1; at < c.from.length; at++) keys.add(key(c.from.slice(0, at)))
+  return keys
+}
+
+/** Every built object on the way to an output place (by path, joined with ›): what to open to show it. */
+export const ancestorsOf = (path: PropertyPath): string[] => path.slice(0, -1).map((_, i) => path.slice(0, i + 1).join(' › '))
