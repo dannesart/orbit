@@ -98,14 +98,14 @@ describe('Leaving the designer never silently discards work', async () => {
 
   it('names unapplied changes and edits to the setup', () => {
     expect(workAtRisk({ ...untouched, unapplied: true, recordText: '{}', features: { ...start.features, 'console-in': 'playground.console-that-edits@1' } }, start)).toEqual([
-      'Changes to the Transform you haven’t applied', 'Your edits to Record A', 'The Feature versions you chose for its steps',
+      'Changes to the Transform you haven’t applied', 'Your edits to the Records', 'The Feature versions you chose for its steps',
     ])
-    expect(workAtRisk({ ...untouched, pinKey: 'a2' }, start)).toEqual(['Your edits to Record A'])
+    expect(workAtRisk({ ...untouched, pinKey: 'a2' }, start)).toEqual(['Your edits to the Records'])
   })
 
   it('guards every way out inside Orbit, and offers Stay in Designer and Leave and discard', () => {
     const page = source('app/dev/designer/SpatialDesigner.vue')
-    expect(page).toMatch(/onBeforeRouteLeave\(\(to\) => \{\s*if \(discardConfirmed \|\| !atRisk\.value\.length\) return true/)
+    expect(page).toMatch(/onBeforeRouteLeave\(\(to\) => \{\s*if \(!active\.value \|\| discardConfirmed \|\| !atRisk\.value\.length\) return true/)
     expect(page).toMatch(/<LeaveDialog :losing="leaving \? atRisk : null" @stay="stay" @leave="leave" \/>/)
     expect(page).toMatch(/addEventListener\('beforeunload', onBeforeUnload\)/)
     const dialog = source('app/dev/designer/LeaveDialog.vue')

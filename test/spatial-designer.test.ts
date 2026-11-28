@@ -67,7 +67,7 @@ describe('The canvas’s graph: positions are only a picture', () => {
 
   it('removes a focused arrow with Delete or Backspace, and keeps focus on the step it came from', () => {
     const page = readFileSync(join(import.meta.dirname, '../app/dev/designer/SpatialDesigner.vue'), 'utf8')
-    expect(page).toMatch(/function deleteFocusedArrow\(event: KeyboardEvent\) \{\s*if \(event\.key !== 'Delete' && event\.key !== 'Backspace'\) return[\s\S]*?disconnect\(\[\{ id \}\]\)[\s\S]*?\.vue-flow__node\[data-id="\$\{source\}"\][\s\S]*?\.focus\(\)/)
+    expect(page).toMatch(/function deleteFocusedArrow\(event: KeyboardEvent\) \{\s*if \(!active\.value \|\| \(event\.key !== 'Delete' && event\.key !== 'Backspace'\)\) return[\s\S]*?disconnect\(\[\{ id \}\]\)[\s\S]*?\.vue-flow__node\[data-id="\$\{source\}"\][\s\S]*?\.focus\(\)/)
     // An arrow the library is handed is always drawn, even one that stopped fitting.
     expect(page).toMatch(/const isValidConnection = \(c: \{ source: string; target: string \}\) =>\s*connections\.value\.some\(\(x\) => connectionKey\(x\) === connectionKey\(asConnection\(c\)\)\) \|\| verdict\(asConnection\(c\)\)\.ok/)
   })
@@ -141,7 +141,7 @@ describe('What the canvas experiment never does', () => {
     for (const page of pages('app/pages')) expect(source(page), page).not.toMatch(/dev\/designer|xyflow/)
     const config = source('nuxt.config.ts')
     const guarded = config.slice(config.indexOf('if (!playgroundAvailable('))
-    expect(guarded).toMatch(/^if \(!playgroundAvailable\(\{ dev: nuxt\.options\.dev, context: process\.env\.CONTEXT \}\)\) return\s+nuxt\.hook\('pages:extend'[\s\S]*app\/dev\/designer\/SpatialDesigner\.vue/)
+    expect(guarded).toMatch(/^if \(!playgroundAvailable\(\{ dev: nuxt\.options\.dev, context: process\.env\.CONTEXT \}\)\) return\s+nuxt\.hook\('pages:extend'[\s\S]*app\/dev\/designer\/DesignerWorkflows\.vue/)
     expect(config.indexOf('app/dev/designer')).toBeGreaterThan(config.indexOf('if (!playgroundAvailable('))
   })
 })

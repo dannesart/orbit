@@ -10,6 +10,7 @@ import {
 import { type Feature, type InvocationResult, contractCompatibility, invoke, orbitConsole, orbitTransformV1, orbitTransformV2 } from '../shared/features/features'
 import type { Mapping } from '../shared/features/mappings'
 import { DEFINITIONS, describeDefinitionIssue, describeOutcome, outcomeIssues } from '../app/dev/features/experiment'
+import { REALISTIC_DEFINITIONS } from '../app/dev/features/realistic'
 import { ORBIT_PROVIDED, draftFrom, fieldsOf } from '../app/dev/definitions/model'
 
 const W = 'ws-a'
@@ -307,7 +308,8 @@ describe(`Depth across the complete resolved contract: at most ${MAX_OBJECT_LEVE
 
 describe('Existing contracts are unchanged', () => {
   it('flat and local-object versions resolve as contracts with or without a resolver', () => {
-    for (const d of [...DEFINITIONS, ...ORBIT_PROVIDED].filter((x) => x.id !== 'applicant')) {
+    // The realistic samples (realistic.ts) are composed; realistic-playground.test.ts covers them.
+    for (const d of [...DEFINITIONS, ...ORBIT_PROVIDED].filter((x) => x.id !== 'applicant' && !REALISTIC_DEFINITIONS.includes(x))) {
       expect(checkContract(d)).toEqual([])
       expect(defineVersion(d)).toEqual(d)
     }

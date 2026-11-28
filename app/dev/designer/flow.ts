@@ -181,11 +181,11 @@ export interface FlowRun {
 export function runFlow(
   catalog: Catalog,
   connections: readonly Connection[],
-  options: { features: StepFeatures; mapping: FeatureRef; workspaceId: string },
+  options: { features: StepFeatures; mapping: FeatureRef; workspaceId: string; record?: string },
 ): FlowRun {
   const path = Object.freeze(pathOf(connections))
   const steps: Partial<Record<FeatureStep, InvocationResult>> = {}
-  let input: Input = { record: RECORD_ID }
+  let input: Input = { record: options.record ?? RECORD_ID }
   for (const step of path.slice(1) as FeatureStep[]) {
     const { workspaceId, features } = options
     const result: InvocationResult = step === 'transform'

@@ -12,6 +12,7 @@ import {
 import {
   type Catalog, type FeatureRef, type InvocationResult, type MappingFeature, type Outcome, type PassThroughFeature, invoke, orbitConsole, orbitConsoleV2, orbitTransformV2, orbitTransformV3,
 } from '#shared/features/features'
+import { ADDRESS_V1, REALISTIC_DEFINITIONS } from './realistic'
 
 export const WORKSPACE = 'ws-playground'
 export const ELSEWHERE = 'ws-elsewhere'
@@ -24,11 +25,9 @@ export const B1 = defineVersion({ id: 'full-name', version: 1, name: 'Definition
 /**
  * A composed sample (Phase 4.1): a local object, an optional local object whose properties are all
  * optional, and a reference to another Definition version, pinned exactly. Console v2 accepts it;
- * Console v1 and Transform v2 refuse it before running.
+ * Console v1 and Transform v2 refuse it before running. Address · v1 is realistic.ts's, shared.
  */
-const ADDRESS = defineVersion({ id: 'address', version: 1, name: 'Address', workspaceId: WORKSPACE, fields: [
-  { name: 'street', type: 'string' }, { name: 'city', type: 'string' }, { name: 'postcode', type: 'string', optional: true },
-] })
+const ADDRESS = ADDRESS_V1
 export const APPLICANT = defineVersion({ id: 'applicant', version: 1, name: 'Applicant', workspaceId: WORKSPACE, fields: [
   ...nameFields,
   { name: 'contact', type: 'object', optional: true, fields: [{ name: 'email', type: 'string' }, { name: 'phone', type: 'string', optional: true }] },
@@ -44,6 +43,8 @@ export const DEFINITIONS: readonly DefinitionVersion[] = deepFreeze([
   B1,
   ADDRESS,
   APPLICANT,
+  // Realistic samples (realistic.ts): Candidate, Employee, Employment, Emergency contact, Address v2.
+  ...REALISTIC_DEFINITIONS,
 ])
 
 /** What Record A can be pinned to, to see how exact identity and workspace scoping behave. */

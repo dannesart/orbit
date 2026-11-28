@@ -91,12 +91,13 @@ export interface Configuration {
   readonly mapping: FeatureRef
 }
 
-export const initialConfiguration = (offered: readonly Offered[] = []): Configuration => ({
+/** How a Transform starts: the playground's own Mapping, or a workflow's (workflows.ts), applied, with its output. */
+export const initialConfiguration = (offered: readonly Offered[] = [], mapping: Mapping = INITIAL_MAPPING): Configuration => ({
   ...(offered.length ? { offered } : {}),
   locals: [],
-  mappings: [INITIAL_MAPPING],
-  output: refOf(B1),
-  mapping: { id: INITIAL_MAPPING.id, version: INITIAL_MAPPING.version },
+  mappings: [mapping],
+  output: refOf(mapping.to),
+  mapping: { id: mapping.id, version: mapping.version },
 })
 
 /**

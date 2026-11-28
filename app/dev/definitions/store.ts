@@ -7,7 +7,9 @@
 // between people through the server's memory.
 import { reactive } from 'vue'
 import { type Appearance, DEFAULT_APPEARANCE } from './appearance'
+import { type DefinitionRef, type Field, deepFreeze, defineVersion } from '#shared/features/definitions'
 import { DEFINITIONS } from '../features/experiment'
+import { ADDRESS_V1, REALISTIC_DEFINITIONS } from '../features/realistic'
 import { LOCAL_ID } from '../designer/config'
 import {
   type Draft, type MadeDefinition, type NewDefinition, ORBIT_PROVIDED,
@@ -116,3 +118,33 @@ export function shelfHasWork(workspaceId: string): boolean {
   const shelf = shelfOf(workspaceId)
   return shelf.made.length > 0 || shelf.creating !== null || Object.keys(shelf.evolving).length > 0
 }
+
+/**
+ * Development only: the realistic samples (realistic.ts: Address v1 and v2, Emergency contact,
+ * Employment, Candidate, Employee, Candidate contact) made in this workspace, so large Definitions
+ * can be looked at in the catalogue and the Studio. Each becomes this workspace's own Definition
+ * with a new identity (an identity is never reused), every version exactly as the sample has it and
+ * every reference pointing at the same exact version of its new identity. Made with defineVersion,
+ * like any version: nothing here is a new capability of Definitions. Once per workspace.
+ */
+export function addRealisticSamples(workspaceId: string): boolean {
+  const shelf = shelfOf(workspaceId)
+  if (shelf.made.some((d) => d.description === REALISTIC_NOTE)) return false
+  const sources = [ADDRESS_V1, ...REALISTIC_DEFINITIONS]
+  const ids = new Map<string, string>()
+  for (const d of sources) if (!ids.has(d.id)) ids.set(d.id, newIdentity(taken))
+  const remap = (fields: readonly Field[]): Field[] => fields.map((f) =>
+    f.type === 'object' ? { ...f, fields: remap(f.fields) } : f.type === 'reference' ? { ...f, definition: { id: ids.get(f.definition.id)!, version: f.definition.version } } : f)
+  const made: MadeDefinition[] = []
+  const resolve = (ref: DefinitionRef) => made.flatMap((m) => m.versions).find((v) => v.id === ref.id && v.version === ref.version) ?? null
+  for (const [old, id] of ids) {
+    const versions = sources.filter((d) => d.id === old).sort((a, b) => a.version - b.version)
+      .map((d) => defineVersion({ id, version: d.version, name: d.name, workspaceId, fields: remap(d.fields) }, resolve))
+    made.push(deepFreeze({ id, workspaceId, name: versions.at(-1)!.name, description: REALISTIC_NOTE, appearance: DEFAULT_APPEARANCE, versions }))
+  }
+  for (const m of made) checkSequence(m)
+  shelf.made = [...shelf.made, ...made]
+  return true
+}
+/** How the realistic samples describe themselves (and how they're recognised, so they're added once). */
+export const REALISTIC_NOTE = 'A realistic, synthetic sample for trying Orbit at size. Development only.'

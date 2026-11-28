@@ -22,7 +22,7 @@ export default defineNuxtConfig({
       if (!playgroundAvailable({ dev: nuxt.options.dev, context: process.env.CONTEXT })) return
       nuxt.hook('pages:extend', (pages) => {
         pages.push({ name: 'dev-features', path: '/dev/features', file: fileURLToPath(new URL('./app/dev/features/FeaturePlayground.vue', import.meta.url)) })
-        pages.push({ name: 'dev-designer', path: '/dev/designer', file: fileURLToPath(new URL('./app/dev/designer/SpatialDesigner.vue', import.meta.url)) })
+        pages.push({ name: 'dev-designer', path: '/dev/designer', file: fileURLToPath(new URL('./app/dev/designer/DesignerWorkflows.vue', import.meta.url)) })
         const workspace = pages.find((page) => page.file?.replaceAll('\\', '/').endsWith('/pages/w/[id].vue'))
         if (!workspace) throw new Error('The workspace layout (pages/w/[id].vue) is missing: the Workflows place has nowhere to live')
         workspace.children = [

@@ -11,6 +11,7 @@ import ShownText from './ShownText.vue'
 import type { TransformDraft } from './config'
 import type { DraftReview, Example, OutputPreview } from './preview'
 import { type PropertyRow, propertyRows } from './rows'
+import { RECORD_NAME } from './workflows'
 
 const props = defineProps<{
   draft: TransformDraft
@@ -47,6 +48,8 @@ const raw = ref(false)
 /** Whether the previewed object fits the target: only known when every value could be made. */
 const fit = computed(() => (!props.output.fits || !hasExample.value || props.problems ? null : props.output.fits.issues.length === 0))
 const SHOWN = 4
+/** Whose data the example values are: the chosen Record ("Record A" unless another is chosen). */
+const recordName = inject(RECORD_NAME, computed(() => 'Record A'))
 </script>
 
 <template>
@@ -71,7 +74,7 @@ const SHOWN = 4
       </button>
     </div>
     <p v-if="about" id="preview-about" class="mb-1 text-xs text-slate-500">
-      Example values: this draft, with Record A’s data. Nothing has run.<template v-if="fit === true"> Fits {{ target.label }}.</template>
+      Example values: this draft, with {{ recordName }}’s data. Nothing has run.<template v-if="fit === true"> Fits {{ target.label }}.</template>
     </p>
     <p v-if="!hasExample && 'problem' in example" class="mb-1 text-xs text-amber-800">{{ example.problem }} <span v-if="example.details.length" class="block">{{ example.details.join(' ') }}</span></p>
 

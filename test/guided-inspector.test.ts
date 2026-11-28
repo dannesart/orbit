@@ -150,7 +150,7 @@ describe('The minimal inspector: a tool, not a report', () => {
   it('says the example values aren’t executed, says the rest on demand, and keeps a real mismatch in view', () => {
     const output = source('PropertyRows.vue')
     expect(output).toMatch(/>Output<\/h3>[\s\S]*?:aria-expanded="about" aria-controls="preview-about" data-preview-about @click="about = !about">Not executed<\/button>/)
-    expect(output).toMatch(/<p v-if="about" id="preview-about"[^>]*>\s*Example values: this draft, with Record A’s data\. Nothing has run\./)
+    expect(output).toMatch(/<p v-if="about" id="preview-about"[^>]*>\s*Example values: this draft, with \{\{ recordName \}\}’s data\. Nothing has run\./)
     expect(output).toMatch(/<p v-if="fit === false" class="mt-1\.5 text-xs text-red-700">/)
     expect(output).not.toMatch(/uppercase|Latest run/)
   })

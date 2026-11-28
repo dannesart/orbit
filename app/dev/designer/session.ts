@@ -4,7 +4,6 @@
 // opening panels aren't work: an untouched playground can be left without a question.
 import { sameData, sameDefinition, sameFields } from '#shared/features/definitions'
 import type { MappingProperty } from '#shared/features/mappings'
-import { INITIAL_MAPPING } from '../features/experiment'
 import { type Configuration, type TransformDraft, draftFrom, initialConfiguration, labelOf } from './config'
 import { type DraftProperty, fromPiece } from './parts'
 
@@ -55,21 +54,24 @@ export interface Session extends Setup {
   readonly unapplied: boolean
 }
 
-/** What leaving would discard, in words, most valuable first; empty when there is nothing. */
-export function workAtRisk(session: Session, start: Setup): string[] {
+/**
+ * What leaving would discard, in words, most valuable first; empty when there is nothing. `initial`:
+ * how the Transform started (a workflow's own Mapping, workflows.ts); the playground's by default.
+ * Record edits are compared as the caller gives them (pinKey and recordText, for every Record).
+ */
+export function workAtRisk(session: Session, start: Setup, initial: Configuration = initialConfiguration()): string[] {
   const at: string[] = []
   const { config } = session
   const versions = [
     ...config.locals.map((d) => `${d.name} v${d.version}`),
-    ...config.mappings.filter((m) => m !== INITIAL_MAPPING).map((m) => `Mapping v${m.version} for ${labelOf(config, m.to)}`),
+    ...config.mappings.filter((m) => !initial.mappings.includes(m)).map((m) => `Mapping v${m.version} for ${labelOf(config, m.to)}`),
   ]
-  const initial = initialConfiguration()
   if (versions.length) at.push(`Applied versions, which exist only in this session: ${versions.join(', ')}`)
   else if (!sameDefinition(config.output, initial.output) || config.mapping.id !== initial.mapping.id || config.mapping.version !== initial.mapping.version) {
     at.push('The Transform’s applied configuration')
   }
   if (session.unapplied) at.push('Changes to the Transform you haven’t applied')
-  if (session.recordText !== start.recordText || session.pinKey !== start.pinKey) at.push('Your edits to Record A')
+  if (session.recordText !== start.recordText || session.pinKey !== start.pinKey) at.push('Your edits to the Records')
   if (Object.keys(start.features).some((step) => session.features[step] !== start.features[step])) at.push('The Feature versions you chose for its steps')
   return at
 }

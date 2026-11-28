@@ -19,7 +19,7 @@ import '@xyflow/vue/dist/style.css'
 import { type Data, type DefinitionRef, sameDefinition } from '#shared/features/definitions'
 import type { FeatureRef } from '#shared/features/features'
 import {
-  A1, CONSOLES, DEFINITIONS, INITIAL_DATA, PINS, RECORD_ID, TRANSFORMS, WORKSPACE, type Step,
+  A1, CONSOLES, DEFINITIONS, PINS, RECORD_ID, TRANSFORMS, WORKSPACE, type Step,
   definitionLabel, featureKey, featureVersionWords, outcomeLabel, parseRecordData, shapeOf,
 } from '../features/experiment'
 import RunResult from './RunResult.vue'
@@ -30,13 +30,14 @@ import { appliedPreview, applyDraft, transformView } from './view'
 import { lastWorkspace, shelfOf } from '../definitions/store'
 import { DESIGNER_WORKSPACE, designerWorkspace, offeredIn, placeIn, requestedOutput, runsIn as workspaceIn } from '../definitions/designer'
 import FeatureVersions, { type VersionChoice } from './FeatureVersions.vue'
+import { RECORD_NAME, SIMPLE, WORKFLOW_RISK, type WorkflowPreset, type WorkflowRisk, recordOf } from './workflows'
 import MappingStudio from './MappingStudio.vue'
 import type { AppliedPreview, IncomingView, StudioOpening } from './studio'
 import TransformInspector from './TransformInspector.vue'
 import StepNode, { type StepView } from './StepNode.vue'
 import { drawEdges, initialNodes, nodeLabel, resetPositions } from './graph'
 import {
-  type Connection, type Contracts, type FeatureStep, type FlowRun, INITIAL_CONNECTIONS, INITIAL_STEP_FEATURES, type StepFeatures, type StepId, checkConnection, connectionKey,
+  type Connection, type Contracts, type FeatureStep, type FlowRun, type StepFeatures, type StepId, checkConnection, connectionKey,
   connectionProblems, flowOutcome, incomingTo, pathOf, runFlow, stepBadge, stepTitle,
 } from './flow'
 import { summarize } from './summary'
@@ -49,13 +50,33 @@ import {
 
 // The page's title follows where you are (Mapping Studio, below).
 
+// --- The workflow: where this Designer starts (workflows.ts). The page (DesignerWorkflows.vue) keeps
+// one Designer per workflow alive while you switch, so everything below is this workflow's own. ---
+const props = withDefaults(defineProps<{ workflow?: WorkflowPreset; workflows?: readonly WorkflowPreset[] }>(), { workflow: () => SIMPLE, workflows: () => [SIMPLE] })
+const emit = defineEmits<{ switch: [id: string] }>()
+const preset = props.workflow
+/** Whether this workflow is the one on screen: a kept-alive Designer reacts to nothing while it's away. */
+const active = ref(true)
+onActivated(() => (active.value = true))
+onDeactivated(() => (active.value = false))
+
 // --- The experiment's state: as on the list playground (FeaturePlayground.vue), except that the
 // Transform's configuration (its output Definition and its Mapping) is edited as a draft and only
 // Apply makes versions (Experiments #3 and #4) ---
-const pinKey = ref('a1')
-const recordText = ref(JSON.stringify(INITIAL_DATA, null, 2))
+// The Records this workflow may run with, each with its own data as typed (and, for Record A only,
+// the Definition it's pinned to, re-pinnable on purpose: PINS). Choosing a Record chooses which one
+// runs; it never changes a Record's Definition, the Mapping or a run already made.
+interface RecordState { readonly pinKey: string; readonly text: string }
+const pinOf = (id: string) => (id === RECORD_ID ? 'a1' : id)
+const initialRecords = (): Record<string, RecordState> => Object.fromEntries(preset.records.map((id) => [id, { pinKey: pinOf(id), text: JSON.stringify(recordOf(id).data, null, 2) }]))
+const recordStates = ref<Record<string, RecordState>>(initialRecords())
+const selectedRecord = ref(preset.record)
+const currentRecord = computed(() => recordOf(selectedRecord.value))
+const setRecord = (change: Partial<RecordState>) => (recordStates.value = { ...recordStates.value, [selectedRecord.value]: { ...recordStates.value[selectedRecord.value]!, ...change } })
+const pinKey = computed({ get: () => recordStates.value[selectedRecord.value]!.pinKey, set: (pinKey: string) => setRecord({ pinKey }) })
+const recordText = computed({ get: () => recordStates.value[selectedRecord.value]!.text, set: (text: string) => setRecord({ text }) })
 // The exact Feature version each step invokes (featureKey). Each changes only when someone picks another.
-const stepFeatures = ref<Record<FeatureStep, string>>({ ...INITIAL_STEP_FEATURES })
+const stepFeatures = ref<Record<FeatureStep, string>>({ ...preset.features })
 const consoleOf = (key: string) => CONSOLES.find((c) => featureKey(c.feature) === key)!
 const transformOf = (key: string) => TRANSFORMS.find((t) => featureKey(t.feature) === key)!
 const features = computed<StepFeatures>(() => ({
@@ -72,15 +93,18 @@ provide(DESIGNER_WORKSPACE, workspace)
 const offered = offeredIn(workspace, workspace ? shelfOf(workspace.id).made : [])
 const runsIn = workspaceIn(workspace)
 const requested = requestedOutput(useRoute().query.output, offered)
-const config = shallowRef<Configuration>(initialConfiguration(offered))
-/** The design's connections: which step hands on to which. Only Record A's path runs. */
-const connections = shallowRef<readonly Connection[]>(INITIAL_CONNECTIONS)
+/** How this workflow's Transform starts: its own Mapping, applied. */
+const startConfig = initialConfiguration(offered, preset.mapping)
+const config = shallowRef<Configuration>(startConfig)
+/** The design's connections: which step hands on to which. Only the Record's path runs. */
+const connections = shallowRef<readonly Connection[]>(preset.connections)
 const shown = shallowRef<FlowRun>({ path: [], steps: {} })
 const runs = shallowRef<RunRecord[]>([])
 const ranWith = ref('')
 const runNumber = ref(0)
 
-const pin = computed(() => PINS.find((p) => p.key === pinKey.value)!)
+/** What the chosen Record is pinned to: Record A's chosen pin, or a Candidate's own Definition version. */
+const pin = computed(() => PINS.find((p) => p.key === pinKey.value) ?? { key: currentRecord.value.id, ref: currentRecord.value.definition, note: currentRecord.value.note, example: undefined })
 const parsed = computed(() => parseRecordData(recordText.value))
 const appliedMapping = computed(() => findMapping(config.value, config.value.mapping)!)
 const label = (ref: DefinitionRef) => labelOf(config.value, ref)
@@ -102,12 +126,12 @@ const contracts = computed<Contracts>(() => ({
 const path = computed(() => pathOf(connections.value))
 const problems = computed(() => connectionProblems(connections.value, contracts.value))
 // What a run depends on. The draft isn't part of it: runs use the applied versions.
-const snapshot = computed(() => JSON.stringify([pinKey.value, recordText.value, stepFeatures.value, config.value.mapping, connections.value.map(connectionKey)]))
+const snapshot = computed(() => JSON.stringify([selectedRecord.value, pinKey.value, recordText.value, stepFeatures.value, config.value.mapping, connections.value.map(connectionKey)]))
 const stale = computed(() => snapshot.value !== ranWith.value)
 
 // --- The draft: edited freely, previewed, and only applied on purpose ---
 // "Use in the Designer" asks for one exact version: it starts as the draft's output, unapplied.
-const draft = shallowRef<TransformDraft>(requested ? requestedDraft(requested) : draftFrom(config.value))
+const draft = shallowRef<TransformDraft>(requested && preset === SIMPLE ? requestedDraft(requested) : draftFrom(config.value))
 /** The requested version as the draft's output, with only the mappings that fit it (switching.ts). */
 function requestedDraft(output: DefinitionRef): TransformDraft {
   const next: TransformDraft = { ...draftFrom(config.value), use: 'catalogue', catalogue: output }
@@ -145,6 +169,8 @@ const structure = computed(() => view.value.structure)
 const input = computed(() => view.value.input)
 // Review, preview and the source picker follow the Transform version this step invokes.
 provide(READING, computed(() => view.value.reading))
+// Whose data the previews show: the chosen Record.
+provide(RECORD_NAME, computed(() => currentRecord.value.name))
 const example = computed(() => view.value.example)
 const review = computed(() => view.value.review)
 const output = computed(() => view.value.output)
@@ -193,11 +219,11 @@ function run() {
   shown.value = runFlow(
     placeIn({
       definitions: allDefinitions(applied),
-      records: [{ id: RECORD_ID, workspaceId: WORKSPACE, definition: pin.value.ref, data: record.data as Data }],
+      records: [{ id: selectedRecord.value, workspaceId: WORKSPACE, definition: pin.value.ref, data: record.data as Data }],
       mappings: applied.mappings,
     }, runsIn),
     connections.value,
-    { features: features.value, mapping: applied.mapping, workspaceId: runsIn },
+    { features: features.value, mapping: applied.mapping, workspaceId: runsIn, record: selectedRecord.value },
   )
   ranWith.value = snapshot.value
   runNumber.value++
@@ -206,19 +232,20 @@ function run() {
   runs.value = [...runs.value, Object.freeze({ number: runNumber.value, outcome: evidence?.outcome ?? null, feature: evidence?.feature ?? null, mapping: evidence?.mapping ?? null, output: used?.to ?? null, path: shown.value.path })]
 }
 
-const connectionsChanged = computed(() => connections.value.map(connectionKey).join() !== INITIAL_CONNECTIONS.map(connectionKey).join())
+const connectionsChanged = computed(() => connections.value.map(connectionKey).join() !== preset.connections.map(connectionKey).join())
+const recordsChanged = computed(() => JSON.stringify(recordStates.value) !== JSON.stringify(initialRecords()))
 function startOver() {
-  const to = { ...draftFrom(initialConfiguration(offered)), local: draft.value.local }
-  const record = recordText.value !== JSON.stringify(INITIAL_DATA, null, 2) || pinKey.value !== 'a1' ? ['Your edits to Record A'] : []
-  const versions = JSON.stringify(stepFeatures.value) !== JSON.stringify(INITIAL_STEP_FEATURES) ? ['The Feature versions you chose for its steps'] : []
+  const to = { ...draftFrom(startConfig), local: draft.value.local }
+  const record = recordsChanged.value ? ['Your edits to the Records'] : []
+  const versions = JSON.stringify(stepFeatures.value) !== JSON.stringify(preset.features) ? ['The Feature versions you chose for its steps'] : []
   resetAfterAsking({
-    title: 'Start over?', intro: 'Record A, the Console, the connections and the Transform’s draft go back to how they started. Applied versions stay. Starting over forgets:', confirm: 'Start over',
+    title: 'Start over?', intro: 'The Records, the Feature versions, the connections and the Transform’s draft go back to how this workflow started. Applied versions stay. Starting over forgets:', confirm: 'Start over',
     losing: [...record, ...versions, ...(connectionsChanged.value ? ['Your connections'] : []), ...draftLoses(draft.value, to)],
     act: () => {
-      pinKey.value = 'a1'
-      recordText.value = JSON.stringify(INITIAL_DATA, null, 2)
-      stepFeatures.value = { ...INITIAL_STEP_FEATURES }
-      connections.value = INITIAL_CONNECTIONS
+      recordStates.value = initialRecords()
+      selectedRecord.value = preset.record
+      stepFeatures.value = { ...preset.features }
+      connections.value = preset.connections
       setDraft(to, false)
     },
   })
@@ -337,7 +364,7 @@ function disconnect(removed: readonly { id: string }[]) {
 }
 /** From the keyboard: Tab to an arrow, then Delete (or Backspace) removes it. */
 function deleteFocusedArrow(event: KeyboardEvent) {
-  if (event.key !== 'Delete' && event.key !== 'Backspace') return
+  if (!active.value || (event.key !== 'Delete' && event.key !== 'Backspace')) return
   const arrow = (event.target as Element | null)?.closest?.('.vue-flow__edge')
   const id = arrow?.getAttribute('data-id')
   if (!id) return
@@ -410,9 +437,9 @@ const views = computed<Record<StepId, StepView>>(() => {
   const p = path.value
   return {
     'record': {
-      badge: stepBadge('record', p), kind: 'Record · in memory', title: stepTitle('record'),
+      badge: stepBadge('record', p), kind: 'Record · in memory', title: currentRecord.value.name,
       lines: [definitionLabel(pin.value.ref), recordFields.value],
-      more: 0, note: pinKey.value === 'a1' ? null : 'Pinned to a different Definition', problem: null, outcome: null, stale: false,
+      more: 0, note: pinKey.value === pinOf(selectedRecord.value) ? null : 'Pinned to a different Definition', problem: null, outcome: null, stale: false,
     },
     'console-in': {
       badge: stepBadge('console-in', p), kind: `Feature · ${featureWords('console-in')}`, title: stepTitle('console-in'),
@@ -466,7 +493,7 @@ function closeStudio() {
 }
 // Back on the canvas: focus returns to where the Studio was opened from (a property's row, or the pencil).
 watch(studio, (open) => {
-  if (open) return
+  if (open || !active.value) return
   nextTick(() => {
     const row = studioOrigin === null ? null : document.querySelector<HTMLElement>(`[data-property-row="${CSS.escape(studioOrigin)}"]`)
     ;(row ?? document.querySelector<HTMLElement>('[data-edit-mapping]'))?.focus()
@@ -525,8 +552,8 @@ const runWords = computed(() => {
   return `Up to date · run ${runNumber.value}`
 })
 const toolbarStatus = computed(() => {
-  if ('error' in parsed.value) return 'Fix Record A’s data to run'
-  if (path.value.length < 2) return 'Connect Record A to a step to run'
+  if ('error' in parsed.value) return `Fix ${currentRecord.value.name}’s data to run`
+  if (path.value.length < 2) return `Connect ${currentRecord.value.name} to a step to run`
   return stale.value ? `Changed since run ${runNumber.value}` : runWords.value
 })
 const showHint = ref(true)
@@ -539,15 +566,21 @@ const back = computed(() => safeDestination(useRoute().query.back))
 // first (Stay in Designer / Leave and discard); an untouched playground just leaves. One guard
 // covers every way out inside Orbit (the back action, List view, the browser's back button); a
 // reload or closing the tab gets the browser's own question, only when there's work to lose.
-const START = { pinKey: 'a1', recordText: JSON.stringify(INITIAL_DATA, null, 2), features: INITIAL_STEP_FEATURES } as const
-const atRisk = computed(() => [
-  ...workAtRisk({ pinKey: pinKey.value, recordText: recordText.value, features: stepFeatures.value, config: config.value, unapplied: plan.value.changes }, START),
+// Every Record's edits count, whichever is chosen; choosing one isn't work.
+const START = { pinKey: '', recordText: JSON.stringify(initialRecords()), features: preset.features } as const
+const ownRisk = computed(() => [
+  ...workAtRisk({ pinKey: '', recordText: JSON.stringify(recordStates.value), features: stepFeatures.value, config: config.value, unapplied: plan.value.changes }, START, startConfig),
   ...(connectionsChanged.value ? ['Your connections'] : []),
 ])
+// Leaving Orbit leaves every workflow: the page gathers each one's work (DesignerWorkflows.vue).
+const workflowRisk = inject<WorkflowRisk | null>(WORKFLOW_RISK, null)
+const atRisk = computed(() => [...ownRisk.value, ...(workflowRisk?.others(preset.id) ?? [])])
+workflowRisk?.set(preset.id, () => ownRisk.value)
+onBeforeUnmount(() => workflowRisk?.set(preset.id, null))
 const leaving = ref<string | null>(null)
 let discardConfirmed = false
 onBeforeRouteLeave((to) => {
-  if (discardConfirmed || !atRisk.value.length) return true
+  if (!active.value || discardConfirmed || !atRisk.value.length) return true
   leaving.value = to.fullPath
   return false
 })
@@ -562,7 +595,7 @@ function leave() {
   if (to) navigateTo(to)
 }
 function onBeforeUnload(event: BeforeUnloadEvent) {
-  if (discardConfirmed || !atRisk.value.length) return
+  if (discardConfirmed || !ownRisk.value.length) return
   event.preventDefault()
   event.returnValue = ''
 }
@@ -630,6 +663,9 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
       :status="toolbarStatus"
       :attention="plan.changes ? 'Transform has unapplied changes' : null"
       :can-run="canRun"
+      :workflow="preset.id"
+      :workflows="workflows"
+      @switch="emit('switch', $event)"
       @run="run"
       @start-over="startOver"
       @versions="versionsOpen = true"
@@ -745,10 +781,17 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
           <p class="mt-0.5 text-xs text-slate-500">Changes take effect the next time you run.</p>
 
           <div class="mt-3">
+            <template v-if="preset.records.length > 1">
+              <label for="record-choice" class="block text-xs font-medium text-slate-600">Record</label>
+              <select id="record-choice" v-model="selectedRecord" :class="[control, 'mt-1 mb-4 w-full']" data-record-choice>
+                <option v-for="id in preset.records" :key="id" :value="id">{{ recordOf(id).name }}</option>
+              </select>
+            </template>
             <label for="pin" class="block text-xs font-medium text-slate-600">Pinned to</label>
-            <select id="pin" v-model="pinKey" :class="[control, 'mt-1 w-full']">
+            <select v-if="selectedRecord === RECORD_ID" id="pin" v-model="pinKey" :class="[control, 'mt-1 w-full']">
               <option v-for="p in PINS" :key="p.key" :value="p.key">{{ definitionLabel(p.ref) }}</option>
             </select>
+            <p v-else id="pin" class="mt-1 text-sm font-medium text-slate-800" data-record-definition>{{ definitionLabel(pin.ref) }}</p>
             <p class="mt-1.5 text-xs text-slate-500">
               {{ pin.note }}
               <span class="font-mono text-slate-600">{{ shapeOf(DEFINITIONS.find((d) => d.id === pin.ref.id && d.version === pin.ref.version)!) }}</span>
@@ -771,7 +814,7 @@ const control = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm t
             <p class="text-xs text-slate-500">{{ runLabel }}</p>
           </div>
           <p v-if="selectedId === 'record'" class="mt-2 text-sm text-slate-600">
-            Record A isn’t a Feature, so it never runs.
+            {{ currentRecord.name }} isn’t a Feature, so it never runs.
             {{ shown.path.length > 1 ? `Step 1, ${stepTitle(shown.path[1]!)}, read it.` : 'Nothing read it: it wasn’t connected to a step.' }}
           </p>
           <RunResult v-else :step="stepOf(selectedId)" :stale="stale" pass-through :label="label" :resolve="resolve" />

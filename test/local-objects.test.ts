@@ -11,6 +11,7 @@ import {
   type Feature, type InvocationResult, contractCompatibility, invoke, mappingCompatibility, orbitConsole, orbitTransformV1, orbitTransformV2,
 } from '../shared/features/features'
 import { A1, DEFINITIONS, INITIAL_DATA, INITIAL_MAPPING, RECORD_ID, WORKSPACE, describeOutcome } from '../app/dev/features/experiment'
+import { REALISTIC_DEFINITIONS } from '../app/dev/features/realistic'
 import { draftFrom, fieldsOf, locate } from '../app/dev/definitions/model'
 
 const W = 'w'
@@ -256,7 +257,7 @@ describe('Flat Definitions behave exactly as before', () => {
       { problem: 'unexpected', path: ['x'] },
     ])
     // The flat ones: every sample except the composed Applicant (Phase 4.1), which Console v2 is for.
-    for (const d of DEFINITIONS.filter((x) => x.id !== 'applicant')) {
+    for (const d of DEFINITIONS.filter((x) => x.id !== 'applicant' && !REALISTIC_DEFINITIONS.includes(x))) {
       expect(checkFields(d.fields)).toEqual([])
       expect(localObjectPaths(d.fields)).toEqual([])
       expect(defineVersion(d)).toEqual(d)

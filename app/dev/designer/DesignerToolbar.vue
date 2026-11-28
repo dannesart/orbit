@@ -1,8 +1,17 @@
 <script setup lang="ts">
 // The Designer's floating toolbar: Orbit's glass, like the workspace navigation. The workflow's
 // identity and its state, Run (the one prominent action), and the rest behind "More".
-const props = defineProps<{ back: string | null; status: string; attention: string | null; canRun: boolean }>()
-const emit = defineEmits<{ run: []; startOver: []; versions: [] }>()
+const props = withDefaults(defineProps<{
+  back: string | null
+  status: string
+  attention: string | null
+  canRun: boolean
+  /** The experimental workflow on screen, and every one there is to switch to (workflows.ts). */
+  workflow?: string
+  workflows?: readonly { readonly id: string; readonly name: string }[]
+}>(), { workflow: 'simple', workflows: () => [] })
+const emit = defineEmits<{ run: []; startOver: []; versions: []; switch: [id: string] }>()
+const title = computed(() => props.workflows.find((w) => w.id === props.workflow)?.name ?? 'Playground workflow')
 
 const open = ref(false)
 const menu = ref<HTMLElement>()
@@ -36,7 +45,17 @@ const item = 'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text
       </NuxtLink>
       <div class="min-w-0 px-2">
         <div class="flex items-center gap-2">
-          <h1 class="truncate text-sm font-semibold text-slate-900">Playground workflow</h1>
+          <h1 class="min-w-0 truncate text-sm font-semibold text-slate-900">
+            <template v-if="workflows.length < 2">Playground workflow</template>
+            <!-- Which experimental workflow: switching keeps each one as you left it, for this session -->
+            <label v-else class="relative flex min-w-0 items-center">
+              <span class="sr-only">Workflow</span>
+              <select :value="workflow" class="min-w-0 max-w-[14rem] cursor-pointer appearance-none truncate rounded-md bg-transparent pr-5 text-sm font-semibold text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-accent-500 sm:max-w-[18rem]" data-workflow-switch :title="title" @change="emit('switch', ($event.target as HTMLSelectElement).value)">
+                <option v-for="w in workflows" :key="w.id" :value="w.id">{{ w.name }}</option>
+              </select>
+              <span aria-hidden="true" class="pointer-events-none absolute right-0 text-[10px] text-slate-400">▼</span>
+            </label>
+          </h1>
           <span class="hidden shrink-0 rounded-full bg-accent-50 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-accent-700 uppercase ring-1 ring-accent-200/70 sm:inline">Experiment</span>
         </div>
         <p class="truncate text-xs text-slate-500" aria-live="polite">

@@ -18,7 +18,7 @@
 <script setup lang="ts">
 import { referencePaths } from '#shared/features/definitions'
 import { ORBIT_PROVIDED } from './model'
-import { enterWorkspace, shelfHasWork, shelfOf } from './store'
+import { REALISTIC_NOTE, addRealisticSamples, enterWorkspace, shelfHasWork, shelfOf } from './store'
 import DefinitionEditor from './DefinitionEditor.vue'
 import DefinitionInspector from './DefinitionInspector.vue'
 import DefinitionTile from './DefinitionTile.vue'
@@ -47,6 +47,8 @@ onMounted(() => {
 })
 const made = computed(() => (ready.value ? shelfOf(ws.value.id).made : []))
 const creating = computed(() => (ready.value ? shelfOf(ws.value.id).creating : null))
+/** Development only: the realistic samples, made in this workspace once (store.ts). */
+const hasSamples = computed(() => made.value.some((d) => d.description === REALISTIC_NOTE))
 
 // A reload or closing the tab ends everything made here: the browser asks first, only if there's any.
 function onBeforeUnload(event: BeforeUnloadEvent) {
@@ -109,6 +111,7 @@ const grid = 'mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15r
     <p class="mt-2 max-w-2xl text-xs text-slate-500">
       A preview experiment. Anything made here stays in this browser tab, for {{ ws.name }} only, until you reload or close it. Nothing is saved.
       Orbit’s are samples that exist only in this preview.
+      <ClientOnly><button v-if="!hasSamples" type="button" class="link ml-1" data-add-samples @click="addRealisticSamples(ws.id)">Add realistic samples</button></ClientOnly>
     </p>
 
     <section class="mt-8" aria-labelledby="own-heading">

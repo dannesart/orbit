@@ -14,6 +14,7 @@ import { type Configuration, type RunRecord, type TransformDraft, labelOf } from
 import { fromDraft } from './parts'
 import type { DraftReview, Example, OutputPreview } from './preview'
 import { FLAT, READING } from './reading'
+import { RECORD_NAME } from './workflows'
 import { type AppliedPreview, madeFrom } from './studio'
 
 const props = defineProps<{
@@ -36,6 +37,8 @@ const props = defineProps<{
 type View = 'draft' | 'applied' | 'run'
 const view = ref<View>('draft')
 const reading = inject(READING, ref(FLAT))
+/** Whose data the example is: the chosen Record ("Record A" unless another is chosen). */
+const recordName = inject(RECORD_NAME, computed(() => 'Record A'))
 const versionWords = (ref: DefinitionRef) => `${reading.value.resolve(ref)?.name ?? ref.id} · v${ref.version}`
 const label = (ref: DefinitionRef) => labelOf(props.config, ref)
 
@@ -75,7 +78,7 @@ const segment = 'rounded-full px-3 py-1 text-xs font-medium transition focus-vis
     <section :class="panel" aria-labelledby="example-heading" data-studio-example>
       <div class="mb-3 flex items-baseline gap-2">
         <h2 id="example-heading" class="text-sm font-semibold text-slate-900">Example input</h2>
-        <span class="truncate text-xs text-slate-500">Record A’s data · {{ view === 'applied' ? label(applied.input) : inputLabel }}</span>
+        <span class="truncate text-xs text-slate-500">{{ recordName }}’s data · {{ view === 'applied' ? label(applied.input) : inputLabel }}</span>
       </div>
       <p v-if="'problem' in shownExample" class="text-sm text-amber-800">{{ shownExample.problem }} <span v-if="shownExample.details.length" class="block text-xs">{{ shownExample.details.join(' ') }}</span></p>
       <template v-else>
@@ -85,7 +88,7 @@ const segment = 'rounded-full px-3 py-1 text-xs font-medium transition focus-vis
           <pre class="mt-1 overflow-x-auto rounded-xl bg-slate-50 p-3 font-mono text-slate-700">{{ JSON.stringify(shownExample.data, null, 2) }}</pre>
         </details>
       </template>
-      <p class="mt-3 text-xs text-slate-500">Changed on Record A in the Designer.</p>
+      <p class="mt-3 text-xs text-slate-500">Changed on {{ recordName }} in the Designer.</p>
     </section>
 
     <!-- What would be made, what's applied, and what ran -->
